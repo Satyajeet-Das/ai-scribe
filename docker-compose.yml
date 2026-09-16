@@ -1,0 +1,83 @@
+services:
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: ai_scribe_backend
+    ports:
+      - "8080:8080"
+    environment:
+      - SCRIBE_PRIMARY.ENV=local
+      - SCRIBE_SERVER.PORT=8080
+      - SCRIBE_DATABASE.HOST=postgres
+      - SCRIBE_DATABASE.PORT=5432
+      - SCRIBE_DATABASE.USER=postgres
+      - SCRIBE_DATABASE.PASSWORD=postgres
+      - SCRIBE_DATABASE.NAME=ai_scribe
+      - SCRIBE_DATABASE.SSL_MODE=disable
+      - SCRIBE_REDIS.ADDRESS=redis:6379
+      - SCRIBE_AUTH.SECRET_KEY=sk_test_mock
+      - SCRIBE_INTEGRATION.RESEND_API_KEY=mock_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - scribe-network
+
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+    container_name: ai_scribe_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    depends_on:
+      - backend
+    networks:
+      - scribe-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai_scribe_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_scribe
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_scribe"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scribe-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai_scribe_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scribe-network
+
+networks:
+  scribe-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

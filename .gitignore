@@ -1,0 +1,44 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.html
+profile.out
+
+# Go workspace & vendor
+vendor/
+go.work
+go.work.sum
+
+# Environment files
+.env
+*.local.env
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker / volume data
+tmp/
+data/
+
+# Node / Frontend
+node_modules/
+.turbo/
+.next/
+*.tsbuildinfo
+.env.local
+
+
