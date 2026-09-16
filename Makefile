@@ -1,8 +1,17 @@
 .PHONY: help build-backend run-backend test-backend lint-backend fmt-backend dev-frontend build-frontend docker-up docker-down
 
 help: ## Display available commands
-	@echo "Available commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@echo Available commands:
+	@echo   build-backend   - Build Go server binary
+	@echo   run-backend     - Run Go server locally
+	@echo   test-backend    - Run Go unit tests
+	@echo   lint-backend    - Run static analysis checks on backend
+	@echo   fmt-backend     - Format Go source files
+	@echo   dev-frontend    - Run Next.js frontend dev server
+	@echo   build-frontend  - Build Next.js frontend
+	@echo   docker-up       - Start local docker environment
+	@echo   docker-down     - Stop local docker environment
+
 
 build-backend: ## Build Go server binary
 	cd apps/backend && go build -o bin/server ./cmd/server
