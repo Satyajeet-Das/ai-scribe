@@ -56,8 +56,12 @@ type IntegrationConfig struct {
 }
 
 type AuthConfig struct {
-	SecretKey string `koanf:"secret_key" validate:"required"`
+	SecretKey            string `koanf:"secret_key" validate:"required"`
+	AccessTokenDuration  int    `koanf:"access_token_duration"`
+	RefreshTokenDuration int    `koanf:"refresh_token_duration"`
+	Issuer               string `koanf:"issuer"`
 }
+
 
 func LoadConfig() (*Config, error) {
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()

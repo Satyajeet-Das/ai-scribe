@@ -11,6 +11,8 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/assignment"
 	"github.com/Satyajeet-Das/ai-scribe/internal/auth"
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
+	platformauth "github.com/Satyajeet-Das/ai-scribe/internal/platform/auth"
+	jwtadapter "github.com/Satyajeet-Das/ai-scribe/internal/platform/auth/adapters/jwt"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/config"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/database"
 	httpPlatform "github.com/Satyajeet-Das/ai-scribe/internal/platform/http"
@@ -65,11 +67,38 @@ func main() {
 	// -------------------------------------------------------------------------
 	// Dependency Injection & Domain Composition
 	// -------------------------------------------------------------------------
-	_ = auth.NewService(cfg.Auth.SecretKey)
-	authMiddleware := auth.NewMiddleware(&log)
-
 	userRepo := user.NewRepository(db.Pool)
 	_ = user.NewService(userRepo, &log)
+
+	// Auth platform setup (pluggable JWT provider)
+	accessDuration := 15 * time.Minute
+	if cfg.Auth.AccessTokenDuration > 0 {
+		accessDuration = time.Duration(cfg.Auth.AccessTokenDuration) * time.Second
+	}
+	refreshDuration := 7 * 24 * time.Hour
+	if cfg.Auth.RefreshTokenDuration > 0 {
+		refreshDuration = time.Duration(cfg.Auth.RefreshTokenDuration) * time.Second
+	}
+	issuer := "ai-scribe"
+	if cfg.Auth.Issuer != "" {
+		issuer = cfg.Auth.Issuer
+	}
+
+	jwtConfig := jwtadapter.Config{
+		SecretKey:            cfg.Auth.SecretKey,
+		AccessTokenDuration:  accessDuration,
+		RefreshTokenDuration: refreshDuration,
+		Issuer:               issuer,
+	}
+
+	jwtAdapter := jwtadapter.NewAdapter(jwtConfig, userRepo, redisClient, &log)
+	authProvider := jwtAdapter
+
+	authMiddleware := platformauth.NewMiddleware(authProvider, &log)
+
+	authRepo := auth.NewRepository(db.Pool)
+	authService := auth.NewService(userRepo, authRepo, jwtAdapter, jwtConfig, &log)
+	authHandler := auth.NewHandler(authService, cfg.Primary.Env == "production")
 
 	examRepo := exam.NewRepository(db.Pool)
 	examService := exam.NewService(examRepo, &log)
@@ -105,7 +134,11 @@ func main() {
 		Logger:         &log,
 	})
 
+	// Rate limiter for login endpoint (5 attempts per minute per IP)
+	loginRateLimiter := middlewares.RateLimit.WithRedis(redisClient, &log).Limit(5, 1*time.Minute)
+
 	v1 := router.Group("/api/v1")
+	authHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, loginRateLimiter)
 	examHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	questionHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	assignmentHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
