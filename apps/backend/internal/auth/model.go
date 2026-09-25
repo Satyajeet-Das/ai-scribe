@@ -1,14 +1,18 @@
 package auth
 
-type Role string
+import (
+	platformauth "github.com/Satyajeet-Das/ai-scribe/internal/platform/auth"
+)
+
+type Role = platformauth.Role
 
 const (
-	RoleTeacher   Role = "TEACHER"
-	RoleStudent   Role = "STUDENT"
-	RoleEducator  Role = "TEACHER"
-	RoleCandidate Role = "STUDENT"
-	RoleProctor   Role = "PROCTOR"
-	RoleAdmin     Role = "ADMIN"
+	RoleTeacher   Role = platformauth.RoleTeacher
+	RoleStudent   Role = platformauth.RoleStudent
+	RoleEducator  Role = platformauth.RoleEducator
+	RoleCandidate Role = platformauth.RoleCandidate
+	RoleProctor   Role = platformauth.RoleProctor
+	RoleAdmin     Role = platformauth.RoleAdmin
 )
 
 type UserClaims struct {
