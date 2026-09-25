@@ -61,6 +61,16 @@ func NewInternalServerError() *HTTPError {
 	}
 }
 
+func NewConflictError(message string, override bool) *HTTPError {
+	return &HTTPError{
+		Code:     MakeUpperCaseWithUnderscores(http.StatusText(http.StatusConflict)),
+		Message:  message,
+		Status:   http.StatusConflict,
+		Override: override,
+	}
+}
+
 func ValidationError(err error) *HTTPError {
 	return NewBadRequestError("Validation failed: "+err.Error(), false, nil, nil, nil)
 }
+
