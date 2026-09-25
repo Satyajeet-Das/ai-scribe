@@ -8,10 +8,8 @@ import (
 
 type Answer struct {
 	model.Base
-	SessionID    uuid.UUID `json:"sessionId" db:"session_id"`
-	QuestionID   uuid.UUID `json:"questionId" db:"question_id"`
-	CandidateID  uuid.UUID `json:"candidateId" db:"candidate_id"`
-	ResponseText string    `json:"responseText" db:"response_text"`
-	AudioURL     string    `json:"audioUrl,omitempty" db:"audio_url"`
-	Score        *float64  `json:"score,omitempty" db:"score"`
+	SessionID        uuid.UUID  `json:"sessionId" db:"session_id"`
+	QuestionID       uuid.UUID  `json:"questionId" db:"question_id"`
+	SelectedOptionID *uuid.UUID `json:"selectedOptionId,omitempty" db:"selected_option_id"`
+	TextAnswer       string     `json:"textAnswer" db:"text_answer"`
 }

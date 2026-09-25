@@ -23,6 +23,7 @@ type Service interface {
 	UpdateQuestion(ctx context.Context, id uuid.UUID, req UpdateQuestionRequest, callerID uuid.UUID) (*Question, error)
 	DeleteQuestion(ctx context.Context, id uuid.UUID, callerID uuid.UUID) error
 
+	GetOption(ctx context.Context, id uuid.UUID) (*QuestionOption, error)
 	CreateOption(ctx context.Context, questionID uuid.UUID, req CreateOptionRequest, callerID uuid.UUID) (*QuestionOption, error)
 	ListOptions(ctx context.Context, questionID uuid.UUID) ([]QuestionOption, error)
 }
@@ -260,6 +261,10 @@ func (s *questionService) CreateOption(ctx context.Context, questionID uuid.UUID
 		Msg("question option created successfully")
 
 	return opt, nil
+}
+
+func (s *questionService) GetOption(ctx context.Context, id uuid.UUID) (*QuestionOption, error) {
+	return s.repo.GetOptionByID(ctx, id)
 }
 
 func (s *questionService) ListOptions(ctx context.Context, questionID uuid.UUID) ([]QuestionOption, error) {

@@ -10,36 +10,43 @@ import (
 var validate = validator.New()
 
 type SubmitAnswerRequest struct {
-	SessionID    uuid.UUID `json:"sessionId" validate:"required"`
-	QuestionID   uuid.UUID `json:"questionId" validate:"required"`
-	ResponseText string    `json:"responseText" validate:"required"`
-	AudioURL     string    `json:"audioUrl,omitempty"`
+	SelectedOptionID *uuid.UUID `json:"selectedOptionId,omitempty"`
+	TextAnswer       string     `json:"textAnswer"`
 }
 
 func (r *SubmitAnswerRequest) Validate() error {
+	if r.SelectedOptionID == nil && r.TextAnswer == "" {
+		return ErrInvalidAnswer
+	}
 	return validate.Struct(r)
 }
 
 type AnswerResponse struct {
-	ID           uuid.UUID `json:"id"`
-	SessionID    uuid.UUID `json:"sessionId"`
-	QuestionID   uuid.UUID `json:"questionId"`
-	CandidateID  uuid.UUID `json:"candidateId"`
-	ResponseText string    `json:"responseText"`
-	AudioURL     string    `json:"audioUrl,omitempty"`
-	Score        *float64  `json:"score,omitempty"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID               uuid.UUID  `json:"id"`
+	SessionID        uuid.UUID  `json:"sessionId"`
+	QuestionID       uuid.UUID  `json:"questionId"`
+	SelectedOptionID *uuid.UUID `json:"selectedOptionId,omitempty"`
+	TextAnswer       string     `json:"textAnswer"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
 }
 
 func ToAnswerResponse(a *Answer) AnswerResponse {
 	return AnswerResponse{
-		ID:           a.ID,
-		SessionID:    a.SessionID,
-		QuestionID:   a.QuestionID,
-		CandidateID:  a.CandidateID,
-		ResponseText: a.ResponseText,
-		AudioURL:     a.AudioURL,
-		Score:        a.Score,
-		CreatedAt:    a.CreatedAt,
+		ID:               a.ID,
+		SessionID:        a.SessionID,
+		QuestionID:       a.QuestionID,
+		SelectedOptionID: a.SelectedOptionID,
+		TextAnswer:       a.TextAnswer,
+		CreatedAt:        a.CreatedAt,
+		UpdatedAt:        a.UpdatedAt,
 	}
+}
+
+func ToAnswerResponseList(answers []Answer) []AnswerResponse {
+	res := make([]AnswerResponse, len(answers))
+	for i := range answers {
+		res[i] = ToAnswerResponse(&answers[i])
+	}
+	return res
 }
