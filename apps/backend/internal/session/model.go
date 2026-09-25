@@ -11,20 +11,17 @@ import (
 type Status string
 
 const (
-	StatusInitialized Status = "initialized"
-	StatusInProgress  Status = "in_progress"
-	StatusPaused      Status = "paused"
-	StatusCompleted   Status = "completed"
-	StatusTerminated  Status = "terminated"
+	StatusInProgress Status = "IN_PROGRESS"
+	StatusSubmitted  Status = "SUBMITTED"
+	StatusExpired    Status = "EXPIRED"
 )
 
 type Session struct {
 	model.Base
 	AssignmentID uuid.UUID  `json:"assignmentId" db:"assignment_id"`
-	CandidateID  uuid.UUID  `json:"candidateId" db:"candidate_id"`
 	ExamID       uuid.UUID  `json:"examId" db:"exam_id"`
+	StudentID    uuid.UUID  `json:"studentId" db:"student_id"`
 	Status       Status     `json:"status" db:"status"`
-	StartedAt    *time.Time `json:"startedAt,omitempty" db:"started_at"`
-	EndedAt      *time.Time `json:"endedAt,omitempty" db:"ended_at"`
-	CurrentIndex int        `json:"currentIndex" db:"current_index"`
+	StartedAt    time.Time  `json:"startedAt" db:"started_at"`
+	SubmittedAt  *time.Time `json:"submittedAt,omitempty" db:"submitted_at"`
 }
