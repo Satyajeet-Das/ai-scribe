@@ -9,18 +9,26 @@ import (
 type Type string
 
 const (
-	TypeMultipleChoice Type = "multiple_choice"
-	TypeShortAnswer    Type = "short_answer"
-	TypeEssay          Type = "essay"
-	TypeTrueFalse      Type = "true_false"
+	TypeMCQ   Type = "MCQ"
+	TypeEssay Type = "ESSAY"
+	TypeVoice Type = "VOICE"
 )
+
+type QuestionOption struct {
+	model.Base
+	QuestionID   uuid.UUID `json:"questionId" db:"question_id"`
+	OptionKey    string    `json:"optionKey" db:"option_key"`
+	OptionText   string    `json:"optionText" db:"option_text"`
+	DisplayOrder int       `json:"displayOrder" db:"display_order"`
+	IsCorrect    bool      `json:"isCorrect" db:"is_correct"`
+}
 
 type Question struct {
 	model.Base
-	ExamID        uuid.UUID `json:"examId" db:"exam_id"`
-	SequenceOrder int       `json:"sequenceOrder" db:"sequence_order"`
-	Type          Type      `json:"type" db:"type"`
-	Prompt        string    `json:"prompt" db:"prompt"`
-	AudioPrompt   string    `json:"audioPrompt,omitempty" db:"audio_prompt"`
-	Points        int       `json:"points" db:"points"`
+	ExamID         uuid.UUID        `json:"examId" db:"exam_id"`
+	QuestionNumber int              `json:"questionNumber" db:"question_number"`
+	Text           string           `json:"text" db:"text"`
+	Type           Type             `json:"type" db:"type"`
+	Points         int              `json:"points" db:"points"`
+	Options        []QuestionOption `json:"options,omitempty"`
 }
