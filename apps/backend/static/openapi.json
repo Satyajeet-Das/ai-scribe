@@ -1,118 +1,744 @@
 {
   "openapi": "3.0.2",
+  "info": {
+    "title": "AI Exam Scribe API",
+    "version": "1.0.0",
+    "description": "Enterprise-grade accessible examination platform for visually impaired students — Core Exam Engine (Sprint 1)"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local Development Server"
+    }
+  ],
+  "tags": [
+    { "name": "Health", "description": "System health and telemetry" },
+    { "name": "Exams", "description": "Exam authoring and lifecycle management" },
+    { "name": "Questions", "description": "Questions and MCQ options management" },
+    { "name": "Assignments", "description": "Student exam assignment and access revocation" },
+    { "name": "Sessions", "description": "Student exam attempt session lifecycle" },
+    { "name": "Answers", "description": "Idempotent student answer persistence and verification" }
+  ],
   "paths": {
     "/status": {
       "get": {
-        "description": "Get health status",
-        "summary": "Get health",
-        "tags": [
-          "Health"
-        ],
-        "parameters": [],
-        "operationId": "getHealth",
+        "tags": ["Health"],
+        "summary": "Health check",
+        "description": "Checks the operational status of database, redis, and application services.",
         "responses": {
           "200": {
-            "description": "200",
+            "description": "System is healthy",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "healthy",
-                        "unhealthy"
-                      ]
-                    },
-                    "timestamp": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "environment": {
-                      "type": "string"
-                    },
-                    "checks": {
-                      "type": "object",
-                      "properties": {
-                        "database": {
-                          "type": "object",
-                          "properties": {
-                            "status": {
-                              "type": "string"
-                            },
-                            "response_time": {
-                              "type": "string"
-                            },
-                            "error": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "status",
-                            "response_time"
-                          ]
-                        },
-                        "redis": {
-                          "type": "object",
-                          "properties": {
-                            "status": {
-                              "type": "string"
-                            },
-                            "response_time": {
-                              "type": "string"
-                            },
-                            "error": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "status",
-                            "response_time"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "database"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "status",
-                    "timestamp",
-                    "environment",
-                    "checks"
-                  ]
+                  "$ref": "#/components/schemas/HealthResponse"
                 }
               }
             }
           }
         }
       }
+    },
+    "/api/v1/exams": {
+      "post": {
+        "tags": ["Exams"],
+        "summary": "Create an exam",
+        "description": "Creates an exam in DRAFT status. Only teachers and admins may create exams.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateExamRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Exam created successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExamResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/exams/{id}": {
+      "get": {
+        "tags": ["Exams"],
+        "summary": "Get exam details",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exam details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExamResponse" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "put": {
+        "tags": ["Exams"],
+        "summary": "Update an exam",
+        "description": "Updates title, description, or duration. Only draft exams can be modified by their creator.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateExamRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exam updated successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExamResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["Exams"],
+        "summary": "Archive an exam",
+        "description": "Transitions an exam to ARCHIVED status.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exam archived successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExamResponse" }
+              }
+            }
+          },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/exams/{id}/publish": {
+      "post": {
+        "tags": ["Exams"],
+        "summary": "Publish an exam",
+        "description": "Transitions an exam from DRAFT to PUBLISHED status, freezing all questions.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exam published successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExamResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/exams/{id}/questions": {
+      "post": {
+        "tags": ["Questions"],
+        "summary": "Add a question to an exam",
+        "description": "Only allowed for draft exams by the creator.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateQuestionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Question created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TeacherQuestionResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "get": {
+        "tags": ["Questions"],
+        "summary": "List questions for an exam",
+        "description": "Returns questions. Students receive masked options (is_correct omitted), while teachers see complete option details.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of questions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/StudentQuestionResponse" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/questions/{id}": {
+      "get": {
+        "tags": ["Questions"],
+        "summary": "Get question by ID",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Question details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StudentQuestionResponse" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "put": {
+        "tags": ["Questions"],
+        "summary": "Update a question",
+        "description": "Updates question text, points, or number. Only allowed when the exam is in DRAFT status.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateQuestionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Question updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TeacherQuestionResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "tags": ["Questions"],
+        "summary": "Delete a question",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Question deleted successfully" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/questions/{id}/options": {
+      "post": {
+        "tags": ["Questions"],
+        "summary": "Add an option to an MCQ question",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateOptionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Option added",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TeacherQuestionOptionResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/v1/assignments": {
+      "post": {
+        "tags": ["Assignments"],
+        "summary": "Assign an exam to a student",
+        "description": "Exam must be in PUBLISHED status. Cannot create duplicate active assignment.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAssignmentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Assignment created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AssignmentResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      },
+      "get": {
+        "tags": ["Assignments"],
+        "summary": "List assignments",
+        "description": "Students see their assigned exams; teachers/admins can filter by student or exam.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "student_id", "in": "query", "required": false, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "exam_id", "in": "query", "required": false, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of assignments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/AssignmentResponse" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assignments/{id}/revoke": {
+      "post": {
+        "tags": ["Assignments"],
+        "summary": "Revoke an assignment",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assignment revoked",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AssignmentResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/v1/sessions": {
+      "post": {
+        "tags": ["Sessions"],
+        "summary": "Start an exam attempt session",
+        "description": "Starts an exam session for an assigned student. Only 1 active session allowed per assignment.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StartSessionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Session started",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SessionResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/v1/sessions/{id}": {
+      "get": {
+        "tags": ["Sessions"],
+        "summary": "Get session details and remaining time",
+        "description": "Automatically transitions session to EXPIRED if remaining duration has elapsed.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SessionResponse" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/sessions/{id}/submit": {
+      "post": {
+        "tags": ["Sessions"],
+        "summary": "Submit exam session",
+        "description": "Finalizes the exam attempt. Marks session as SUBMITTED.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session submitted successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubmitSessionResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/questions/{question_id}/answer": {
+      "put": {
+        "tags": ["Answers"],
+        "summary": "Save or update an answer (idempotent)",
+        "description": "Submits a student's answer (MCQ selection or text answer). Safe for multiple retries.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "session_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "question_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SubmitAnswerRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Answer saved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AnswerResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/answers": {
+      "get": {
+        "tags": ["Answers"],
+        "summary": "List all answers for a session",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "session_id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of answers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/AnswerResponse" }
+                }
+              }
+            }
+          },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
     }
   },
-  "info": {
-    "version": "1.0.0",
-    "title": "Boilerplate REST API - Documentation",
-    "description": "Boilerplate REST API - Documentation"
-  },
-  "servers": [
-    {
-      "url": "http://localhost:8080",
-      "description": "Local Server"
-    }
-  ],
   "components": {
     "securitySchemes": {
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad Request",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
       },
-      "x-service-token": {
-        "type": "apiKey",
-        "name": "x-service-token",
-        "in": "header"
+      "Unauthorized": {
+        "description": "Unauthorized",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Forbidden",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not Found",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["healthy", "unhealthy"] },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "environment": { "type": "string" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      },
+      "CreateExamRequest": {
+        "type": "object",
+        "required": ["title", "durationMins"],
+        "properties": {
+          "title": { "type": "string", "minLength": 3, "maxLength": 255 },
+          "description": { "type": "string" },
+          "durationMins": { "type": "integer", "minimum": 1, "maximum": 600 }
+        }
+      },
+      "UpdateExamRequest": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "minLength": 3, "maxLength": 255 },
+          "description": { "type": "string" },
+          "durationMins": { "type": "integer", "minimum": 1, "maximum": 600 }
+        }
+      },
+      "ExamResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "durationMins": { "type": "integer" },
+          "status": { "type": "string", "enum": ["DRAFT", "PUBLISHED", "ARCHIVED"] },
+          "createdBy": { "type": "string", "format": "uuid" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateQuestionRequest": {
+        "type": "object",
+        "required": ["questionNumber", "text", "type", "points"],
+        "properties": {
+          "questionNumber": { "type": "integer", "minimum": 1 },
+          "text": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "enum": ["MCQ", "ESSAY", "VOICE"] },
+          "points": { "type": "number", "minimum": 0 }
+        }
+      },
+      "UpdateQuestionRequest": {
+        "type": "object",
+        "properties": {
+          "questionNumber": { "type": "integer", "minimum": 1 },
+          "text": { "type": "string", "minLength": 1 },
+          "points": { "type": "number", "minimum": 0 }
+        }
+      },
+      "CreateOptionRequest": {
+        "type": "object",
+        "required": ["optionKey", "optionText", "displayOrder", "isCorrect"],
+        "properties": {
+          "optionKey": { "type": "string", "maxLength": 10 },
+          "optionText": { "type": "string", "minLength": 1 },
+          "displayOrder": { "type": "integer" },
+          "isCorrect": { "type": "boolean" }
+        }
+      },
+      "StudentQuestionOptionResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "optionKey": { "type": "string" },
+          "optionText": { "type": "string" },
+          "displayOrder": { "type": "integer" }
+        }
+      },
+      "TeacherQuestionOptionResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "optionKey": { "type": "string" },
+          "optionText": { "type": "string" },
+          "displayOrder": { "type": "integer" },
+          "isCorrect": { "type": "boolean" }
+        }
+      },
+      "StudentQuestionResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "examId": { "type": "string", "format": "uuid" },
+          "questionNumber": { "type": "integer" },
+          "text": { "type": "string" },
+          "type": { "type": "string", "enum": ["MCQ", "ESSAY", "VOICE"] },
+          "points": { "type": "number" },
+          "options": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StudentQuestionOptionResponse" }
+          }
+        }
+      },
+      "TeacherQuestionResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "examId": { "type": "string", "format": "uuid" },
+          "questionNumber": { "type": "integer" },
+          "text": { "type": "string" },
+          "type": { "type": "string", "enum": ["MCQ", "ESSAY", "VOICE"] },
+          "points": { "type": "number" },
+          "options": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TeacherQuestionOptionResponse" }
+          }
+        }
+      },
+      "CreateAssignmentRequest": {
+        "type": "object",
+        "required": ["examId", "studentId"],
+        "properties": {
+          "examId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "AssignmentResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "examId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid" },
+          "status": { "type": "string", "enum": ["ASSIGNED", "REVOKED"] },
+          "assignedAt": { "type": "string", "format": "date-time" },
+          "revokedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "StartSessionRequest": {
+        "type": "object",
+        "required": ["assignmentId"],
+        "properties": {
+          "assignmentId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "SessionResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "assignmentId": { "type": "string", "format": "uuid" },
+          "examId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid" },
+          "status": { "type": "string", "enum": ["IN_PROGRESS", "SUBMITTED", "EXPIRED"] },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "submittedAt": { "type": "string", "format": "date-time" },
+          "remainingSeconds": { "type": "integer" }
+        }
+      },
+      "SubmitSessionResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string" },
+          "submittedAt": { "type": "string", "format": "date-time" },
+          "message": { "type": "string" }
+        }
+      },
+      "SubmitAnswerRequest": {
+        "type": "object",
+        "properties": {
+          "selectedOptionId": { "type": "string", "format": "uuid" },
+          "textAnswer": { "type": "string" }
+        }
+      },
+      "AnswerResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "sessionId": { "type": "string", "format": "uuid" },
+          "questionId": { "type": "string", "format": "uuid" },
+          "selectedOptionId": { "type": "string", "format": "uuid" },
+          "textAnswer": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
       }
     }
   }
