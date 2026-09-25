@@ -3,10 +3,12 @@ package auth
 type Role string
 
 const (
-	RoleCandidate Role = "candidate"
-	RoleEducator  Role = "educator"
-	RoleProctor   Role = "proctor"
-	RoleAdmin     Role = "admin"
+	RoleTeacher   Role = "TEACHER"
+	RoleStudent   Role = "STUDENT"
+	RoleEducator  Role = "TEACHER"
+	RoleCandidate Role = "STUDENT"
+	RoleProctor   Role = "PROCTOR"
+	RoleAdmin     Role = "ADMIN"
 )
 
 type UserClaims struct {

@@ -11,21 +11,18 @@ import (
 type Status string
 
 const (
-	StatusDraft     Status = "draft"
-	StatusScheduled Status = "scheduled"
-	StatusActive    Status = "active"
-	StatusCompleted Status = "completed"
-	StatusArchived  Status = "archived"
+	StatusDraft     Status = "DRAFT"
+	StatusPublished Status = "PUBLISHED"
+	StatusArchived  Status = "ARCHIVED"
 )
 
 type Exam struct {
 	model.Base
-	Title           string     `json:"title" db:"title"`
-	Description     string     `json:"description" db:"description"`
-	Subject         string     `json:"subject" db:"subject"`
-	DurationMinutes int        `json:"durationMinutes" db:"duration_minutes"`
-	Status          Status     `json:"status" db:"status"`
-	ScheduledStart  *time.Time `json:"scheduledStart,omitempty" db:"scheduled_start"`
-	ScheduledEnd    *time.Time `json:"scheduledEnd,omitempty" db:"scheduled_end"`
-	CreatedBy       uuid.UUID  `json:"createdBy" db:"created_by"`
+	Title        string     `json:"title" db:"title"`
+	Subject      string     `json:"subject" db:"subject"`
+	Description  string     `json:"description" db:"description"`
+	DurationMins int        `json:"durationMins" db:"duration_mins"`
+	Status       Status     `json:"status" db:"status"`
+	CreatedBy    uuid.UUID  `json:"createdBy" db:"created_by"`
+	PublishedAt  *time.Time `json:"publishedAt,omitempty" db:"published_at"`
 }

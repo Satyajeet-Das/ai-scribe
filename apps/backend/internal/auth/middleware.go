@@ -72,3 +72,28 @@ func (m *Middleware) RequireAuth(next echo.HandlerFunc) echo.HandlerFunc {
 		return next(c)
 	})
 }
+
+func (m *Middleware) RequireRole(allowedRoles ...Role) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			roleVal := c.Get("user_role")
+			roleStr, _ := roleVal.(string)
+
+			for _, allowed := range allowedRoles {
+				if roleStr != "" && (roleStr == string(allowed) || roleStr == "admin" || roleStr == "ADMIN") {
+					return next(c)
+				}
+			}
+
+			userID, _ := c.Get("user_id").(string)
+			m.logger.Warn().
+				Str("function", "RequireRole").
+				Str("user_id", userID).
+				Str("current_role", roleStr).
+				Msg("user forbidden: insufficient role permissions")
+
+			return httperrs.NewForbiddenError("Forbidden: insufficient role permissions", false)
+		}
+	}
+}
+
