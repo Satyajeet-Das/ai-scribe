@@ -9,6 +9,7 @@ import (
 
 type Service interface {
 	GetUser(ctx context.Context, id uuid.UUID) (*User, error)
+	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByClerkID(ctx context.Context, clerkID string) (*User, error)
 	CreateUser(ctx context.Context, u *User) error
 }
@@ -27,6 +28,10 @@ func NewService(repo Repository, logger *zerolog.Logger) Service {
 
 func (s *userService) GetUser(ctx context.Context, id uuid.UUID) (*User, error) {
 	return s.repo.GetByID(ctx, id)
+}
+
+func (s *userService) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	return s.repo.GetByEmail(ctx, email)
 }
 
 func (s *userService) GetUserByClerkID(ctx context.Context, clerkID string) (*User, error) {
