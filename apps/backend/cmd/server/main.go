@@ -88,7 +88,7 @@ func main() {
 	sessionHandler := session.NewHandler(sessionService)
 
 	answerRepo := answer.NewRepository(db.Pool)
-	answerService := answer.NewService(answerRepo, &log)
+	answerService := answer.NewService(answerRepo, sessionService, questionService, &log)
 	answerHandler := answer.NewHandler(answerService)
 
 	// -------------------------------------------------------------------------
