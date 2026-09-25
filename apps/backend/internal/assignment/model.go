@@ -1,6 +1,8 @@
 package assignment
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 
 	"github.com/Satyajeet-Das/ai-scribe/internal/model"
@@ -9,15 +11,14 @@ import (
 type Status string
 
 const (
-	StatusAssigned  Status = "assigned"
-	StatusStarted   Status = "started"
-	StatusSubmitted Status = "submitted"
-	StatusGraded    Status = "graded"
+	StatusAssigned Status = "ASSIGNED"
+	StatusRevoked  Status = "REVOKED"
 )
 
 type Assignment struct {
 	model.Base
-	ExamID      uuid.UUID `json:"examId" db:"exam_id"`
-	CandidateID uuid.UUID `json:"candidateId" db:"candidate_id"`
-	Status      Status    `json:"status" db:"status"`
+	ExamID     uuid.UUID `json:"examId" db:"exam_id"`
+	StudentID  uuid.UUID `json:"studentId" db:"student_id"`
+	AssignedAt time.Time `json:"assignedAt" db:"assigned_at"`
+	Status     Status    `json:"status" db:"status"`
 }

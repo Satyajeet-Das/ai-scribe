@@ -80,7 +80,7 @@ func main() {
 	questionHandler := question.NewHandler(questionService)
 
 	assignmentRepo := assignment.NewRepository(db.Pool)
-	assignmentService := assignment.NewService(assignmentRepo, &log)
+	assignmentService := assignment.NewService(assignmentRepo, examService, &log)
 	assignmentHandler := assignment.NewHandler(assignmentService)
 
 	sessionRepo := session.NewRepository(db.Pool)

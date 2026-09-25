@@ -10,8 +10,8 @@ import (
 var validate = validator.New()
 
 type CreateAssignmentRequest struct {
-	ExamID      uuid.UUID `json:"examId" validate:"required"`
-	CandidateID uuid.UUID `json:"candidateId" validate:"required"`
+	ExamID    uuid.UUID `json:"examId" validate:"required"`
+	StudentID uuid.UUID `json:"studentId" validate:"required"`
 }
 
 func (r *CreateAssignmentRequest) Validate() error {
@@ -19,19 +19,31 @@ func (r *CreateAssignmentRequest) Validate() error {
 }
 
 type AssignmentResponse struct {
-	ID          uuid.UUID `json:"id"`
-	ExamID      uuid.UUID `json:"examId"`
-	CandidateID uuid.UUID `json:"candidateId"`
-	Status      Status    `json:"status"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID         uuid.UUID `json:"id"`
+	ExamID     uuid.UUID `json:"examId"`
+	StudentID  uuid.UUID `json:"studentId"`
+	AssignedAt time.Time `json:"assignedAt"`
+	Status     Status    `json:"status"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 func ToAssignmentResponse(a *Assignment) AssignmentResponse {
 	return AssignmentResponse{
-		ID:          a.ID,
-		ExamID:      a.ExamID,
-		CandidateID: a.CandidateID,
-		Status:      a.Status,
-		CreatedAt:   a.CreatedAt,
+		ID:         a.ID,
+		ExamID:     a.ExamID,
+		StudentID:  a.StudentID,
+		AssignedAt: a.AssignedAt,
+		Status:     a.Status,
+		CreatedAt:  a.CreatedAt,
+		UpdatedAt:  a.UpdatedAt,
 	}
+}
+
+func ToAssignmentResponseList(assignments []Assignment) []AssignmentResponse {
+	res := make([]AssignmentResponse, len(assignments))
+	for i := range assignments {
+		res[i] = ToAssignmentResponse(&assignments[i])
+	}
+	return res
 }
