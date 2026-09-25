@@ -1,9 +1,10 @@
-.PHONY: help build-backend run-backend test-backend lint-backend fmt-backend dev-frontend build-frontend docker-up docker-down
+.PHONY: help build-backend run-backend migrate-backend test-backend lint-backend fmt-backend dev-frontend build-frontend docker-up docker-down
 
 help: ## Display available commands
 	@echo Available commands:
 	@echo   build-backend   - Build Go server binary
 	@echo   run-backend     - Run Go server locally
+	@echo   migrate-backend - Run database migrations
 	@echo   test-backend    - Run Go unit tests
 	@echo   lint-backend    - Run static analysis checks on backend
 	@echo   fmt-backend     - Format Go source files
@@ -18,6 +19,10 @@ build-backend: ## Build Go server binary
 
 run-backend: ## Run Go server locally
 	cd apps/backend && go run ./cmd/server
+
+migrate-backend: ## Run database migrations
+	cd apps/backend && go run ./cmd/migrate
+
 
 test-backend: ## Run Go unit tests
 	cd apps/backend && go test -race -v ./...

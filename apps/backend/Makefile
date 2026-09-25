@@ -1,4 +1,4 @@
-.PHONY: help build run test test-integration lint fmt tidy docker-up docker-down
+.PHONY: help build run migrate test test-integration lint fmt tidy docker-up docker-down
 
 help: ## Display available commands
 	@echo "Available commands:"
@@ -9,6 +9,10 @@ build: ## Build server binary
 
 run: ## Run server locally
 	go run ./cmd/server
+
+migrate: ## Run database migrations
+	go run ./cmd/migrate
+
 
 test: ## Run unit tests
 	go test -race -v ./...

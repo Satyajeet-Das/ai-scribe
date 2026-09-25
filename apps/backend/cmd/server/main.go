@@ -46,11 +46,10 @@ func main() {
 	}
 	defer db.Close()
 
-	if cfg.Primary.Env != "local" {
-		if err := database.Migrate(context.Background(), &log, cfg); err != nil {
-			log.Fatal().Err(err).Msg("failed to apply database migrations")
-		}
+	if err := database.Migrate(context.Background(), &log, cfg); err != nil {
+		log.Fatal().Err(err).Msg("failed to apply database migrations")
 	}
+
 
 	redisClient := redis.New(cfg, &log, loggerService)
 	defer redisClient.Close()
