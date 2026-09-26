@@ -3,6 +3,7 @@ package middleware
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -18,15 +19,54 @@ type GlobalMiddlewares struct {
 }
 
 func NewGlobalMiddlewares(logger *zerolog.Logger, corsAllowedOrigins []string) *GlobalMiddlewares {
+	var parsedOrigins []string
+	for _, o := range corsAllowedOrigins {
+		for _, part := range strings.Split(o, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				parsedOrigins = append(parsedOrigins, trimmed)
+			}
+		}
+	}
+	if len(parsedOrigins) == 0 {
+		parsedOrigins = []string{"http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"}
+	}
+
 	return &GlobalMiddlewares{
 		logger:             logger,
-		corsAllowedOrigins: corsAllowedOrigins,
+		corsAllowedOrigins: parsedOrigins,
 	}
 }
 
 func (global *GlobalMiddlewares) CORS() echo.MiddlewareFunc {
+	allowCredentials := true
+	for _, o := range global.corsAllowedOrigins {
+		if o == "*" {
+			allowCredentials = false
+			break
+		}
+	}
+
 	return middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: global.corsAllowedOrigins,
+		AllowMethods: []string{
+			http.MethodGet,
+			http.MethodHead,
+			http.MethodPut,
+			http.MethodPatch,
+			http.MethodPost,
+			http.MethodDelete,
+			http.MethodOptions,
+		},
+		AllowHeaders: []string{
+			echo.HeaderOrigin,
+			echo.HeaderContentType,
+			echo.HeaderAccept,
+			echo.HeaderAuthorization,
+			"X-Request-ID",
+			"X-Requested-With",
+		},
+		AllowCredentials: allowCredentials,
 	})
 }
 
