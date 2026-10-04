@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, Home, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -61,19 +60,23 @@ const fallbackQuestions: Question[] = [
 export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const sessionId = resolvedParams.id;
-  const router = useRouter();
 
   const [questions, setQuestions] = useState<Question[]>(fallbackQuestions);
   const [initialSeconds, setInitialSeconds] = useState(45 * 60);
+  const [initialAnswers, setInitialAnswers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [submittedAt, setSubmittedAt] = useState<string | null>(null);
 
   useEffect(() => {
+    let ignore = false;
+
     async function loadSession() {
       setLoading(true);
       try {
         const session = await sessionsApi.getSession(sessionId);
+        if (ignore) return;
+
         if (session.remainingSeconds && session.remainingSeconds > 0) {
           setInitialSeconds(Number(session.remainingSeconds));
         } else if (session.durationMins) {
@@ -83,33 +86,69 @@ export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id
         if (session.status === "SUBMITTED") {
           setSubmitted(true);
           setSubmittedAt(session.submittedAt ? session.submittedAt.slice(11, 19) : "Completed");
+          setLoading(false);
           return;
         }
 
         if (session.examId) {
           const qList = await questionsApi.getQuestions(session.examId);
-          if (qList && qList.length > 0) {
+          if (!ignore && qList && qList.length > 0) {
             setQuestions(qList);
           }
         }
+
+        // Restore previously submitted answers if candidate is reconnecting
+        const existingAnswers = await sessionsApi.getAnswers(sessionId).catch(() => []);
+        if (!ignore && existingAnswers && existingAnswers.length > 0) {
+          const ansMap: Record<string, string> = {};
+          for (const a of existingAnswers) {
+            ansMap[a.questionId] = a.selectedOptionId || a.textAnswer || "";
+          }
+          setInitialAnswers(ansMap);
+        }
       } catch (err) {
-        console.warn("Session API offline, using interactive accessible offline mock:", err);
+        if (!ignore) {
+          console.warn("Session API offline, using interactive accessible offline mock:", err);
+        }
       } finally {
-        setLoading(false);
+        if (!ignore) {
+          setLoading(false);
+        }
       }
     }
 
     loadSession();
+
+    return () => {
+      ignore = true;
+    };
   }, [sessionId]);
+
+  const handleNext = () => {
+    sessionsApi.nextQuestion(sessionId).catch(() => {});
+  };
+
+  const handlePrevious = () => {
+    sessionsApi.previousQuestion(sessionId).catch(() => {});
+  };
+
+  const handleAnswerChange = (questionId: string, answer: string) => {
+    const isUUID = /^[0-9a-fA-F-]{36}$/.test(answer);
+    sessionsApi
+      .submitAnswer(sessionId, questionId, {
+        selectedOptionId: isUUID ? answer : undefined,
+        textAnswer: isUUID ? "" : answer,
+      })
+      .catch(() => {});
+  };
 
   const handleSubmitExam = async (answers: Record<string, string>) => {
     try {
-      // Submit each answer to backend
+      // Final submission flush of each answer to backend
       for (const [qId, val] of Object.entries(answers)) {
         const isUUID = /^[0-9a-fA-F-]{36}$/.test(val);
         await sessionsApi
-          .submitAnswer(sessionId, {
-            questionId: qId,
+          .submitAnswer(sessionId, qId, {
             selectedOptionId: isUUID ? val : undefined,
             textAnswer: isUUID ? "" : val,
           })
@@ -130,7 +169,7 @@ export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id
 
   if (loading) {
     return (
-      <ProtectedRoute allowedRoles={["STUDENT", "ADMIN"]}>
+      <ProtectedRoute allowedRoles={["STUDENT", "ADMIN", "PROCTOR"]}>
         <div className="flex min-h-screen items-center justify-center">
           <Loader2 className="size-8 animate-spin text-primary" />
         </div>
@@ -140,7 +179,7 @@ export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id
 
   if (submitted) {
     return (
-      <ProtectedRoute allowedRoles={["STUDENT", "ADMIN"]}>
+      <ProtectedRoute allowedRoles={["STUDENT", "ADMIN", "PROCTOR"]}>
         <div className="flex min-h-screen items-center justify-center p-4 bg-background">
           <Card className="w-full max-w-md text-center p-6 shadow-lg border border-border">
             <CardHeader className="flex flex-col items-center">
@@ -168,11 +207,15 @@ export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id
   }
 
   return (
-    <ProtectedRoute allowedRoles={["STUDENT", "ADMIN"]}>
+    <ProtectedRoute allowedRoles={["STUDENT", "ADMIN", "PROCTOR"]}>
       <StudentExamRoom
         questions={questions}
         initialSeconds={initialSeconds}
+        initialAnswers={initialAnswers}
         onSubmit={handleSubmitExam}
+        onAnswerChange={handleAnswerChange}
+        onNext={handleNext}
+        onPrevious={handlePrevious}
       />
     </ProtectedRoute>
   );

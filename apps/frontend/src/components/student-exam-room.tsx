@@ -8,10 +8,8 @@ import {
   Clock3,
   Eye,
   Highlighter,
-  Menu,
   Save,
   Send,
-  X,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -67,19 +65,28 @@ const sampleQuestions: Question[] = [
 export function StudentExamRoom({
   questions = sampleQuestions,
   initialSeconds = 42 * 60,
+  initialAnswers = {},
   onSubmit,
+  onAnswerChange,
+  onNext,
+  onPrevious,
 }: {
   questions?: Question[];
   initialSeconds?: number;
+  initialAnswers?: Record<string, string>;
   onSubmit?: (answers: Record<string, string>) => void;
+  onAnswerChange?: (questionId: string, answer: string) => void;
+  onNext?: (newIndex: number) => void;
+  onPrevious?: (newIndex: number) => void;
 }) {
   const [index, setIndex] = useState(0);
   const [seconds, setSeconds] = useState(initialSeconds);
   const [largeText, setLargeText] = useState(false);
   const [contrast, setContrast] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>(initialAnswers);
   const [saving, setSaving] = useState(false);
   const question = questions[index];
+
   useEffect(() => {
     const timer = window.setInterval(() => setSeconds((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(timer);
@@ -98,6 +105,7 @@ export function StudentExamRoom({
   const setAnswer = (value: string) => {
     setSaving(true);
     setAnswers((current) => ({ ...current, [question.id]: value }));
+    onAnswerChange?.(question.id, value);
   };
   return (
     <div
@@ -248,14 +256,22 @@ export function StudentExamRoom({
             <div className="flex items-center justify-between border-t pt-5">
               <Button
                 variant="outline"
-                onClick={() => setIndex(Math.max(0, index - 1))}
+                onClick={() => {
+                  const newIdx = Math.max(0, index - 1);
+                  setIndex(newIdx);
+                  onPrevious?.(newIdx);
+                }}
                 disabled={index === 0}
               >
                 <ChevronLeft data-icon="inline-start" />
                 Previous
               </Button>
               <Button
-                onClick={() => setIndex(Math.min(questions.length - 1, index + 1))}
+                onClick={() => {
+                  const newIdx = Math.min(questions.length - 1, index + 1);
+                  setIndex(newIdx);
+                  onNext?.(newIdx);
+                }}
                 disabled={index === questions.length - 1}
               >
                 Next

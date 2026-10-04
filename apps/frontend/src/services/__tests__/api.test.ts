@@ -6,6 +6,7 @@ import {
   clearStoredToken,
   registerAuthFailureHandler,
   ApiError,
+  sessionsApi,
 } from "../api";
 
 describe("API Client & Token Management", () => {
@@ -252,5 +253,84 @@ describe("API Client & Token Management", () => {
     await expect(apiFetch("/slow-resource", { timeoutMs: 50 })).rejects.toThrow(
       "Request was cancelled or timed out"
     );
+  });
+
+  describe("Sessions API (Sprint 2 Runtime)", () => {
+    it("calls POST /sessions when starting session", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ id: "sess-1", status: "IN_PROGRESS" }),
+      });
+      globalThis.fetch = mockFetch;
+
+      const res = await sessionsApi.startSession({ assignmentId: "assign-123" });
+      expect(res.id).toBe("sess-1");
+
+      const [url, init] = mockFetch.mock.calls[0];
+      expect(url).toContain("/sessions");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(init.body as string)).toEqual({ assignmentId: "assign-123" });
+    });
+
+    it("calls POST /sessions/:id/next and /previous for question navigation", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ id: "sess-1" }),
+      });
+      globalThis.fetch = mockFetch;
+
+      await sessionsApi.nextQuestion("sess-1");
+      expect(mockFetch.mock.calls[0][0]).toContain("/sessions/sess-1/next");
+      expect(mockFetch.mock.calls[0][1].method).toBe("POST");
+
+      await sessionsApi.previousQuestion("sess-1");
+      expect(mockFetch.mock.calls[1][0]).toContain("/sessions/sess-1/previous");
+      expect(mockFetch.mock.calls[1][1].method).toBe("POST");
+    });
+
+    it("calls PUT /sessions/:session_id/questions/:question_id/answer for submitting answers", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ id: "ans-1", textAnswer: "Photosynthesis" }),
+      });
+      globalThis.fetch = mockFetch;
+
+      const res = await sessionsApi.submitAnswer("sess-1", "q-42", {
+        selectedOptionId: "opt-b",
+        textAnswer: "Photosynthesis",
+      });
+      expect(res.id).toBe("ans-1");
+
+      const [url, init] = mockFetch.mock.calls[0];
+      expect(url).toContain("/sessions/sess-1/questions/q-42/answer");
+      expect(init.method).toBe("PUT");
+      expect(JSON.parse(init.body as string)).toEqual({
+        selectedOptionId: "opt-b",
+        textAnswer: "Photosynthesis",
+      });
+    });
+
+    it("calls GET /sessions/:id/answers and handles direct array or wrapped envelope", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => [
+          { id: "ans-1", questionId: "q-1", textAnswer: "A" },
+          { id: "ans-2", questionId: "q-2", textAnswer: "B" },
+        ],
+      });
+      globalThis.fetch = mockFetch;
+
+      const answers = await sessionsApi.getAnswers("sess-1");
+      expect(answers).toHaveLength(2);
+      expect(mockFetch.mock.calls[0][0]).toContain("/sessions/sess-1/answers");
+    });
   });
 });

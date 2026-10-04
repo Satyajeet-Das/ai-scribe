@@ -52,8 +52,8 @@ export interface Session {
   status: "IN_PROGRESS" | "SUBMITTED" | "EXPIRED";
   startedAt: string;
   submittedAt?: string;
-  durationMins: number;
-  remainingSeconds: number;
+  durationMins?: number;
+  remainingSeconds?: number;
 }
 
 export interface Answer {

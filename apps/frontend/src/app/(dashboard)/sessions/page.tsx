@@ -3,24 +3,22 @@
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowRight,
   BookOpen,
   Clock,
   Loader2,
   Play,
   ShieldAlert,
   Search,
-  CheckCircle2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ProtectedRoute } from "@/components/auth/protected-route";
-import { sessionsApi, assignmentsApi, ApiError } from "@/services/api";
+import { sessionsApi, assignmentsApi, examsApi } from "@/services/api";
+import { useAuthStore } from "@/store/auth-store";
 import { DESIGN_TOKENS } from "@/lib/constants";
 import { useDebounce } from "@/hooks/use-debounce";
-import type { Assignment, Session } from "@/types/exam-types";
 
 interface AssignedExamItem {
   assignmentId: string;
@@ -53,12 +51,67 @@ const mockAssignedExams: AssignedExamItem[] = [
 
 export default function StudentSessionsPage() {
   const router = useRouter();
+  const user = useAuthStore((s) => s.user);
   const [items, setItems] = useState<AssignedExamItem[]>(mockAssignedExams);
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebounce(query, 300);
-  const [loading, setLoading] = useState(false);
   const [startingId, setStartingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let ignore = false;
+
+    assignmentsApi
+      .getStudentAssignments(user.id)
+      .then(async (assignments) => {
+        if (ignore) return;
+        if (!assignments || assignments.length === 0) {
+          return;
+        }
+
+        const examDetails = await Promise.all(
+          assignments.map(async (a) => {
+            try {
+              const exam = await examsApi.getExam(a.examId);
+              return {
+                assignmentId: a.id,
+                examId: a.examId,
+                title: exam.title,
+                subject: exam.subject,
+                durationMins: exam.durationMins,
+                status: (a.status === "ACTIVE" ? "PENDING" : "SUBMITTED") as
+                  | "PENDING"
+                  | "IN_PROGRESS"
+                  | "SUBMITTED",
+              };
+            } catch {
+              return {
+                assignmentId: a.id,
+                examId: a.examId,
+                title: `Exam #${a.examId.slice(0, 8)}`,
+                subject: "Assessment",
+                durationMins: 45,
+                status: "PENDING" as const,
+              };
+            }
+          })
+        );
+
+        if (!ignore && examDetails.length > 0) {
+          setItems(examDetails);
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          console.warn("Failed to load real assignments, using mock fallback:", err);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [user?.id]);
 
   const filteredItems = useMemo(() => {
     if (!debouncedQuery) return items;
@@ -88,7 +141,7 @@ export default function StudentSessionsPage() {
   };
 
   return (
-    <ProtectedRoute allowedRoles={["STUDENT", "ADMIN"]}>
+    <ProtectedRoute allowedRoles={["STUDENT", "ADMIN", "PROCTOR"]}>
       <div className="min-h-screen bg-background pb-16">
         <div className={DESIGN_TOKENS.layout.container}>
           <div className={`${DESIGN_TOKENS.layout.pageSection} flex flex-col gap-6`}>

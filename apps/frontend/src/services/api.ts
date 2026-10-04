@@ -511,11 +511,12 @@ export const assignmentsApi = {
 };
 
 // -----------------------------------------------------------------------------
-// Sessions & Answers API
+// -----------------------------------------------------------------------------
+// Sessions & Answers API (Backend Sprint 2 Aligned)
 // -----------------------------------------------------------------------------
 export const sessionsApi = {
   async startSession(payload: { assignmentId: string }): Promise<Session> {
-    return apiFetch<Session>("/sessions/start", {
+    return apiFetch<Session>("/sessions", {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -523,6 +524,18 @@ export const sessionsApi = {
 
   async getSession(id: string): Promise<Session> {
     return apiFetch<Session>(`/sessions/${id}`);
+  },
+
+  async nextQuestion(sessionId: string): Promise<Session> {
+    return apiFetch<Session>(`/sessions/${sessionId}/next`, {
+      method: "POST",
+    });
+  },
+
+  async previousQuestion(sessionId: string): Promise<Session> {
+    return apiFetch<Session>(`/sessions/${sessionId}/previous`, {
+      method: "POST",
+    });
   },
 
   async submitSession(
@@ -536,20 +549,39 @@ export const sessionsApi = {
 
   async submitAnswer(
     sessionId: string,
-    payload: {
-      questionId: string;
-      selectedOptionId?: string;
-      textAnswer: string;
-    }
+    questionIdOrPayload:
+      | string
+      | { questionId: string; selectedOptionId?: string; textAnswer: string },
+    payloadArg?: { selectedOptionId?: string; textAnswer: string }
   ): Promise<Answer> {
-    return apiFetch<Answer>(`/sessions/${sessionId}/answers`, {
-      method: "POST",
+    let questionId: string;
+    let payload: { selectedOptionId?: string; textAnswer: string };
+
+    if (typeof questionIdOrPayload === "string") {
+      questionId = questionIdOrPayload;
+      payload = payloadArg || { textAnswer: "" };
+    } else {
+      questionId = questionIdOrPayload.questionId;
+      payload = {
+        selectedOptionId: questionIdOrPayload.selectedOptionId,
+        textAnswer: questionIdOrPayload.textAnswer,
+      };
+    }
+
+    return apiFetch<Answer>(`/sessions/${sessionId}/questions/${questionId}/answer`, {
+      method: "PUT",
       body: JSON.stringify(payload),
     });
   },
 
   async getAnswers(sessionId: string): Promise<Answer[]> {
-    const res = await apiFetch<{ answers: Answer[] }>(`/sessions/${sessionId}/answers`);
+    const res = await apiFetch<Answer[] | { answers: Answer[] }>(`/sessions/${sessionId}/answers`);
+    if (Array.isArray(res)) return res;
     return res.answers || [];
   },
+};
+
+export const answersApi = {
+  submitAnswer: sessionsApi.submitAnswer,
+  getAnswers: sessionsApi.getAnswers,
 };

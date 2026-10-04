@@ -27,6 +27,10 @@ export const API_ROUTES = {
   sessions: "/api/v1/sessions",
   sessionDetail: (sessionId: string) => `/api/v1/sessions/${sessionId}`,
   submitSession: (sessionId: string) => `/api/v1/sessions/${sessionId}/submit`,
+  nextQuestion: (sessionId: string) => `/api/v1/sessions/${sessionId}/next`,
+  previousQuestion: (sessionId: string) => `/api/v1/sessions/${sessionId}/previous`,
+  submitAnswer: (sessionId: string, questionId: string) =>
+    `/api/v1/sessions/${sessionId}/questions/${questionId}/answer`,
   answers: (sessionId: string) => `/api/v1/sessions/${sessionId}/answers`,
 } as const;
 
