@@ -9,75 +9,97 @@ import type {
   QuestionType,
 } from "@/types/exam-types";
 
+import type {
+  User,
+  UserResponse,
+  LoginCredentials,
+  RegisterPayload,
+  LoginResponse,
+  RegisterResponse,
+  RefreshResponse,
+  LogoutResponse,
+  ApiFieldError,
+  ApiAction,
+  ApiErrorResponse,
+} from "@/types/auth";
+
+export type {
+  User,
+  UserResponse,
+  LoginCredentials,
+  RegisterPayload,
+  LoginResponse,
+  RegisterResponse,
+  RefreshResponse,
+  LogoutResponse,
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+const DEFAULT_TIMEOUT_MS = 15000;
 
-export interface UserResponse {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  role: "TEACHER" | "STUDENT" | "PROCTOR" | "ADMIN";
-}
-
-// Alias for store consumption
-export type User = UserResponse;
-
-export interface LoginCredentials {
-  email: string;
-  password: string;
-}
-
-export interface RegisterPayload {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-}
-
-export interface LoginResponse {
-  accessToken: string;
-  expiresIn: number;
-  user: UserResponse;
-}
-
-export interface RegisterResponse {
-  user: UserResponse;
-}
-
-export interface RefreshResponse {
-  accessToken: string;
-  expiresIn: number;
-}
-
-export interface ExamListResponse {
-  exams: Exam[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
+// -----------------------------------------------------------------------------
+// Normalized API Error
+// -----------------------------------------------------------------------------
 export class ApiError extends Error {
   status: number;
   code?: string;
   override?: boolean;
+  errors?: ApiFieldError[];
+  action?: ApiAction;
 
-  constructor(message: string, status: number, code?: string, override?: boolean) {
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    override?: boolean,
+    errors?: ApiFieldError[],
+    action?: ApiAction
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.override = override;
+    this.errors = errors;
+    this.action = action;
+  }
+
+  isUnauthorized(): boolean {
+    return this.status === 401;
+  }
+
+  isForbidden(): boolean {
+    return this.status === 403;
+  }
+
+  isNotFound(): boolean {
+    return this.status === 404;
+  }
+
+  isConflict(): boolean {
+    return this.status === 409;
+  }
+
+  isValidation(): boolean {
+    return this.status === 400 && (this.errors?.length ?? 0) > 0;
   }
 }
 
-// Token storage in memory with localStorage backup for browser reload
+// -----------------------------------------------------------------------------
+// Token Storage (Dual-Layer: Memory + LocalStorage)
+// -----------------------------------------------------------------------------
 let inMemoryToken: string | null = null;
+const STORAGE_TOKEN_KEY = "ai_scribe_access_token";
 
 export function getStoredToken(): string | null {
   if (inMemoryToken) return inMemoryToken;
   if (typeof window !== "undefined") {
-    inMemoryToken = localStorage.getItem("ai_scribe_access_token");
+    try {
+      inMemoryToken = localStorage.getItem(STORAGE_TOKEN_KEY);
+    } catch {
+      // Handle private browsing or restricted environments safely
+      inMemoryToken = null;
+    }
   }
   return inMemoryToken;
 }
@@ -85,10 +107,14 @@ export function getStoredToken(): string | null {
 export function setStoredToken(token: string | null): void {
   inMemoryToken = token;
   if (typeof window !== "undefined") {
-    if (token) {
-      localStorage.setItem("ai_scribe_access_token", token);
-    } else {
-      localStorage.removeItem("ai_scribe_access_token");
+    try {
+      if (token) {
+        localStorage.setItem(STORAGE_TOKEN_KEY, token);
+      } else {
+        localStorage.removeItem(STORAGE_TOKEN_KEY);
+      }
+    } catch {
+      // Silently ignore storage failures in restricted environments
     }
   }
 }
@@ -97,47 +123,133 @@ export function clearStoredToken(): void {
   setStoredToken(null);
 }
 
-// Low-level fetch wrapper
-async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
+// -----------------------------------------------------------------------------
+// Refresh Mutex & Auth Failure Callback
+// -----------------------------------------------------------------------------
+let refreshPromise: Promise<string | null> | null = null;
+let authFailureCallback: (() => void) | null = null;
+
+export function registerAuthFailureHandler(callback: () => void): () => void {
+  authFailureCallback = callback;
+  return () => {
+    if (authFailureCallback === callback) {
+      authFailureCallback = null;
+    }
+  };
+}
+
+export interface ApiFetchOptions extends RequestInit {
+  timeoutMs?: number;
+  skipAuth?: boolean;
+  skipRefresh?: boolean;
+}
+
+// -----------------------------------------------------------------------------
+// Core Fetch Implementation with Mutex Refresh & Retries
+// -----------------------------------------------------------------------------
+export async function apiFetch<T>(endpoint: string, options: ApiFetchOptions = {}): Promise<T> {
+  const isAuthEndpoint =
+    endpoint.includes("/auth/login") ||
+    endpoint.includes("/auth/refresh") ||
+    endpoint.includes("/auth/register");
+
+  const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${endpoint}`;
   const headers = new Headers(options.headers || {});
 
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
-  const token = getStoredToken();
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
+  if (!options.skipAuth) {
+    const token = getStoredToken();
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  }
+
+  // Setup timeout and abort signal
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(new Error(`Request timed out after ${timeoutMs}ms`));
+  }, timeoutMs);
+
+  const signal = controller.signal;
+  if (options.signal) {
+    const originalSignal = options.signal;
+    if (originalSignal.aborted) {
+      clearTimeout(timeoutId);
+      throw new ApiError("Request aborted", 0);
+    }
+    originalSignal.addEventListener("abort", () => {
+      controller.abort();
+    });
   }
 
   const config: RequestInit = {
     ...options,
     headers,
-    credentials: "include", // Automatically passes HTTP-only refresh cookies
+    signal,
+    credentials: "include", // Transmit HttpOnly refresh cookie to backend
   };
 
   let response: Response;
   try {
     response = await fetch(url, config);
-  } catch (err) {
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new ApiError("Request was cancelled or timed out", 0);
+    }
     throw new ApiError(
       err instanceof Error ? err.message : "Network connection failed. Ensure backend is running.",
       0
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
-  // Handle 401: attempt silent refresh once
-  if (response.status === 401 && !endpoint.includes("/auth/")) {
+  // Handle 401 Unauthorized with Refresh Mutex Queue
+  if (response.status === 401 && !isAuthEndpoint && !options.skipRefresh) {
     try {
-      const refreshRes = await authApi.refresh();
-      if (refreshRes?.accessToken) {
-        setStoredToken(refreshRes.accessToken);
-        headers.set("Authorization", `Bearer ${refreshRes.accessToken}`);
-        response = await fetch(url, { ...config, headers });
+      // Singleton Refresh Promise: all concurrent 401s wait for this one
+      if (!refreshPromise) {
+        refreshPromise = (async () => {
+          try {
+            const refreshRes = await authApi.refresh();
+            if (refreshRes?.accessToken) {
+              setStoredToken(refreshRes.accessToken);
+              return refreshRes.accessToken;
+            }
+            return null;
+          } catch {
+            clearStoredToken();
+            authFailureCallback?.();
+            return null;
+          } finally {
+            refreshPromise = null;
+          }
+        })();
+      }
+
+      const newAccessToken = await refreshPromise;
+
+      if (newAccessToken) {
+        // Retry the original request with the new access token
+        const retryHeaders = new Headers(options.headers || {});
+        if (!retryHeaders.has("Content-Type") && !(options.body instanceof FormData)) {
+          retryHeaders.set("Content-Type", "application/json");
+        }
+        retryHeaders.set("Authorization", `Bearer ${newAccessToken}`);
+
+        return apiFetch<T>(endpoint, {
+          ...options,
+          headers: retryHeaders,
+          skipRefresh: true, // Prevent infinite retry loops
+        });
       }
     } catch {
-      clearStoredToken();
+      // Fall through to parse original 401 response
     }
   }
 
@@ -148,46 +260,59 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
   let data: unknown;
   const contentType = response.headers.get("content-type");
   if (contentType && contentType.includes("application/json")) {
-    data = await response.json();
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
   } else {
-    data = await response.text();
+    try {
+      data = await response.text();
+    } catch {
+      data = null;
+    }
   }
 
   if (!response.ok) {
-    const errorRecord = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : null;
+    const errorRecord =
+      typeof data === "object" && data !== null ? (data as ApiErrorResponse) : null;
+
     const errorMsg =
-      (errorRecord && (typeof errorRecord.message === "string" ? errorRecord.message : typeof errorRecord.error === "string" ? errorRecord.error : null)) ||
+      errorRecord?.message ||
+      (typeof data === "string" && data.length > 0 ? data : null) ||
       response.statusText ||
-      "Request failed";
-    const code = errorRecord && typeof errorRecord.code === "string" ? errorRecord.code : undefined;
-    const override = errorRecord && typeof errorRecord.override === "boolean" ? errorRecord.override : undefined;
-    throw new ApiError(errorMsg, response.status, code, override);
+      `Request failed with status ${response.status}`;
+
+    const code = errorRecord?.code;
+    const override = errorRecord?.override;
+    const fieldErrors = errorRecord?.errors;
+    const action = errorRecord?.action;
+
+    throw new ApiError(errorMsg, response.status, code, override, fieldErrors, action);
   }
 
   return data as T;
 }
 
 // -----------------------------------------------------------------------------
-// Authentication API
+// Authentication API (Provider-Independent Interface)
 // -----------------------------------------------------------------------------
 export const authApi = {
-  async register(payload: {
-    email: string;
-    password: string;
-    firstName: string;
-    lastName: string;
-    role: string;
-  }): Promise<RegisterResponse> {
+  async register(payload: RegisterPayload): Promise<RegisterResponse> {
     return apiFetch<RegisterResponse>("/auth/register", {
       method: "POST",
       body: JSON.stringify(payload),
+      skipAuth: true,
+      skipRefresh: true,
     });
   },
 
-  async login(payload: { email: string; password: string }): Promise<LoginResponse> {
+  async login(credentials: LoginCredentials): Promise<LoginResponse> {
     const res = await apiFetch<LoginResponse>("/auth/login", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(credentials),
+      skipAuth: true,
+      skipRefresh: true,
     });
     if (res.accessToken) {
       setStoredToken(res.accessToken);
@@ -198,6 +323,8 @@ export const authApi = {
   async refresh(): Promise<RefreshResponse> {
     const res = await apiFetch<RefreshResponse>("/auth/refresh", {
       method: "POST",
+      skipAuth: true,
+      skipRefresh: true,
     });
     if (res.accessToken) {
       setStoredToken(res.accessToken);
@@ -205,9 +332,12 @@ export const authApi = {
     return res;
   },
 
-  async logout(): Promise<void> {
+  async logout(): Promise<LogoutResponse> {
     try {
-      await apiFetch("/auth/logout", { method: "POST" });
+      return await apiFetch<LogoutResponse>("/auth/logout", {
+        method: "POST",
+        skipRefresh: true,
+      });
     } finally {
       clearStoredToken();
     }
@@ -226,13 +356,13 @@ export const examsApi = {
     status?: ExamStatus;
     limit?: number;
     offset?: number;
-  }): Promise<ExamListResponse> {
+  }): Promise<{ exams: Exam[]; total: number; limit: number; offset: number }> {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.limit) query.set("limit", String(params.limit));
     if (params?.offset) query.set("offset", String(params.offset));
     const qStr = query.toString() ? `?${query.toString()}` : "";
-    return apiFetch<ExamListResponse>(`/exams${qStr}`);
+    return apiFetch<{ exams: Exam[]; total: number; limit: number; offset: number }>(`/exams${qStr}`);
   },
 
   async getExam(id: string): Promise<Exam> {
