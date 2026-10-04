@@ -976,6 +976,86 @@
         }
       }
     },
+    "/api/v1/sessions/{id}/next": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Navigate to next question",
+        "description": "Moves the session to the next question. Returns updated session state.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Navigated to next question successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{id}/previous": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Navigate to previous question",
+        "description": "Moves the session to the previous question. Returns updated session state.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Navigated to previous question successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
     "/api/v1/sessions/{session_id}/questions/{question_id}/answer": {
       "put": {
         "tags": [
@@ -1514,6 +1594,7 @@
           "status": {
             "type": "string",
             "enum": [
+              "PENDING",
               "IN_PROGRESS",
               "SUBMITTED",
               "EXPIRED"
@@ -1529,6 +1610,14 @@
           },
           "remainingSeconds": {
             "type": "integer"
+          },
+          "currentQuestionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lastActivityAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

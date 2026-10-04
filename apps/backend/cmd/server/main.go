@@ -55,12 +55,6 @@ func main() {
 	defer redisClient.Close()
 
 	jobService := job.NewJobService(&log, cfg)
-	jobService.InitHandlers(cfg, &log)
-	go func() {
-		if err := jobService.Start(); err != nil {
-			log.Error().Err(err).Msg("background job worker failed to start")
-		}
-	}()
 	defer jobService.Stop()
 
 	// -------------------------------------------------------------------------
@@ -112,8 +106,16 @@ func main() {
 	assignmentHandler := assignment.NewHandler(assignmentService)
 
 	sessionRepo := session.NewRepository(db.Pool)
-	sessionService := session.NewService(sessionRepo, assignmentService, examService, &log)
+	sessionCache := session.NewRedisCache(redisClient)
+	sessionService := session.NewService(sessionRepo, assignmentService, examService, questionService, sessionCache, db, jobService, &log)
 	sessionHandler := session.NewHandler(sessionService)
+
+	jobService.InitHandlers(cfg, &log, sessionService)
+	go func() {
+		if err := jobService.Start(); err != nil {
+			log.Error().Err(err).Msg("background job worker failed to start")
+		}
+	}()
 
 	answerRepo := answer.NewRepository(db.Pool)
 	answerService := answer.NewService(answerRepo, sessionService, questionService, &log)

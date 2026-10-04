@@ -16,6 +16,9 @@ const (
 	LoggerKey   = "logger"
 )
 
+type contextKey string
+const ctxLoggerKey contextKey = "logger"
+
 type ContextEnhancer struct {
 	logger *zerolog.Logger
 }
@@ -50,7 +53,7 @@ func (ce *ContextEnhancer) EnhanceContext() echo.MiddlewareFunc {
 
 			c.Set(LoggerKey, &contextLogger)
 
-			ctx := context.WithValue(c.Request().Context(), LoggerKey, &contextLogger)
+			ctx := context.WithValue(c.Request().Context(), ctxLoggerKey, &contextLogger)
 			c.SetRequest(c.Request().WithContext(ctx))
 
 			return next(c)
