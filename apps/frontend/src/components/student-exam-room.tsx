@@ -85,19 +85,20 @@ export function StudentExamRoom({
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => {
-    if (Object.keys(answers).length) {
-      setSaving(true);
+    if (saving) {
       const timer = window.setTimeout(() => setSaving(false), 700);
       return () => window.clearTimeout(timer);
     }
-  }, [answers]);
+  }, [saving]);
   const time = useMemo(
     () =>
       `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`,
     [seconds]
   );
-  const setAnswer = (value: string) =>
+  const setAnswer = (value: string) => {
+    setSaving(true);
     setAnswers((current) => ({ ...current, [question.id]: value }));
+  };
   return (
     <div
       className={`${largeText ? "text-lg" : ""} ${contrast ? "bg-foreground text-background" : "bg-background text-foreground"} min-h-screen`}

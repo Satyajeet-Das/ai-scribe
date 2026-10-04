@@ -138,7 +138,7 @@ export function QuestionManager({
         points: numPoints,
       });
 
-      let savedOptions: QuestionOption[] = [];
+      const savedOptions: QuestionOption[] = [];
       if (type === "MCQ" && created.id) {
         for (const opt of options) {
           try {

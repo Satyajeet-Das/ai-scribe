@@ -58,4 +58,18 @@ describe("AuthForms", () => {
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(screen.getByText("Invalid username or password")).toBeInTheDocument();
   });
+
+  it("shows session expired notification when sessionExpired is true", () => {
+    render(
+      <AuthForms
+        initialMode="login"
+        onSubmit={vi.fn()}
+        sessionExpired={true}
+      />
+    );
+
+    expect(
+      screen.getByText("Your session has expired. Please sign in again to continue.")
+    ).toBeInTheDocument();
+  });
 });

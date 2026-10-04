@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Loader2, AlertCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ interface AuthFormsProps {
   onModeChange?: (mode: AuthMode) => void;
   isLoading?: boolean;
   errorMessage?: string | null;
+  sessionExpired?: boolean;
 }
 
 const ROLE_OPTIONS: { value: AuthRole; label: string }[] = [
@@ -39,7 +40,7 @@ const ROLE_OPTIONS: { value: AuthRole; label: string }[] = [
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
   return (
-    <p id={id} className="text-xs text-destructive">
+    <p id={id} className="text-xs text-destructive" role="alert">
       {message}
     </p>
   );
@@ -51,6 +52,7 @@ export function AuthForms({
   onModeChange,
   isLoading = false,
   errorMessage = null,
+  sessionExpired = false,
 }: AuthFormsProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [role, setRole] = useState<AuthRole>("STUDENT");
@@ -145,7 +147,7 @@ export function AuthForms({
         </CardTitle>
         <CardDescription className="text-sm">
           {isRegister
-            ? "Join as a teacher or student to get started"
+            ? "Join as a teacher or candidate to get started"
             : "Sign in to access your exams and sessions"}
         </CardDescription>
       </CardHeader>
@@ -159,9 +161,21 @@ export function AuthForms({
           </TabsList>
         </Tabs>
 
+        {sessionExpired && !errorMessage && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300"
+          >
+            <Clock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>Your session has expired. Please sign in again to continue.</span>
+          </div>
+        )}
+
         {errorMessage && (
           <div
             role="alert"
+            aria-live="assertive"
             className="flex items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
           >
             <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

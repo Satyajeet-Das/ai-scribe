@@ -31,10 +31,23 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const returnUrl = getSafeReturnUrl(searchParams.get("returnUrl"));
   const initialMode = searchParams.get("mode") === "register" ? "register" : "login";
+  const urlSessionExpired = searchParams.get("session_expired") === "true";
 
-  const { user, isAuthenticated, isHydrated, login, register, isLoading } = useAuthStore();
+  const {
+    user,
+    isAuthenticated,
+    isHydrated,
+    login,
+    register,
+    isLoading,
+    sessionExpired,
+    clearSessionExpired,
+  } = useAuthStore();
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
+
+  const isSessionExpiredNotice = urlSessionExpired || sessionExpired;
 
   // If the user is already authenticated, directly navigate to their designated portal
   useEffect(() => {
@@ -46,6 +59,7 @@ function LoginContent() {
 
   const handleSubmit = async (data: AuthSubmitData) => {
     setErrorMessage(null);
+    clearSessionExpired();
 
     try {
       let authedUser = null;
@@ -116,9 +130,13 @@ function LoginContent() {
         <AuthForms
           initialMode={initialMode}
           onSubmit={handleSubmit}
-          onModeChange={() => setErrorMessage(null)}
+          onModeChange={() => {
+            setErrorMessage(null);
+            clearSessionExpired();
+          }}
           isLoading={isLoading || isRedirecting}
           errorMessage={errorMessage}
+          sessionExpired={isSessionExpiredNotice}
         />
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
