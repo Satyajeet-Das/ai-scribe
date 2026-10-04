@@ -11,9 +11,18 @@ export interface User {
   firstName: string;
   lastName: string;
   role: Role;
+  rollNo?: string;
 }
 
 export type UserResponse = User;
+
+export interface StudentSearchResult {
+  id: string;
+  rollNo: string;
+  roll_no?: string;
+  name: string;
+  email: string;
+}
 
 export interface LoginCredentials {
   email: string;
@@ -26,6 +35,7 @@ export interface RegisterPayload {
   firstName: string;
   lastName: string;
   role: Role;
+  rollNo?: string;
 }
 
 export interface LoginResponse {

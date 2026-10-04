@@ -37,30 +37,45 @@ describe("LoginSchema", () => {
 });
 
 describe("RegisterSchema", () => {
-  const validPayload = {
+  const validStudentPayload = {
     email: "candidate@school.edu",
     password: "Password123",
     firstName: "Ada",
     lastName: "Lovelace",
     role: "STUDENT" as const,
+    rollNo: "23CS001",
   };
 
-  it("accepts valid registration data for student/candidate", () => {
-    const res = RegisterSchema.safeParse(validPayload);
+  it("accepts valid registration data for student with roll number", () => {
+    const res = RegisterSchema.safeParse(validStudentPayload);
     expect(res.success).toBe(true);
   });
 
-  it("accepts valid registration data for teacher", () => {
+  it("rejects student registration without roll number", () => {
     const res = RegisterSchema.safeParse({
-      ...validPayload,
-      role: "TEACHER",
+      ...validStudentPayload,
+      rollNo: undefined,
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.error.issues[0].message).toMatch(/roll number is required/i);
+    }
+  });
+
+  it("accepts valid registration data for teacher without roll number", () => {
+    const res = RegisterSchema.safeParse({
+      email: "teacher@school.edu",
+      password: "Password123",
+      firstName: "Ada",
+      lastName: "Lovelace",
+      role: "TEACHER" as const,
     });
     expect(res.success).toBe(true);
   });
 
   it("rejects passwords under 8 characters", () => {
     const res = RegisterSchema.safeParse({
-      ...validPayload,
+      ...validStudentPayload,
       password: "Pass1",
     });
     expect(res.success).toBe(false);
@@ -71,7 +86,7 @@ describe("RegisterSchema", () => {
 
   it("rejects passwords without numbers", () => {
     const res = RegisterSchema.safeParse({
-      ...validPayload,
+      ...validStudentPayload,
       password: "PasswordWithoutNumber",
     });
     expect(res.success).toBe(false);
@@ -82,7 +97,7 @@ describe("RegisterSchema", () => {
 
   it("rejects invalid role", () => {
     const res = RegisterSchema.safeParse({
-      ...validPayload,
+      ...validStudentPayload,
       role: "SUPERUSER",
     });
     expect(res.success).toBe(false);

@@ -7,6 +7,7 @@ import {
   registerAuthFailureHandler,
   ApiError,
   sessionsApi,
+  studentsApi,
 } from "../api";
 
 describe("API Client & Token Management", () => {
@@ -331,6 +332,26 @@ describe("API Client & Token Management", () => {
       const answers = await sessionsApi.getAnswers("sess-1");
       expect(answers).toHaveLength(2);
       expect(mockFetch.mock.calls[0][0]).toContain("/sessions/sess-1/answers");
+    });
+  });
+
+  describe("studentsApi", () => {
+    it("fetches students with query and limit parameters", async () => {
+      const mockStudents = [
+        { id: "student-1", rollNo: "23CS001", name: "Rahul Sharma", email: "rahul@school.edu" },
+      ];
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => mockStudents,
+      });
+      globalThis.fetch = mockFetch;
+
+      const res = await studentsApi.searchStudents("23CS", 10);
+      expect(res).toEqual(mockStudents);
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain("/students/search?q=23CS&limit=10");
     });
   });
 });

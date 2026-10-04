@@ -61,6 +61,7 @@ export function AuthForms({
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [rollNo, setRollNo] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -82,6 +83,7 @@ export function AuthForms({
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           role,
+          rollNo: rollNo.trim(),
         })
       : LoginSchema.safeParse({ email: email.trim(), password });
 
@@ -111,6 +113,7 @@ export function AuthForms({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         role,
+        ...(role === "STUDENT" && rollNo ? { rollNo: rollNo.trim().toUpperCase() } : {}),
       });
     } else {
       await onSubmit({ mode: "login", email: email.trim(), password });
@@ -238,6 +241,27 @@ export function AuthForms({
                   <FieldError id="lastName-error" message={errors.lastName} />
                 </div>
               </div>
+
+              {role === "STUDENT" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="rollNo">
+                    Roll number <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="rollNo"
+                    placeholder="e.g. 23CS001"
+                    value={rollNo}
+                    onChange={(e) => {
+                      setRollNo(e.target.value);
+                      clearError("rollNo");
+                    }}
+                    autoComplete="off"
+                    aria-invalid={!!errors.rollNo}
+                    aria-describedby={errors.rollNo ? "rollNo-error" : undefined}
+                  />
+                  <FieldError id="rollNo-error" message={errors.rollNo} />
+                </div>
+              )}
             </>
           )}
 

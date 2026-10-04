@@ -40,6 +40,8 @@ export interface Assignment {
   id: string;
   examId: string;
   studentId: string;
+  studentRollNo?: string;
+  studentName?: string;
   assignedAt: string;
   status: AssignmentStatus;
 }

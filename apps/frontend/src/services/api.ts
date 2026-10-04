@@ -21,6 +21,7 @@ import type {
   ApiFieldError,
   ApiAction,
   ApiErrorResponse,
+  StudentSearchResult,
 } from "@/types/auth";
 
 export type {
@@ -32,6 +33,7 @@ export type {
   RegisterResponse,
   RefreshResponse,
   LogoutResponse,
+  StudentSearchResult,
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
@@ -507,6 +509,24 @@ export const assignmentsApi = {
     return apiFetch<void>(`/assignments/${id}`, {
       method: "DELETE",
     });
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Students API (Search & Roll Number Autocomplete)
+// -----------------------------------------------------------------------------
+export const studentsApi = {
+  async searchStudents(
+    query: string,
+    limit = 10,
+    signal?: AbortSignal
+  ): Promise<StudentSearchResult[]> {
+    const res = await apiFetch<StudentSearchResult[] | { data: StudentSearchResult[] }>(
+      `/students/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+      { signal }
+    );
+    if (Array.isArray(res)) return res;
+    return (res as { data: StudentSearchResult[] }).data || [];
   },
 };
 
