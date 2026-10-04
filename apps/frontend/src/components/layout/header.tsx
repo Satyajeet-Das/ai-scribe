@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
 import { APP_CONFIG, DESIGN_TOKENS, getRolePortal } from "@/lib/constants";
-import { LogIn, LogOut, Menu, X, User as UserIcon, BookOpen, Clock } from "lucide-react";
+import { LogOut, Menu, X, User as UserIcon, BookOpen, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -16,8 +16,8 @@ export function Header() {
 
   const portalRoute = isHydrated && isAuthenticated && user ? getRolePortal(user.role) : "/";
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     setMobileMenuOpen(false);
     router.push("/login");
   };
@@ -53,21 +53,29 @@ export function Header() {
                   Educator Portal
                 </Link>
               )}
-              {isHydrated && isAuthenticated && user?.role === "STUDENT" && (
-                <Link
-                  href="/sessions"
-                  className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-                >
-                  <Clock className="size-4" />
-                  Candidate Assessments
-                </Link>
-              )}
+              {isHydrated &&
+                isAuthenticated &&
+                (user?.role === "STUDENT" || user?.role === "PROCTOR" || user?.role === "ADMIN") && (
+                  <Link
+                    href="/sessions"
+                    className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+                  >
+                    <Clock className="size-4" />
+                    Candidate Assessments
+                  </Link>
+                )}
               {(!isHydrated || !isAuthenticated) && (
                 <>
-                  <Link href="/exams" className="text-muted-foreground hover:text-foreground transition-colors">
+                  <Link
+                    href="/exams"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
                     Educator Portal
                   </Link>
-                  <Link href="/sessions" className="text-muted-foreground hover:text-foreground transition-colors">
+                  <Link
+                    href="/sessions"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
                     Candidate Assessments
                   </Link>
                 </>
@@ -148,16 +156,18 @@ export function Header() {
                 Educator Portal
               </Link>
             )}
-            {isHydrated && isAuthenticated && user?.role === "STUDENT" && (
-              <Link
-                href="/sessions"
-                onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-md text-sm font-medium hover:bg-muted text-foreground flex items-center gap-2"
-              >
-                <Clock className="size-4" />
-                Candidate Assessments
-              </Link>
-            )}
+            {isHydrated &&
+              isAuthenticated &&
+              (user?.role === "STUDENT" || user?.role === "PROCTOR" || user?.role === "ADMIN") && (
+                <Link
+                  href="/sessions"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="px-3 py-2 rounded-md text-sm font-medium hover:bg-muted text-foreground flex items-center gap-2"
+                >
+                  <Clock className="size-4" />
+                  Candidate Assessments
+                </Link>
+              )}
             {(!isHydrated || !isAuthenticated) && (
               <>
                 <Link
@@ -184,10 +194,17 @@ export function Header() {
             {isHydrated && isAuthenticated && user ? (
               <div className="flex flex-col space-y-2">
                 <div className="px-3 py-1 flex items-center justify-between">
-                  <span className="text-sm font-semibold">{user.firstName} {user.lastName}</span>
+                  <span className="text-sm font-semibold">
+                    {user.firstName} {user.lastName}
+                  </span>
                   <Badge variant="outline">{user.role}</Badge>
                 </div>
-                <Button variant="outline" size="sm" onClick={handleLogout} className="w-full justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLogout}
+                  className="w-full justify-center"
+                >
                   <LogOut className="size-4 mr-2" />
                   Sign Out
                 </Button>

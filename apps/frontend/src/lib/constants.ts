@@ -111,7 +111,10 @@ export function getRolePortal(role?: string | null): string {
  */
 export function isRoleAllowedRoute(role: string | null | undefined, path: string): boolean {
   if (!role) return false;
-  if (role === "TEACHER" || role === "ADMIN") {
+  if (role === "ADMIN") {
+    return path.startsWith("/exams") || path.startsWith("/sessions");
+  }
+  if (role === "TEACHER") {
     return path.startsWith("/exams");
   }
   return path.startsWith("/sessions");
