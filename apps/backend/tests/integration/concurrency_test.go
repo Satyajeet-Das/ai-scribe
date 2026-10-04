@@ -52,7 +52,7 @@ func TestConcurrency_SessionFSMAndLocks(t *testing.T) {
 
 	// Initialize Services
 	examSvc := exam.NewService(examRepo, &l)
-	assignmentSvc := assignment.NewService(assignmentRepo, examSvc, &l)
+	assignmentSvc := assignment.NewService(assignmentRepo, examSvc, userRepo, &l)
 	questionSvc := question.NewService(questionRepo, examSvc, &l)
 	
 	sessionCache := session.NewRedisCache(redisClient)

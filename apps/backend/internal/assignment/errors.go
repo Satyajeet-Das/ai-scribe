@@ -10,4 +10,6 @@ var (
 	ErrAssignmentAlreadyRevoked = errors.New("assignment is already revoked")
 	ErrInvalidAssignmentState   = errors.New("invalid assignment state transition")
 	ErrUnauthorized             = errors.New("unauthorized to manage this assignment")
+	ErrStudentNotFound          = errors.New("student not found")
+	ErrStudentIneligible        = errors.New("student is not eligible for assignment")
 )

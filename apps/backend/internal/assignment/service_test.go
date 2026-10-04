@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
+	"github.com/Satyajeet-Das/ai-scribe/internal/user"
 )
 
 type mockAssignmentRepo struct {
@@ -81,11 +82,24 @@ func (m *mockExamReader) GetExam(ctx context.Context, id uuid.UUID) (*exam.Exam,
 	return nil, exam.ErrExamNotFound
 }
 
+type mockUserReader struct {
+	users map[uuid.UUID]*user.User
+}
+
+func (m *mockUserReader) GetByID(ctx context.Context, id uuid.UUID) (*user.User, error) {
+	if u, ok := m.users[id]; ok {
+		return u, nil
+	}
+	return nil, user.ErrUserNotFound
+}
+
 func TestAssignmentService_CreateAssignment(t *testing.T) {
 	repo := newMockAssignmentRepo()
 	logger := zerolog.Nop()
 	creatorID := uuid.New()
 	studentID := uuid.New()
+	inactiveStudentID := uuid.New()
+	teacherID := uuid.New()
 	publishedExamID := uuid.New()
 	draftExamID := uuid.New()
 
@@ -104,10 +118,27 @@ func TestAssignmentService_CreateAssignment(t *testing.T) {
 		},
 	}
 
-	svc := NewService(repo, examReader, &logger)
+	userReader := &mockUserReader{
+		users: map[uuid.UUID]*user.User{
+			studentID: {
+				Role:     "STUDENT",
+				IsActive: true,
+			},
+			inactiveStudentID: {
+				Role:     "STUDENT",
+				IsActive: false,
+			},
+			teacherID: {
+				Role:     "TEACHER",
+				IsActive: true,
+			},
+		},
+	}
+
+	svc := NewService(repo, examReader, userReader, &logger)
 	ctx := context.Background()
 
-	// 1. Assign published exam succeeds
+	// 1. Assign published exam succeeds for active student
 	req := CreateAssignmentRequest{
 		ExamID:    publishedExamID,
 		StudentID: studentID,
@@ -117,22 +148,45 @@ func TestAssignmentService_CreateAssignment(t *testing.T) {
 	assert.Equal(t, StatusAssigned, assigned.Status)
 	assert.Equal(t, studentID, assigned.StudentID)
 
-	// 2. Assigning draft exam fails
+	// 2. Non-existent student fails with ErrStudentNotFound
+	_, err = svc.CreateAssignment(ctx, CreateAssignmentRequest{
+		ExamID:    publishedExamID,
+		StudentID: uuid.New(),
+	}, creatorID)
+	assert.ErrorIs(t, err, ErrStudentNotFound)
+
+	// 3. Inactive student fails with ErrStudentIneligible
+	_, err = svc.CreateAssignment(ctx, CreateAssignmentRequest{
+		ExamID:    publishedExamID,
+		StudentID: inactiveStudentID,
+	}, creatorID)
+	assert.ErrorIs(t, err, ErrStudentIneligible)
+
+	// 4. Non-student user fails with ErrStudentIneligible
+	_, err = svc.CreateAssignment(ctx, CreateAssignmentRequest{
+		ExamID:    publishedExamID,
+		StudentID: teacherID,
+	}, creatorID)
+	assert.ErrorIs(t, err, ErrStudentIneligible)
+
+	// 5. Assigning draft exam fails
 	_, err = svc.CreateAssignment(ctx, CreateAssignmentRequest{
 		ExamID:    draftExamID,
 		StudentID: studentID,
 	}, creatorID)
 	assert.ErrorIs(t, err, ErrExamNotPublished)
 
-	// 3. Duplicate active assignment fails
+	// 6. Duplicate active assignment fails
 	_, err = svc.CreateAssignment(ctx, req, creatorID)
 	assert.ErrorIs(t, err, ErrDuplicateAssignment)
 
-	// 4. Unauthorized creator fails
+	// 7. Unauthorized creator fails
 	otherUser := uuid.New()
+	validOtherStudent := uuid.New()
+	userReader.users[validOtherStudent] = &user.User{Role: "STUDENT", IsActive: true}
 	_, err = svc.CreateAssignment(ctx, CreateAssignmentRequest{
 		ExamID:    publishedExamID,
-		StudentID: uuid.New(),
+		StudentID: validOtherStudent,
 	}, otherUser)
 	assert.ErrorIs(t, err, ErrUnauthorized)
 }
@@ -160,7 +214,7 @@ func TestAssignmentService_RevokeAssignment(t *testing.T) {
 		Status:    StatusAssigned,
 	}
 
-	svc := NewService(repo, examReader, &logger)
+	svc := NewService(repo, examReader, nil, &logger)
 	ctx := context.Background()
 
 	// 1. Revoke succeeds

@@ -39,6 +39,10 @@
     {
       "name": "Answers",
       "description": "Idempotent student answer persistence and verification"
+    },
+    {
+      "name": "Students",
+      "description": "Student directory and roll number autocomplete search"
     }
   ],
   "paths": {
@@ -59,6 +63,65 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/students/search": {
+      "get": {
+        "tags": [
+          "Students"
+        ],
+        "summary": "Search students for assignment",
+        "description": "Searches active students by roll number prefix, full name, or email for assignment autocomplete. Restricted to teachers and administrators.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search query matching roll number, name, or email",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "23CS001"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of students to return (default 10, max 50)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of matching students",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StudentSearchResult"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized: missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Forbidden: user does not have TEACHER or ADMIN role"
           }
         }
       }

@@ -2,6 +2,8 @@ package assignment
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,10 +11,15 @@ import (
 
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
 	"github.com/Satyajeet-Das/ai-scribe/internal/model"
+	"github.com/Satyajeet-Das/ai-scribe/internal/user"
 )
 
 type ExamReader interface {
 	GetExam(ctx context.Context, id uuid.UUID) (*exam.Exam, error)
+}
+
+type UserReader interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*user.User, error)
 }
 
 type Service interface {
@@ -25,13 +32,15 @@ type Service interface {
 type assignmentService struct {
 	repo       Repository
 	examReader ExamReader
+	userReader UserReader
 	logger     *zerolog.Logger
 }
 
-func NewService(repo Repository, examReader ExamReader, logger *zerolog.Logger) Service {
+func NewService(repo Repository, examReader ExamReader, userReader UserReader, logger *zerolog.Logger) Service {
 	return &assignmentService{
 		repo:       repo,
 		examReader: examReader,
+		userReader: userReader,
 		logger:     logger,
 	}
 }
@@ -72,6 +81,26 @@ func (s *assignmentService) CreateAssignment(ctx context.Context, req CreateAssi
 
 	if ex.Status != exam.StatusPublished {
 		return nil, ErrExamNotPublished
+	}
+
+	// Verify that the student exists and is eligible
+	if s.userReader != nil {
+		stu, err := s.userReader.GetByID(ctx, req.StudentID)
+		if err != nil {
+			if errors.Is(err, user.ErrUserNotFound) {
+				return nil, ErrStudentNotFound
+			}
+			return nil, err
+		}
+		if stu == nil {
+			return nil, ErrStudentNotFound
+		}
+		if !strings.EqualFold(stu.Role, "STUDENT") {
+			return nil, ErrStudentIneligible
+		}
+		if !stu.IsActive {
+			return nil, ErrStudentIneligible
+		}
 	}
 
 	existing, err := s.repo.GetActiveByExamAndStudent(ctx, req.ExamID, req.StudentID)

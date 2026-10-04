@@ -61,7 +61,8 @@ func main() {
 	// Dependency Injection & Domain Composition
 	// -------------------------------------------------------------------------
 	userRepo := user.NewRepository(db.Pool)
-	_ = user.NewService(userRepo, &log)
+	userService := user.NewService(userRepo, &log)
+	studentHandler := user.NewHandler(userService)
 
 	// Auth platform setup (pluggable JWT provider)
 	accessDuration := 15 * time.Minute
@@ -102,7 +103,7 @@ func main() {
 	questionHandler := question.NewHandler(questionService)
 
 	assignmentRepo := assignment.NewRepository(db.Pool)
-	assignmentService := assignment.NewService(assignmentRepo, examService, &log)
+	assignmentService := assignment.NewService(assignmentRepo, examService, userRepo, &log)
 	assignmentHandler := assignment.NewHandler(assignmentService)
 
 	sessionRepo := session.NewRepository(db.Pool)
@@ -140,6 +141,8 @@ func main() {
 
 	v1 := router.Group("/api/v1")
 	authHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, loginRateLimiter)
+	studentHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
+	studentHandler.RegisterRoutes(router.Group(""), authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
 	examHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	questionHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	assignmentHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)

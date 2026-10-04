@@ -135,7 +135,7 @@ func (h *Handler) RevokeAssignment(c echo.Context) error {
 }
 
 func (h *Handler) mapError(err error) error {
-	if errors.Is(err, ErrAssignmentNotFound) || errors.Is(err, exam.ErrExamNotFound) {
+	if errors.Is(err, ErrAssignmentNotFound) || errors.Is(err, exam.ErrExamNotFound) || errors.Is(err, ErrStudentNotFound) {
 		return httperrs.NewNotFoundError(err.Error(), true, nil)
 	}
 	if errors.Is(err, ErrUnauthorized) {
@@ -145,7 +145,8 @@ func (h *Handler) mapError(err error) error {
 		errors.Is(err, ErrDuplicateAssignment) ||
 		errors.Is(err, ErrAssignmentRevoked) ||
 		errors.Is(err, ErrAssignmentAlreadyRevoked) ||
-		errors.Is(err, ErrInvalidAssignmentState) {
+		errors.Is(err, ErrInvalidAssignmentState) ||
+		errors.Is(err, ErrStudentIneligible) {
 		return httperrs.NewBadRequestError(err.Error(), false, nil, nil, nil)
 	}
 	return httperrs.NewInternalServerError()
