@@ -13,4 +13,6 @@ var (
 	ErrExamNotPublished          = errors.New("cannot start session: exam is not published")
 	ErrActiveSessionAlreadyExists = errors.New("an active session is already in progress for this assignment")
 	ErrUnauthorizedStudent       = errors.New("unauthorized: student does not own this session or assignment")
+	ErrNoNextQuestion            = errors.New("already at the last question")
+	ErrNoPreviousQuestion        = errors.New("already at the first question")
 )

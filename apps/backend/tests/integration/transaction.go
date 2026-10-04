@@ -14,7 +14,9 @@ func WithTransaction(ctx context.Context, db *TestDB, fn TxFn) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	if err := fn(tx); err != nil {
 		return err
@@ -32,7 +34,9 @@ func WithRollbackTransaction(ctx context.Context, db *TestDB, fn TxFn) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	return fn(tx)
 }

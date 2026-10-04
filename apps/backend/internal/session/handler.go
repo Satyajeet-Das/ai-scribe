@@ -9,6 +9,7 @@ import (
 
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
 	httperrs "github.com/Satyajeet-Das/ai-scribe/internal/platform/http/errors"
+	"github.com/Satyajeet-Das/ai-scribe/internal/platform/http/middleware"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/validation"
 )
 
@@ -31,6 +32,8 @@ func (h *Handler) RegisterRoutes(g *echo.Group, authMiddleware echo.MiddlewareFu
 	sessions.POST("", h.StartSession)
 	sessions.GET("/:id", h.GetSession)
 	sessions.POST("/:id/submit", h.SubmitSession)
+	sessions.POST("/:id/next", h.NextQuestion)
+	sessions.POST("/:id/previous", h.PreviousQuestion)
 }
 
 func (h *Handler) StartSession(c echo.Context) error {
@@ -39,8 +42,11 @@ func (h *Handler) StartSession(c echo.Context) error {
 		return err
 	}
 
-	userIDStr, _ := c.Get("user_id").(string)
-	callerID, _ := uuid.Parse(userIDStr)
+	userIDStr := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
 
 	sess, durationMins, err := h.service.StartSession(c.Request().Context(), req, callerID)
 	if err != nil {
@@ -57,8 +63,11 @@ func (h *Handler) GetSession(c echo.Context) error {
 		return httperrs.NewBadRequestError("Invalid session ID format", false, nil, nil, nil)
 	}
 
-	userIDStr, _ := c.Get("user_id").(string)
-	callerID, _ := uuid.Parse(userIDStr)
+	userIDStr := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
 
 	sess, durationMins, err := h.service.GetSession(c.Request().Context(), id, callerID)
 	if err != nil {
@@ -75,8 +84,11 @@ func (h *Handler) SubmitSession(c echo.Context) error {
 		return httperrs.NewBadRequestError("Invalid session ID format", false, nil, nil, nil)
 	}
 
-	userIDStr, _ := c.Get("user_id").(string)
-	callerID, _ := uuid.Parse(userIDStr)
+	userIDStr := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
 
 	sess, err := h.service.SubmitSession(c.Request().Context(), id, callerID)
 	if err != nil {
@@ -104,8 +116,51 @@ func (h *Handler) mapError(err error) error {
 		errors.Is(err, ErrAssignmentRevoked) ||
 		errors.Is(err, ErrExamArchived) ||
 		errors.Is(err, ErrExamNotPublished) ||
-		errors.Is(err, ErrActiveSessionAlreadyExists) {
+		errors.Is(err, ErrActiveSessionAlreadyExists) ||
+		errors.Is(err, ErrNoNextQuestion) ||
+		errors.Is(err, ErrNoPreviousQuestion) ||
+		errors.Is(err, ErrInvalidTransition) {
 		return httperrs.NewBadRequestError(err.Error(), false, nil, nil, nil)
 	}
 	return httperrs.NewInternalServerError()
+}
+
+func (h *Handler) NextQuestion(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return httperrs.NewBadRequestError("invalid session id", false, nil, nil, nil)
+	}
+
+	userID := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userID)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
+
+	sess, err := h.service.NextQuestion(c.Request().Context(), id, callerID)
+	if err != nil {
+		return h.mapError(err)
+	}
+
+	return c.JSON(200, sess)
+}
+
+func (h *Handler) PreviousQuestion(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return httperrs.NewBadRequestError("invalid session id", false, nil, nil, nil)
+	}
+
+	userID := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userID)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
+
+	sess, err := h.service.PreviousQuestion(c.Request().Context(), id, callerID)
+	if err != nil {
+		return h.mapError(err)
+	}
+
+	return c.JSON(200, sess)
 }

@@ -11,6 +11,7 @@ import (
 type Status string
 
 const (
+	StatusPending    Status = "PENDING"
 	StatusInProgress Status = "IN_PROGRESS"
 	StatusSubmitted  Status = "SUBMITTED"
 	StatusExpired    Status = "EXPIRED"
@@ -23,5 +24,9 @@ type Session struct {
 	StudentID    uuid.UUID  `json:"studentId" db:"student_id"`
 	Status       Status     `json:"status" db:"status"`
 	StartedAt    time.Time  `json:"startedAt" db:"started_at"`
-	SubmittedAt  *time.Time `json:"submittedAt,omitempty" db:"submitted_at"`
+	SubmittedAt       *time.Time `json:"submittedAt,omitempty" db:"submitted_at"`
+	
+	// Runtime tracking fields for Redis (not persisted in DB)
+	CurrentQuestionID uuid.UUID  `json:"currentQuestionId,omitempty" db:"-"`
+	LastActivityAt    time.Time  `json:"lastActivityAt,omitempty" db:"-"`
 }

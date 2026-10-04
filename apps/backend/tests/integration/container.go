@@ -61,6 +61,30 @@ func SetupTestDB(t *testing.T) (*TestDB, func()) {
 		}
 	})
 
+	redisReq := testcontainers.ContainerRequest{
+		Image:        "redis:7-alpine",
+		ExposedPorts: []string{"6379/tcp"},
+		WaitingFor:   wait.ForLog("Ready to accept connections"),
+	}
+
+	redisContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: redisReq,
+		Started:          true,
+	})
+	require.NoError(t, err, "failed to start redis container")
+
+	redisHost, err := redisContainer.Host(ctx)
+	require.NoError(t, err)
+
+	redisPort, err := redisContainer.MappedPort(ctx, "6379")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		if err := redisContainer.Terminate(ctx); err != nil {
+			t.Logf("failed to terminate redis container: %v", err)
+		}
+	})
+
 	cfg := &config.Config{
 		Database: config.DatabaseConfig{
 			Host:            host,
@@ -88,7 +112,7 @@ func SetupTestDB(t *testing.T) (*TestDB, func()) {
 			ResendAPIKey: "test-key",
 		},
 		Redis: config.RedisConfig{
-			Address: "localhost:6379",
+			Address: fmt.Sprintf("%s:%s", redisHost, redisPort.Port()),
 		},
 		Auth: config.AuthConfig{
 			SecretKey: "test-secret",

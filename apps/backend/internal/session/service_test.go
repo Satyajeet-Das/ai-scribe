@@ -12,6 +12,9 @@ import (
 
 	"github.com/Satyajeet-Das/ai-scribe/internal/assignment"
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
+	"github.com/Satyajeet-Das/ai-scribe/internal/model"
+	"github.com/Satyajeet-Das/ai-scribe/internal/platform/database"
+	"github.com/Satyajeet-Das/ai-scribe/internal/question"
 )
 
 type mockSessionRepo struct {
@@ -96,6 +99,58 @@ func (m *mockExamReader) GetExam(ctx context.Context, id uuid.UUID) (*exam.Exam,
 	return nil, exam.ErrExamNotFound
 }
 
+type mockQuestionReader struct {
+	questions map[uuid.UUID][]question.Question
+}
+
+func (m *mockQuestionReader) ListQuestionsByExam(ctx context.Context, examID uuid.UUID) ([]question.Question, error) {
+	if q, ok := m.questions[examID]; ok {
+		return q, nil
+	}
+	return nil, nil
+}
+
+type mockCache struct {
+	state map[uuid.UUID]*Session
+}
+
+func newMockCache() *mockCache {
+	return &mockCache{state: make(map[uuid.UUID]*Session)}
+}
+
+func (m *mockCache) AcquireLock(ctx context.Context, sessionID uuid.UUID, ttl time.Duration) (func(context.Context) error, error) {
+	return func(context.Context) error { return nil }, nil
+}
+
+func (m *mockCache) SetState(ctx context.Context, sessionID uuid.UUID, session *Session, ttl time.Duration) error {
+	m.state[sessionID] = session
+	return nil
+}
+
+func (m *mockCache) GetState(ctx context.Context, sessionID uuid.UUID) (*Session, error) {
+	if s, ok := m.state[sessionID]; ok {
+		return s, nil
+	}
+	return nil, ErrCacheMiss
+}
+
+func (m *mockCache) DeleteState(ctx context.Context, sessionID uuid.UUID) error {
+	delete(m.state, sessionID)
+	return nil
+}
+
+type mockTxManager struct{}
+
+func (m *mockTxManager) WithTx(ctx context.Context, fn func(tx database.DBTX) error) error {
+	return fn(nil)
+}
+
+type mockTaskEnqueuer struct{}
+
+func (m *mockTaskEnqueuer) EnqueueExpireSessionTask(sessionID uuid.UUID, delay time.Duration) error {
+	return nil
+}
+
 func TestSessionService_StartSession(t *testing.T) {
 	repo := newMockSessionRepo()
 	logger := zerolog.Nop()
@@ -122,7 +177,15 @@ func TestSessionService_StartSession(t *testing.T) {
 		},
 	}
 
-	svc := NewService(repo, asgnReader, examReader, &logger)
+	questionReader := &mockQuestionReader{
+		questions: map[uuid.UUID][]question.Question{
+			examID: {
+				{Base: model.Base{BaseWithId: model.BaseWithId{ID: uuid.New()}}},
+			},
+		},
+	}
+
+	svc := NewService(repo, asgnReader, examReader, questionReader, newMockCache(), &mockTxManager{}, &mockTaskEnqueuer{}, &logger)
 	ctx := context.Background()
 
 	// 1. Starting valid session succeeds
@@ -183,7 +246,12 @@ func TestSessionService_SubmitSession(t *testing.T) {
 		StartedAt: time.Now().UTC(),
 	}
 
-	svc := NewService(repo, nil, examReader, &logger)
+	cache := newMockCache()
+	_ = cache.SetState(context.Background(), sessID, repo.sessions[sessID], time.Hour)
+
+	questionReader := &mockQuestionReader{}
+
+	svc := NewService(repo, nil, examReader, questionReader, cache, &mockTxManager{}, &mockTaskEnqueuer{}, &logger)
 	ctx := context.Background()
 
 	// 1. Submit session succeeds
