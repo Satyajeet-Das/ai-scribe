@@ -12,9 +12,9 @@
   - `apps/frontend/` — The Next.js (App Router) web client.
   - `packages/` — Shared OpenAPI specs, Zod schemas, and email templates.
 - **Product Domain**: An accessible voice-first examination platform for visually impaired students.
-- **Current Architectural Phase**: Foundation restructuring.
-  - **Implemented**: Core modular monolith foundation, domain boundaries, dependency injection, PostgreSQL pool, Tern migrations, Redis, Echo HTTP server, logging, background jobs, Clerk auth middleware, error mapping.
-  - **Intentionally Deferred (DO NOT implement prematurely)**: WebSockets audio streaming, real-time STT/TTS engine, LLM evaluation pipelines, Redis FSM, proctoring algorithms, PDF parsing.
+- **Current Architectural Phase**: Exam Runtime Foundation (Sprint 2 Complete).
+  - **Implemented**: Core modular monolith foundation, domain boundaries, PostgreSQL pool, Redis session caching, Echo HTTP server, logging, background jobs, Clerk auth middleware, strict error mapping, pure domain Finite State Machines (FSM), distributed locking, and idempotent session orchestration.
+  - **Intentionally Deferred (DO NOT implement prematurely)**: WebSockets audio streaming, real-time STT/TTS engine, LLM evaluation pipelines, proctoring algorithms, PDF parsing.
 
 ---
 
