@@ -53,6 +53,20 @@ Frontend Sprint 2 is fully implemented, verified, and integrated with the author
 - Amber notice banner when redirected due to session expiration.
 - Open-redirect protection validating `returnUrl` (restricting to same-origin relative paths).
 
+### 6. Session Runtime FSM & Answer Submission Integration
+- **`sessionsApi` Runtime Integration (`src/services/api.ts`):**
+  - `startSession({ assignmentId })`: dispatches `POST /api/v1/sessions`, initializing student exam runtime with backend FSM state tracking.
+  - `nextQuestion(sessionId)`: dispatches `POST /api/v1/sessions/:id/next` to step the runtime forward through questions.
+  - `previousQuestion(sessionId)`: dispatches `POST /api/v1/sessions/:id/previous` to step the runtime backward.
+  - `submitAnswer(sessionId, questionId, payload)`: dispatches `PUT /api/v1/sessions/:session_id/questions/:question_id/answer`, supporting MCQ selection, text essays, and voice dictation with optimistic updates and error recovery.
+  - `getAnswers(sessionId)`: dispatches `GET /api/v1/sessions/:session_id/answers`, normalizing both direct arrays and envelope responses.
+- **Candidate Assessment Portal (`src/app/(dashboard)/sessions/page.tsx`):**
+  - Dynamically fetches candidate assignments via `assignmentsApi.getStudentAssignments(user.id)`.
+  - Automatically loads exam metadata (`examsApi.getExam(examId)`).
+  - Triggers real session creation via `sessionsApi.startSession`.
+- **Accessible Student Exam Room (`src/app/(dashboard)/sessions/[id]/page.tsx` & `src/components/student-exam-room.tsx`):**
+  - Connects interactive candidate answers, navigation buttons, and voice dictation directly to backend FSM and submission endpoints with resilient mock fallbacks.
+
 ---
 
 ## Verification & Test Results
@@ -61,24 +75,24 @@ Frontend Sprint 2 is fully implemented, verified, and integrated with the author
 ```
  RUN  v4.1.11 C:/VS Code/ai-scribe/apps/frontend
 
- ✓ src/hooks/__tests__/use-debounce.test.ts (3 tests)
- ✓ src/store/__tests__/auth-store.test.ts (8 tests)
  ✓ src/lib/__tests__/constants.test.ts (17 tests)
  ✓ src/lib/__tests__/validations.test.ts (18 tests)
- ✓ src/services/__tests__/api.test.ts (7 tests)
+ ✓ src/store/__tests__/auth-store.test.ts (8 tests)
+ ✓ src/hooks/__tests__/use-debounce.test.ts (3 tests)
+ ✓ src/services/__tests__/api.test.ts (11 tests)
  ✓ src/components/__tests__/protected-route.test.tsx (5 tests)
  ✓ src/app/__tests__/error-pages.test.tsx (2 tests)
  ✓ src/components/__tests__/auth-forms.test.tsx (5 tests)
 
  Test Files  8 passed (8)
-      Tests  65 passed (65)
+      Tests  69 passed (69)
 ```
 
 ### 2. TypeScript Compilation (`npx tsc --noEmit`)
 - Result: **0 errors** (Exit code 0).
 
 ### 3. ESLint Static Analysis (`npm run lint`)
-- Result: **0 errors** (Exit code 0).
+- Result: **0 errors, 0 warnings** (Exit code 0).
 
 ### 4. Next.js Production Build (`npm run build`)
 - Result: **Success** (Exit code 0).

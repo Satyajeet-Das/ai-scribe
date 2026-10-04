@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import {
-  Check,
-  ChevronDown,
   FilePlus2,
   Mic,
   Plus,
@@ -14,7 +12,14 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -26,14 +31,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { questionsApi } from "@/services/api";
 import { CreateQuestionSchema } from "@/lib/validations";
@@ -260,7 +257,7 @@ export function QuestionManager({
                       min="1"
                       max="100"
                       value={points}
-                      onChange={(e) => setPoints(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPoints(e.target.value)}
                     />
                   </div>
                 </div>
@@ -274,7 +271,7 @@ export function QuestionManager({
                     rows={3}
                     placeholder="e.g. Which cellular structure is responsible for adenosine triphosphate (ATP) synthesis?"
                     value={text}
-                    onChange={(e) => setText(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
                     aria-invalid={!!formErrors.text}
                   />
                   {formErrors.text && <p className="text-xs text-destructive">{formErrors.text}</p>}
@@ -317,7 +314,7 @@ export function QuestionManager({
                     )}
 
                     <div className="space-y-2">
-                      {options.map((opt, idx) => (
+                      {options.map((opt) => (
                         <div key={opt.id} className="flex items-center gap-2">
                           <Button
                             type="button"
@@ -334,7 +331,7 @@ export function QuestionManager({
                           <Input
                             placeholder={`Option ${opt.optionKey} text...`}
                             value={opt.optionText}
-                            onChange={(e) => {
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                               const val = e.target.value;
                               setOptions(
                                 options.map((o) =>

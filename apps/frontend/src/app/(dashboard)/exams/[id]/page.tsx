@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, BookOpen, Clock, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuestionManager } from "@/components/question-manager";
 import { AssignmentManager } from "@/components/assignment-manager";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -17,7 +14,6 @@ import type { Exam, Question, Assignment } from "@/types/exam-types";
 export default function ExamDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const examId = resolvedParams.id;
-  const router = useRouter();
 
   const [exam, setExam] = useState<Exam | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);

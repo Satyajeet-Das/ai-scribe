@@ -6,18 +6,12 @@ import Link from "next/link";
 import { useAuthStore } from "@/store/auth-store";
 import { getRolePortal } from "@/lib/constants";
 import {
-  ArrowRight,
   BookOpen,
   CheckCircle2,
-  Clock,
-  ExternalLink,
   GraduationCap,
   Headphones,
-  Lock,
-  Mic,
   Shield,
   Sparkles,
-  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

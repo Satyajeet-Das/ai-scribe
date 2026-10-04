@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { assignmentsApi } from "@/services/api";
 import { AssignCandidateSchema } from "@/lib/validations";
-import type { Assignment, AssignmentStatus } from "@/types/exam-types";
+import type { Assignment } from "@/types/exam-types";
 
 const fallbackAssignments: Assignment[] = [
   {

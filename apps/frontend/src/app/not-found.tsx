@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { FileQuestion, ArrowLeft, Home, Compass } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { FileQuestion, Home, Compass } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_CONFIG } from "@/lib/constants";
 
