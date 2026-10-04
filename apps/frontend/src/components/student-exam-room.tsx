@@ -30,7 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { Question } from "./question-manager";
+import type { Question, QuestionOption } from "@/types/exam-types";
 const sampleQuestions: Question[] = [
   {
     id: "q1",
@@ -212,7 +212,7 @@ export function StudentExamRoom({
                   aria-label="Answer choices"
                   className="flex flex-col gap-3"
                 >
-                  {question.options.map((option) => (
+                  {question.options.map((option: QuestionOption) => (
                     <label
                       key={option.id}
                       htmlFor={`answer-${option.id}`}

@@ -1,4 +1,10 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAuthStore } from "@/store/auth-store";
+import { getRolePortal } from "@/lib/constants";
 import {
   ArrowRight,
   BookOpen,
@@ -18,6 +24,29 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 
 export default function HomePage() {
+  const router = useRouter();
+  const { user, isAuthenticated, isHydrated } = useAuthStore();
+
+  // If user is logged in as teacher or candidate, directly redirect them to their respective portal
+  useEffect(() => {
+    if (isHydrated && isAuthenticated && user) {
+      router.replace(getRolePortal(user.role));
+    }
+  }, [isHydrated, isAuthenticated, user, router]);
+
+  // Prevent flash of landing page while redirecting authenticated user
+  if (isHydrated && isAuthenticated && user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div
+          role="status"
+          aria-label="Redirecting to your portal"
+          className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       {/* Navigation Header */}
@@ -48,15 +77,6 @@ export default function HomePage() {
             >
               Candidate Portal
             </Link>
-            <a
-              href="http://localhost:8080/docs"
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 hidden md:flex"
-            >
-              API Docs
-              <ExternalLink className="size-3" />
-            </a>
             <Link href="/login">
               <Button size="sm">Sign In / Register</Button>
             </Link>

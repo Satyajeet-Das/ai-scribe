@@ -4,8 +4,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExamDashboard } from "@/components/exam-dashboard";
 import { AssignmentManager } from "@/components/assignment-manager";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ProtectedRoute } from "@/components/auth/protected-route";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { examsApi, assignmentsApi, ApiError } from "@/services/api";
+import { DESIGN_TOKENS } from "@/lib/constants";
 import type { Exam, Assignment } from "@/types/exam-types";
 
 export default function ExamsPage() {
@@ -27,7 +35,6 @@ export default function ExamsPage() {
       setExams(res.exams || []);
     } catch (err) {
       console.warn("Backend unavailable, using local mock data fallback:", err);
-      // Fallback is handled inside ExamDashboard
     } finally {
       setLoading(false);
     }
@@ -58,8 +65,7 @@ export default function ExamsPage() {
       const updated = await examsApi.publishExam(id);
       setExams((prev) => prev.map((e) => (e.id === id ? updated : e)));
     } catch (err) {
-      console.error("Failed to publish exam:", err);
-      // Optimistic local update
+      console.error("Failed to publish exam via API, applying local optimistic state:", err);
       setExams((prev) =>
         prev.map((e) =>
           e.id === id ? { ...e, status: "PUBLISHED", publishedAt: new Date().toISOString() } : e
@@ -73,7 +79,7 @@ export default function ExamsPage() {
       const updated = await examsApi.archiveExam(id);
       setExams((prev) => prev.map((e) => (e.id === id ? updated : e)));
     } catch (err) {
-      console.error("Failed to archive exam:", err);
+      console.error("Failed to archive exam via API, applying local optimistic state:", err);
       setExams((prev) => prev.map((e) => (e.id === id ? { ...e, status: "ARCHIVED" } : e)));
     }
   };
@@ -104,39 +110,48 @@ export default function ExamsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-16">
-      {error && (
-        <div className="mx-auto max-w-6xl px-6 pt-4">
-          <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive font-medium">
-            {error}
+    <ProtectedRoute allowedRoles={["TEACHER", "ADMIN"]}>
+      <div className="min-h-screen bg-background pb-16">
+        {error && (
+          <div className={`${DESIGN_TOKENS.layout.container} pt-4`}>
+            <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive font-medium">
+              {error}
+            </div>
+          </div>
+        )}
+
+        <div className={DESIGN_TOKENS.layout.container}>
+          <div className={DESIGN_TOKENS.layout.pageSection}>
+            <ExamDashboard
+              exams={exams}
+              loading={loading}
+              onCreateExam={handleCreateExam}
+              onPublishExam={handlePublish}
+              onArchiveExam={handleArchive}
+              onOpenQuestions={handleOpenQuestions}
+              onOpenAssignments={handleOpenAssignments}
+            />
           </div>
         </div>
-      )}
 
-      <ExamDashboard
-        exams={exams}
-        loading={loading}
-        onCreateExam={handleCreateExam}
-        onPublishExam={handlePublish}
-        onArchiveExam={handleArchive}
-        onOpenQuestions={handleOpenQuestions}
-        onOpenAssignments={handleOpenAssignments}
-      />
-
-      {/* Assignment Management Dialog */}
-      <Dialog
-        open={Boolean(selectedExamForAssign)}
-        onOpenChange={(open) => !open && setSelectedExamForAssign(null)}
-      >
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Assign Candidates to Exam</DialogTitle>
-          </DialogHeader>
-          {selectedExamForAssign && (
-            <AssignmentManager examId={selectedExamForAssign.id} assignments={assignments} />
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+        {/* Assignment Management Dialog */}
+        <Dialog
+          open={Boolean(selectedExamForAssign)}
+          onOpenChange={(open) => !open && setSelectedExamForAssign(null)}
+        >
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Assign Candidates to Exam</DialogTitle>
+              <DialogDescription>
+                Allocate specific students to take this assessment in voice-first mode.
+              </DialogDescription>
+            </DialogHeader>
+            {selectedExamForAssign && (
+              <AssignmentManager examId={selectedExamForAssign.id} assignments={assignments} />
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </ProtectedRoute>
   );
 }

@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Exam Scribe",
-  description: "Accessible voice-first examination platform",
+  title: {
+    default: "AI Exam Scribe | Accessible Examination Platform",
+    template: "%s | AI Exam Scribe",
+  },
+  description:
+    "Accessible, voice-first, keyboard-navigable examination platform designed for all learners and educators.",
 };
 
 export default function RootLayout({

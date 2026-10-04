@@ -19,6 +19,22 @@ export interface UserResponse {
   role: "TEACHER" | "STUDENT" | "PROCTOR" | "ADMIN";
 }
 
+// Alias for store consumption
+export type User = UserResponse;
+
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+export interface RegisterPayload {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
 export interface LoginResponse {
   accessToken: string;
   expiresIn: number;
@@ -129,7 +145,7 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
     return {} as T;
   }
 
-  let data: any;
+  let data: unknown;
   const contentType = response.headers.get("content-type");
   if (contentType && contentType.includes("application/json")) {
     data = await response.json();
@@ -138,12 +154,13 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
   }
 
   if (!response.ok) {
+    const errorRecord = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : null;
     const errorMsg =
-      (typeof data === "object" && (data.message || data.error)) ||
+      (errorRecord && (typeof errorRecord.message === "string" ? errorRecord.message : typeof errorRecord.error === "string" ? errorRecord.error : null)) ||
       response.statusText ||
       "Request failed";
-    const code = typeof data === "object" ? data.code : undefined;
-    const override = typeof data === "object" ? data.override : undefined;
+    const code = errorRecord && typeof errorRecord.code === "string" ? errorRecord.code : undefined;
+    const override = errorRecord && typeof errorRecord.override === "boolean" ? errorRecord.override : undefined;
     throw new ApiError(errorMsg, response.status, code, override);
   }
 
@@ -339,10 +356,10 @@ export const questionsApi = {
 // Assignments API
 // -----------------------------------------------------------------------------
 export const assignmentsApi = {
-  async createAssignment(payload: { examId: string; studentId: string }): Promise<Assignment> {
+  async createAssignment(examId: string, studentId: string): Promise<Assignment> {
     return apiFetch<Assignment>("/assignments", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ examId, studentId }),
     });
   },
 

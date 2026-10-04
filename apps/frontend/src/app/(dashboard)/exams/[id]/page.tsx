@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QuestionManager } from "@/components/question-manager";
 import { AssignmentManager } from "@/components/assignment-manager";
+import { ProtectedRoute } from "@/components/auth/protected-route";
 import { examsApi, questionsApi, assignmentsApi } from "@/services/api";
+import { DESIGN_TOKENS } from "@/lib/constants";
 import type { Exam, Question, Assignment } from "@/types/exam-types";
 
 export default function ExamDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -65,55 +67,63 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
 
   if (loading) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <Loader2 className="size-8 animate-spin text-primary" />
-      </div>
+      <ProtectedRoute allowedRoles={["TEACHER", "ADMIN"]}>
+        <div className="flex h-96 items-center justify-center">
+          <Loader2 className="size-8 animate-spin text-primary" />
+        </div>
+      </ProtectedRoute>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl p-6 md:p-10 flex flex-col gap-8">
-      {/* Top Header */}
-      <div>
-        <Link
-          href="/exams"
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
-        >
-          <ArrowLeft className="size-4" />
-          Back to all exams
-        </Link>
-
-        {exam && (
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
+    <ProtectedRoute allowedRoles={["TEACHER", "ADMIN"]}>
+      <div className="min-h-screen bg-background pb-16">
+        <div className={DESIGN_TOKENS.layout.container}>
+          <div className="py-6 sm:py-8 flex flex-col gap-8">
+            {/* Top Navigation & Header */}
             <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold tracking-tight">{exam.title}</h1>
-                <Badge variant="outline">{exam.status}</Badge>
-              </div>
-              <p className="mt-1 text-muted-foreground">{exam.description}</p>
+              <Link
+                href="/exams"
+                className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowLeft className="size-4" />
+                Back to all exams
+              </Link>
+
+              {exam && (
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h1 className={DESIGN_TOKENS.typography.h1}>{exam.title}</h1>
+                      <Badge variant="outline">{exam.status}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">{exam.description}</p>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <BookOpen className="size-4" />
+                      {exam.subject}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="size-4" />
+                      {exam.durationMins} minutes
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <BookOpen className="size-4" />
-                {exam.subject}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Clock className="size-4" />
-                {exam.durationMins} minutes
-              </span>
+            {/* Question Studio */}
+            <QuestionManager examId={examId} questions={questions} />
+
+            {/* Candidate Assignments Section */}
+            <div className="mt-4">
+              <AssignmentManager examId={examId} assignments={assignments} />
             </div>
           </div>
-        )}
+        </div>
       </div>
-
-      {/* Question Studio */}
-      <QuestionManager examId={examId} questions={questions} />
-
-      {/* Candidate Assignments Section */}
-      <div className="mt-4">
-        <AssignmentManager examId={examId} assignments={assignments} />
-      </div>
-    </div>
+    </ProtectedRoute>
   );
 }

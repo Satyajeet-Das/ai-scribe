@@ -2,15 +2,22 @@
 
 import { useMemo, useState } from "react";
 import {
-  Archive,
   BookOpen,
+  Calendar,
   Check,
+  ChevronLeft,
   ChevronRight,
+  Clock,
   FilePlus2,
+  Filter,
   Loader2,
+  Plus,
   Search,
+  SlidersHorizontal,
   UserCheck,
   Users,
+  Archive,
+  AlertCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +41,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ExamCardsSkeleton, StatsSkeleton } from "@/components/ui/exam-skeleton";
+import { useDebounce } from "@/hooks/use-debounce";
+import { CreateExamSchema } from "@/lib/validations";
+import { DESIGN_TOKENS, DEFAULT_PAGE_SIZE } from "@/lib/constants";
 import type { Exam, ExamStatus } from "@/types/exam-types";
 
 const fallbackExams: Exam[] = [
@@ -113,40 +124,75 @@ export function ExamDashboard({
 }: ExamDashboardProps) {
   const [items, setItems] = useState<Exam[]>(exams);
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebounce(query, 300);
   const [status, setStatus] = useState<"ALL" | ExamStatus>("ALL");
   const [createOpen, setCreateOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  // Form fields
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = DEFAULT_PAGE_SIZE;
+
+  // Form fields & validation errors
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [durationMins, setDurationMins] = useState("60");
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Keep items synced if prop changes
   const displayItems = exams.length > 0 ? exams : items;
 
-  const filtered = useMemo(
-    () =>
-      displayItems.filter(
-        (exam) =>
-          (status === "ALL" || exam.status === status) &&
-          `${exam.title} ${exam.subject}`.toLowerCase().includes(query.toLowerCase())
-      ),
-    [displayItems, query, status]
-  );
+  // Debounced search and status filter
+  const filtered = useMemo(() => {
+    return displayItems.filter((exam) => {
+      const matchesStatus = status === "ALL" || exam.status === status;
+      const matchesQuery =
+        debouncedQuery === "" ||
+        `${exam.title} ${exam.subject} ${exam.description || ""}`
+          .toLowerCase()
+          .includes(debouncedQuery.toLowerCase());
+      return matchesStatus && matchesQuery;
+    });
+  }, [displayItems, debouncedQuery, status]);
+
+  // Paginated slice
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedExams = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, safePage, pageSize]);
 
   const handleCreate = async () => {
-    if (!title.trim() || !subject.trim()) return;
+    setFormErrors({});
+    const numDuration = parseInt(durationMins, 10) || 0;
+
+    const validation = CreateExamSchema.safeParse({
+      title,
+      subject,
+      description,
+      durationMins: numDuration,
+    });
+
+    if (!validation.success) {
+      const errors: Record<string, string> = {};
+      validation.error.errors.forEach((err) => {
+        if (err.path[0]) errors[err.path[0] as string] = err.message;
+      });
+      setFormErrors(errors);
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const dur = Math.max(1, parseInt(durationMins, 10) || 60);
       if (onCreateExam) {
         await onCreateExam({
           title: title.trim(),
           subject: subject.trim(),
           description: description.trim(),
-          durationMins: dur,
+          durationMins: numDuration,
         });
       } else {
         const newExam: Exam = {
@@ -154,7 +200,7 @@ export function ExamDashboard({
           title: title.trim(),
           subject: subject.trim(),
           description: description.trim() || "No description provided.",
-          durationMins: dur,
+          durationMins: numDuration,
           status: "DRAFT",
           createdBy: "teacher-1",
           createdAt: new Date().toISOString(),
@@ -164,6 +210,7 @@ export function ExamDashboard({
         };
         setItems((current) => [newExam, ...current]);
       }
+
       setTitle("");
       setSubject("");
       setDescription("");
@@ -175,153 +222,194 @@ export function ExamDashboard({
   };
 
   const handlePublish = async (id: string) => {
-    if (onPublishExam) {
-      await onPublishExam(id);
-    } else {
-      setItems((current) =>
-        current.map((exam) =>
-          exam.id === id
-            ? { ...exam, status: "PUBLISHED", publishedAt: new Date().toISOString() }
-            : exam
-        )
-      );
+    setActionLoadingId(id);
+    try {
+      if (onPublishExam) {
+        await onPublishExam(id);
+      } else {
+        setItems((current) =>
+          current.map((exam) =>
+            exam.id === id
+              ? { ...exam, status: "PUBLISHED", publishedAt: new Date().toISOString() }
+              : exam
+          )
+        );
+      }
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
   const handleArchive = async (id: string) => {
-    if (onArchiveExam) {
-      await onArchiveExam(id);
-    } else {
-      setItems((current) =>
-        current.map((exam) => (exam.id === id ? { ...exam, status: "ARCHIVED" } : exam))
-      );
+    setActionLoadingId(id);
+    try {
+      if (onArchiveExam) {
+        await onArchiveExam(id);
+      } else {
+        setItems((current) =>
+          current.map((exam) => (exam.id === id ? { ...exam, status: "ARCHIVED" } : exam))
+        );
+      }
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
   return (
-    <section
-      aria-labelledby="dashboard-title"
-      className="mx-auto flex max-w-6xl flex-col gap-8 p-6 md:p-10"
-    >
-      <header className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+    <div className="flex flex-col gap-6 w-full">
+      {/* Page Header */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-6">
         <div>
-          <p className="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-            Educator Portal
-          </p>
-          <h1
-            id="dashboard-title"
-            className="text-balance text-3xl font-semibold tracking-tight md:text-4xl"
-          >
-            Assessment & Exam Workspace
-          </h1>
-          <p className="mt-2 max-w-xl text-muted-foreground">
-            Create accessible exams, organize MCQ/Voice/Essay questions, and manage candidate
+          <div className="flex items-center gap-2">
+            <h1 className={DESIGN_TOKENS.typography.h1}>Exam Management</h1>
+            <Badge variant="outline" className="text-xs font-semibold">
+              Educator
+            </Badge>
+          </div>
+          <p className={DESIGN_TOKENS.typography.muted}>
+            Author accessible assessments, configure voice accommodations, and monitor student
             assignments.
           </p>
         </div>
 
+        {/* Create Exam Dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger render={<Button />}>
-            <FilePlus2 data-icon="inline-start" />
-            Create Exam
-          </DialogTrigger>
+          <DialogTrigger
+            render={
+              <Button className="shrink-0 font-medium">
+                <Plus className="mr-1.5 size-4" />
+                Create New Exam
+              </Button>
+            }
+          />
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>Create a New Exam</DialogTitle>
+              <DialogTitle className="text-xl">Create New Assessment</DialogTitle>
               <DialogDescription>
-                Define the exam details. You can add questions and assign candidates once created.
+                Set up initial metadata for your exam. Questions and accommodations can be added
+                after saving.
               </DialogDescription>
             </DialogHeader>
 
             <div className="flex flex-col gap-4 py-2">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="exam-title">Exam Title *</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="exam-title" className="text-sm font-medium">
+                  Exam Title <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="exam-title"
+                  placeholder="e.g. Midterm General Physics"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Introductory Physics Midterm"
-                  autoFocus
+                  aria-invalid={!!formErrors.title}
                 />
+                {formErrors.title && <p className="text-xs text-destructive">{formErrors.title}</p>}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="exam-subject">Subject *</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="exam-subject" className="text-sm font-medium">
+                    Subject / Course <span className="text-destructive">*</span>
+                  </Label>
                   <Input
                     id="exam-subject"
+                    placeholder="e.g. Physics 101"
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
-                    placeholder="e.g. Physics"
+                    aria-invalid={!!formErrors.subject}
                   />
+                  {formErrors.subject && (
+                    <p className="text-xs text-destructive">{formErrors.subject}</p>
+                  )}
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="exam-duration">Duration (minutes) *</Label>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="exam-duration" className="text-sm font-medium">
+                    Duration (Minutes) <span className="text-destructive">*</span>
+                  </Label>
                   <Input
                     id="exam-duration"
                     type="number"
-                    min="1"
-                    max="600"
+                    min="5"
+                    max="360"
                     value={durationMins}
                     onChange={(e) => setDurationMins(e.target.value)}
+                    aria-invalid={!!formErrors.durationMins}
                   />
+                  {formErrors.durationMins && (
+                    <p className="text-xs text-destructive">{formErrors.durationMins}</p>
+                  )}
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="exam-desc">Description</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="exam-desc" className="text-sm font-medium">
+                  Description / Instructions
+                </Label>
                 <Textarea
                   id="exam-desc"
+                  rows={3}
+                  placeholder="Briefly state covered topics, rules, and allowed assistive materials..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Instructions or notes for students..."
-                  rows={3}
+                  aria-invalid={!!formErrors.description}
                 />
+                {formErrors.description && (
+                  <p className="text-xs text-destructive">{formErrors.description}</p>
+                )}
               </div>
             </div>
 
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={submitting}>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => {
+                  setFormErrors({});
+                  setCreateOpen(false);
+                }}
+              >
                 Cancel
               </Button>
-              <Button
-                onClick={handleCreate}
-                disabled={!title.trim() || !subject.trim() || submitting}
-              >
-                {submitting && <Loader2 className="animate-spin" data-icon="inline-start" />}
-                {submitting ? "Creating..." : "Create Draft"}
+              <Button type="button" onClick={handleCreate} disabled={submitting}>
+                {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+                {submitting ? "Saving..." : "Create Draft"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </header>
 
-      {/* Metric Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard
-          label="Total Exams"
-          value={displayItems.length}
-          detail="Across all subjects"
-          icon={BookOpen}
-        />
-        <StatCard
-          label="Active Candidates"
-          value={displayItems
-            .filter((item) => item.status === "PUBLISHED")
-            .reduce((sum, item) => sum + (item.candidates ?? 0), 0)}
-          detail="Currently assigned"
-          icon={Users}
-        />
-        <StatCard
-          label="Drafts in Progress"
-          value={displayItems.filter((item) => item.status === "DRAFT").length}
-          detail="Ready for question review"
-          icon={FilePlus2}
-        />
-      </div>
+      {/* Metric Cards or Loading Stats Skeleton */}
+      {loading ? (
+        <StatsSkeleton />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-3">
+          <StatCard
+            label="Total Exams"
+            value={displayItems.length}
+            detail="Across all subjects"
+            icon={BookOpen}
+          />
+          <StatCard
+            label="Active Candidates"
+            value={displayItems
+              .filter((item) => item.status === "PUBLISHED")
+              .reduce((sum, item) => sum + (item.candidates ?? 0), 0)}
+            detail="Currently assigned"
+            icon={Users}
+          />
+          <StatCard
+            label="Drafts in Progress"
+            value={displayItems.filter((item) => item.status === "DRAFT").length}
+            detail="Ready for question review"
+            icon={FilePlus2}
+          />
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col gap-3 border-b pb-5 md:flex-row">
+      <div className="flex flex-col gap-3 border-b pb-5 md:flex-row md:items-center">
         <div className="relative flex-1">
           <Search
             aria-hidden="true"
@@ -330,97 +418,190 @@ export function ExamDashboard({
           <Input
             className="pl-9"
             aria-label="Search exams"
-            placeholder="Search exams by title or subject..."
+            placeholder="Search exams by title, subject, or description..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setCurrentPage(1);
+            }}
           />
         </div>
-        <Select value={status} onValueChange={(val) => setStatus(val as typeof status)}>
-          <SelectTrigger className="w-full md:w-48" aria-label="Filter by status">
-            <SelectValue placeholder="All statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">All Statuses</SelectItem>
-            <SelectItem value="DRAFT">Draft</SelectItem>
-            <SelectItem value="PUBLISHED">Published</SelectItem>
-            <SelectItem value="ARCHIVED">Archived</SelectItem>
-          </SelectContent>
-        </Select>
+
+        <div className="flex items-center gap-2">
+          <Select
+            value={status}
+            onValueChange={(val) => {
+              setStatus(val as typeof status);
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="w-full md:w-48" aria-label="Filter by status">
+              <SlidersHorizontal className="size-4 mr-2 text-muted-foreground" />
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Statuses</SelectItem>
+              <SelectItem value="DRAFT">Draft</SelectItem>
+              <SelectItem value="PUBLISHED">Published</SelectItem>
+              <SelectItem value="ARCHIVED">Archived</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {/* Exam Cards Grid */}
+      {/* Exam Cards Grid or Skeleton */}
       {loading ? (
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="size-8 animate-spin text-primary" />
-        </div>
+        <ExamCardsSkeleton count={pageSize} />
       ) : filtered.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center p-12 text-center">
-          <BookOpen className="size-12 text-muted-foreground/50 mb-3" />
-          <h3 className="text-lg font-medium">No exams found</h3>
+        <Card className="flex flex-col items-center justify-center p-12 text-center border-dashed">
+          <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-3">
+            <BookOpen className="size-8 text-muted-foreground/60" />
+          </div>
+          <h3 className="text-lg font-semibold">No assessments found</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-sm">
             {query || status !== "ALL"
-              ? "Try changing your search query or status filter."
-              : "Get started by creating your first exam draft using the button above."}
+              ? "No exams match your search criteria. Try clearing filters or using another keyword."
+              : "You haven't created any exams yet. Get started by drafting your first accessible exam."}
           </p>
+          {query || status !== "ALL" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => {
+                setQuery("");
+                setStatus("ALL");
+              }}
+            >
+              Reset Filters
+            </Button>
+          ) : (
+            <Button size="sm" className="mt-4" onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-1.5 size-4" />
+              Create First Exam
+            </Button>
+          )}
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {filtered.map((exam) => (
-            <Card key={exam.id} className="transition-all hover:shadow-md border border-border">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardDescription className="text-xs uppercase font-semibold tracking-wider text-muted-foreground">
-                      {exam.subject} · {exam.durationMins} mins
-                    </CardDescription>
-                    <CardTitle className="mt-1 text-xl">{exam.title}</CardTitle>
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            {paginatedExams.map((exam) => (
+              <Card
+                key={exam.id}
+                className="transition-all hover:shadow-md border border-border flex flex-col justify-between"
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <CardDescription className="text-xs uppercase font-semibold tracking-wider text-muted-foreground">
+                        {exam.subject} · {exam.durationMins} mins
+                      </CardDescription>
+                      <CardTitle className="text-xl font-bold">{exam.title}</CardTitle>
+                    </div>
+                    <Badge variant="outline" className={statusStyles[exam.status]}>
+                      {exam.status}
+                    </Badge>
                   </div>
-                  <Badge variant="outline" className={statusStyles[exam.status]}>
-                    {exam.status}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-5">
-                <p className="min-h-10 text-sm leading-6 text-muted-foreground line-clamp-2">
-                  {exam.description || "No description provided."}
-                </p>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4 flex-1 justify-between">
+                  <p className="min-h-10 text-sm leading-6 text-muted-foreground line-clamp-2">
+                    {exam.description || "No description provided for this assessment."}
+                  </p>
 
-                <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3">
-                  <span>{exam.questions ?? 0} questions configured</span>
-                  <span>{exam.candidates ?? 0} candidates assigned</span>
-                </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3">
+                    <span>{exam.questions ?? 0} questions configured</span>
+                    <span>{exam.candidates ?? 0} candidates assigned</span>
+                  </div>
 
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <Button variant="outline" size="sm" onClick={() => onOpenQuestions?.(exam)}>
-                    Manage Questions
-                    <ChevronRight data-icon="inline-end" />
-                  </Button>
-
-                  <Button variant="outline" size="sm" onClick={() => onOpenAssignments?.(exam)}>
-                    <UserCheck data-icon="inline-start" />
-                    Assign
-                  </Button>
-
-                  {exam.status === "DRAFT" && (
-                    <Button size="sm" onClick={() => handlePublish(exam.id)}>
-                      <Check data-icon="inline-start" />
-                      Publish
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t">
+                    <Button variant="outline" size="sm" onClick={() => onOpenQuestions?.(exam)}>
+                      Questions
+                      <ChevronRight className="ml-1 size-3.5" />
                     </Button>
-                  )}
 
-                  {exam.status === "PUBLISHED" && (
-                    <Button variant="outline" size="sm" onClick={() => handleArchive(exam.id)}>
-                      <Archive data-icon="inline-start" />
-                      Archive
+                    <Button variant="outline" size="sm" onClick={() => onOpenAssignments?.(exam)}>
+                      <UserCheck className="mr-1.5 size-3.5" />
+                      Assign
                     </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+
+                    {exam.status === "DRAFT" && (
+                      <Button
+                        size="sm"
+                        disabled={actionLoadingId === exam.id}
+                        onClick={() => handlePublish(exam.id)}
+                      >
+                        {actionLoadingId === exam.id ? (
+                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                        ) : (
+                          <Check className="mr-1.5 size-3.5" />
+                        )}
+                        Publish
+                      </Button>
+                    )}
+
+                    {exam.status === "PUBLISHED" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={actionLoadingId === exam.id}
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => handleArchive(exam.id)}
+                      >
+                        {actionLoadingId === exam.id ? (
+                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                        ) : (
+                          <Archive className="mr-1.5 size-3.5" />
+                        )}
+                        Archive
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t pt-4">
+              <span className="text-xs text-muted-foreground">
+                Showing <strong>{(safePage - 1) * pageSize + 1}</strong> to{" "}
+                <strong>{Math.min(safePage * pageSize, filtered.length)}</strong> of{" "}
+                <strong>{filtered.length}</strong> exams
+              </span>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="size-4 mr-1" />
+                  Previous
+                </Button>
+
+                <span className="text-xs font-medium px-2">
+                  Page {safePage} of {totalPages}
+                </span>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  aria-label="Next page"
+                >
+                  Next
+                  <ChevronRight className="size-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -433,24 +614,21 @@ function StatCard({
   label: string;
   value: number;
   detail: string;
-  icon: typeof BookOpen;
+  icon: React.ElementType;
 }) {
   return (
     <Card className="border border-border">
-      <CardContent className="flex items-center justify-between p-5">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            {label}
-          </p>
-          <p className="mt-1 text-3xl font-semibold tracking-tight">{value}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
+        <div className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+          <Icon className="size-4" />
         </div>
-        <div className="rounded-xl bg-primary/10 p-3">
-          <Icon aria-hidden="true" className="size-6 text-primary" />
-        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+        <p className="text-xs text-muted-foreground mt-1">{detail}</p>
       </CardContent>
     </Card>
   );
 }
-
 export default ExamDashboard;

@@ -7,6 +7,7 @@ import { CheckCircle2, Home, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StudentExamRoom } from "@/components/student-exam-room";
+import { ProtectedRoute } from "@/components/auth/protected-route";
 import { sessionsApi, questionsApi } from "@/services/api";
 import type { Question } from "@/types/exam-types";
 
@@ -81,9 +82,7 @@ export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id
 
         if (session.status === "SUBMITTED") {
           setSubmitted(true);
-          setSubmittedAt(
-            session.submittedAt ? new Date(session.submittedAt).toLocaleTimeString() : "Completed"
-          );
+          setSubmittedAt(session.submittedAt ? session.submittedAt.slice(11, 19) : "Completed");
           return;
         }
 
@@ -120,57 +119,61 @@ export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id
       const res = await sessionsApi.submitSession(sessionId);
       setSubmitted(true);
       setSubmittedAt(
-        res.submittedAt
-          ? new Date(res.submittedAt).toLocaleTimeString()
-          : new Date().toLocaleTimeString()
+        res.submittedAt ? res.submittedAt.slice(11, 19) : new Date().toISOString().slice(11, 19)
       );
     } catch {
       // Local completion fallback
       setSubmitted(true);
-      setSubmittedAt(new Date().toLocaleTimeString());
+      setSubmittedAt(new Date().toISOString().slice(11, 19));
     }
   };
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="size-8 animate-spin text-primary" />
-      </div>
+      <ProtectedRoute allowedRoles={["STUDENT", "ADMIN"]}>
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="size-8 animate-spin text-primary" />
+        </div>
+      </ProtectedRoute>
     );
   }
 
   if (submitted) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4 bg-background">
-        <Card className="w-full max-w-md text-center p-6 shadow-lg border border-border">
-          <CardHeader className="flex flex-col items-center">
-            <div className="size-16 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center mb-4">
-              <CheckCircle2 className="size-10 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <CardTitle className="text-2xl font-bold">Exam Submitted Successfully</CardTitle>
-            <CardDescription className="mt-2 text-muted-foreground">
-              Your responses have been recorded and encrypted. Submitted at{" "}
-              {submittedAt || "just now"}.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="mt-6 flex flex-col gap-3">
-            <Link href="/sessions" className="w-full">
-              <Button className="w-full font-semibold">
-                <Home className="size-4" data-icon="inline-start" />
-                Return to Candidate Dashboard
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
+      <ProtectedRoute allowedRoles={["STUDENT", "ADMIN"]}>
+        <div className="flex min-h-screen items-center justify-center p-4 bg-background">
+          <Card className="w-full max-w-md text-center p-6 shadow-lg border border-border">
+            <CardHeader className="flex flex-col items-center">
+              <div className="size-16 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center mb-4">
+                <CheckCircle2 className="size-10 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <CardTitle className="text-2xl font-bold">Exam Submitted Successfully</CardTitle>
+              <CardDescription className="mt-2 text-muted-foreground" suppressHydrationWarning>
+                Your responses have been recorded and encrypted. Submitted at{" "}
+                {submittedAt || "just now"}.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="mt-6 flex flex-col gap-3">
+              <Link href="/sessions" className="w-full">
+                <Button className="w-full font-semibold">
+                  <Home className="size-4 mr-2" />
+                  Return to Candidate Dashboard
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </ProtectedRoute>
     );
   }
 
   return (
-    <StudentExamRoom
-      questions={questions}
-      initialSeconds={initialSeconds}
-      onSubmit={handleSubmitExam}
-    />
+    <ProtectedRoute allowedRoles={["STUDENT", "ADMIN"]}>
+      <StudentExamRoom
+        questions={questions}
+        initialSeconds={initialSeconds}
+        onSubmit={handleSubmitExam}
+      />
+    </ProtectedRoute>
   );
 }
