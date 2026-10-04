@@ -12,6 +12,8 @@ import (
 
 type SessionReader interface {
 	GetSession(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*session.Session, int, error)
+	LockAndValidate(ctx context.Context, id uuid.UUID, event session.Event, callerID uuid.UUID) (*session.Session, func(context.Context) error, error)
+	UpdateActivity(ctx context.Context, id uuid.UUID) error
 }
 
 type QuestionReader interface {
@@ -45,21 +47,18 @@ func (s *answerService) SubmitAnswer(ctx context.Context, sessionID, questionID 
 		return nil, err
 	}
 
-	sess, _, err := s.sessionReader.GetSession(ctx, sessionID, callerID)
+	sess, unlock, err := s.sessionReader.LockAndValidate(ctx, sessionID, session.EventRecordAnswer, callerID)
 	if err != nil {
 		return nil, err
 	}
-	if sess == nil {
-		return nil, session.ErrSessionNotFound
-	}
-
-	if callerID != uuid.Nil && sess.StudentID != callerID {
-		return nil, ErrUnauthorizedStudent
-	}
-
-	if sess.Status != session.StatusInProgress {
-		return nil, ErrSessionNotActive
-	}
+	var success bool
+	defer func() {
+		_ = unlock(context.Background())
+		// Update the session's runtime lastActivityAt in Redis after releasing the lock, only on success
+		if success {
+			_ = s.sessionReader.UpdateActivity(context.Background(), sessionID)
+		}
+	}()
 
 	q, err := s.questionReader.GetQuestion(ctx, questionID)
 	if err != nil {
@@ -105,6 +104,7 @@ func (s *answerService) SubmitAnswer(ctx context.Context, sessionID, questionID 
 		Str("question_id", questionID.String()).
 		Msg("answer submitted successfully")
 
+	success = true
 	return ans, nil
 }
 

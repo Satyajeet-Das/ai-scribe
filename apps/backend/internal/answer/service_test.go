@@ -77,6 +77,24 @@ func (m *mockSessionReader) GetSession(ctx context.Context, id uuid.UUID, caller
 	return s, 60, nil
 }
 
+func (m *mockSessionReader) LockAndValidate(ctx context.Context, id uuid.UUID, event session.Event, callerID uuid.UUID) (*session.Session, func(context.Context) error, error) {
+	s, ok := m.sessions[id]
+	if !ok {
+		return nil, nil, session.ErrSessionNotFound
+	}
+	if callerID != uuid.Nil && s.StudentID != callerID {
+		return nil, nil, answer.ErrUnauthorizedStudent
+	}
+	if s.Status != session.StatusInProgress && event == session.EventRecordAnswer {
+		return nil, nil, answer.ErrSessionNotActive
+	}
+	return s, func(context.Context) error { return nil }, nil
+}
+
+func (m *mockSessionReader) UpdateActivity(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
+
 type mockQuestionReader struct {
 	questions map[uuid.UUID]*question.Question
 	options   map[uuid.UUID]*question.QuestionOption
