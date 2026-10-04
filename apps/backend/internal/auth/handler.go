@@ -56,10 +56,13 @@ func (h *Handler) Register(c echo.Context) error {
 
 	userResp, err := h.service.Register(c.Request().Context(), req)
 	if err != nil {
+		if errors.Is(err, user.ErrRollNoAlreadyExists) {
+			return httperrs.NewConflictError("Student with this roll number already exists", true)
+		}
 		if errors.Is(err, user.ErrUserAlreadyExists) {
 			return httperrs.NewConflictError("User with this email already exists", true)
 		}
-		if errors.Is(err, ErrPasswordTooShort) || errors.Is(err, ErrInvalidRole) {
+		if errors.Is(err, user.ErrRollNoRequired) || errors.Is(err, ErrPasswordTooShort) || errors.Is(err, ErrInvalidRole) {
 			return httperrs.NewBadRequestError(err.Error(), true, nil, nil, nil)
 		}
 		return httperrs.NewInternalServerError()

@@ -12,5 +12,6 @@ type User struct {
 	FirstName    string  `json:"firstName" db:"first_name"`
 	LastName     string  `json:"lastName" db:"last_name"`
 	Role         string  `json:"role" db:"role"`
+	RollNo       *string `json:"rollNo,omitempty" db:"roll_no"`
 	IsActive     bool    `json:"isActive" db:"is_active"`
 }

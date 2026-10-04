@@ -1,10 +1,13 @@
 package auth
 
 import (
+	"strings"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
 	platformauth "github.com/Satyajeet-Das/ai-scribe/internal/platform/auth"
+	"github.com/Satyajeet-Das/ai-scribe/internal/user"
 )
 
 var validate = validator.New()
@@ -15,10 +18,19 @@ type RegisterRequest struct {
 	FirstName string            `json:"firstName" validate:"required"`
 	LastName  string            `json:"lastName" validate:"required"`
 	Role      platformauth.Role `json:"role" validate:"required"`
+	RollNo    *string           `json:"rollNo,omitempty"`
 }
 
 func (r *RegisterRequest) Validate() error {
-	return validate.Struct(r)
+	if err := validate.Struct(r); err != nil {
+		return err
+	}
+	if r.Role == platformauth.RoleStudent {
+		if r.RollNo == nil || strings.TrimSpace(*r.RollNo) == "" {
+			return user.ErrRollNoRequired
+		}
+	}
+	return nil
 }
 
 type UserResponse struct {
@@ -27,6 +39,7 @@ type UserResponse struct {
 	FirstName string            `json:"firstName"`
 	LastName  string            `json:"lastName"`
 	Role      platformauth.Role `json:"role"`
+	RollNo    *string           `json:"rollNo,omitempty"`
 }
 
 type RegisterResponse struct {

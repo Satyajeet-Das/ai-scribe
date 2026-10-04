@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,9 +62,21 @@ func (s *authService) Register(ctx context.Context, req RegisterRequest) (*UserR
 		return nil, ErrInvalidRole
 	}
 
+	if req.Role == platformauth.RoleStudent {
+		if req.RollNo == nil || strings.TrimSpace(*req.RollNo) == "" {
+			return nil, user.ErrRollNoRequired
+		}
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("hashing password: %w", err)
+	}
+
+	var rollNo *string
+	if req.RollNo != nil && strings.TrimSpace(*req.RollNo) != "" {
+		normalized := strings.ToUpper(strings.TrimSpace(*req.RollNo))
+		rollNo = &normalized
 	}
 
 	newUser := &user.User{
@@ -72,11 +85,12 @@ func (s *authService) Register(ctx context.Context, req RegisterRequest) (*UserR
 		FirstName:    req.FirstName,
 		LastName:     req.LastName,
 		Role:         string(req.Role),
+		RollNo:       rollNo,
 		IsActive:     true,
 	}
 
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
-		if errors.Is(err, user.ErrUserAlreadyExists) {
+		if errors.Is(err, user.ErrUserAlreadyExists) || errors.Is(err, user.ErrRollNoAlreadyExists) {
 			return nil, err
 		}
 		s.logger.Error().Err(err).Str("email", req.Email).Msg("failed to create user in register")
@@ -95,6 +109,7 @@ func (s *authService) Register(ctx context.Context, req RegisterRequest) (*UserR
 		FirstName: newUser.FirstName,
 		LastName:  newUser.LastName,
 		Role:      platformauth.Role(newUser.Role),
+		RollNo:    newUser.RollNo,
 	}, nil
 }
 
@@ -153,6 +168,7 @@ func (s *authService) Login(ctx context.Context, req LoginRequest) (*LoginRespon
 			FirstName: u.FirstName,
 			LastName:  u.LastName,
 			Role:      platformauth.Role(u.Role),
+			RollNo:    u.RollNo,
 		},
 	}
 
@@ -301,5 +317,6 @@ func (s *authService) GetMe(ctx context.Context, userID uuid.UUID) (*UserRespons
 		FirstName: u.FirstName,
 		LastName:  u.LastName,
 		Role:      platformauth.Role(u.Role),
+		RollNo:    u.RollNo,
 	}, nil
 }

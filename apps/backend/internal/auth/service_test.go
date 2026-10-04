@@ -54,6 +54,22 @@ func (m *MockUserRepo) GetByClerkID(ctx context.Context, clerkID string) (*user.
 	return args.Get(0).(*user.User), args.Error(1)
 }
 
+func (m *MockUserRepo) GetByRollNo(ctx context.Context, rollNo string) (*user.User, error) {
+	args := m.Called(ctx, rollNo)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*user.User), args.Error(1)
+}
+
+func (m *MockUserRepo) SearchStudents(ctx context.Context, query string, limit int) ([]user.User, error) {
+	args := m.Called(ctx, query, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]user.User), args.Error(1)
+}
+
 func (m *MockUserRepo) Create(ctx context.Context, u *user.User) error {
 	args := m.Called(ctx, u)
 	return args.Error(0)
@@ -146,6 +162,61 @@ func TestAuthService_Register(t *testing.T) {
 
 		_, err := svc.Register(ctx, req)
 		assert.ErrorIs(t, err, auth.ErrInvalidRole)
+	})
+
+	t.Run("Student registration requires roll_no", func(t *testing.T) {
+		req := auth.RegisterRequest{
+			Email:     "student_noroll@school.edu",
+			Password:  "SecurePassword123!",
+			FirstName: "Student",
+			LastName:  "NoRoll",
+			Role:      platformauth.RoleStudent,
+			RollNo:    nil,
+		}
+
+		_, err := svc.Register(ctx, req)
+		assert.ErrorIs(t, err, user.ErrRollNoRequired)
+	})
+
+	t.Run("Student registration with valid roll_no succeeds", func(t *testing.T) {
+		roll := "23cs001"
+		req := auth.RegisterRequest{
+			Email:     "student@school.edu",
+			Password:  "SecurePassword123!",
+			FirstName: "Rahul",
+			LastName:  "Sharma",
+			Role:      platformauth.RoleStudent,
+			RollNo:    &roll,
+		}
+
+		mockUserRepo.On("Create", ctx, mock.MatchedBy(func(u *user.User) bool {
+			return u.Email == "student@school.edu" && u.RollNo != nil && *u.RollNo == "23CS001"
+		})).Return(nil).Once()
+
+		resp, err := svc.Register(ctx, req)
+		require.NoError(t, err)
+		assert.Equal(t, "student@school.edu", resp.Email)
+		assert.NotNil(t, resp.RollNo)
+		assert.Equal(t, "23CS001", *resp.RollNo)
+		mockUserRepo.AssertExpectations(t)
+	})
+
+	t.Run("Student registration with duplicate roll_no fails cleanly", func(t *testing.T) {
+		roll := "23CS001"
+		req := auth.RegisterRequest{
+			Email:     "student2@school.edu",
+			Password:  "SecurePassword123!",
+			FirstName: "Another",
+			LastName:  "Student",
+			Role:      platformauth.RoleStudent,
+			RollNo:    &roll,
+		}
+
+		mockUserRepo.On("Create", ctx, mock.Anything).Return(user.ErrRollNoAlreadyExists).Once()
+
+		_, err := svc.Register(ctx, req)
+		assert.ErrorIs(t, err, user.ErrRollNoAlreadyExists)
+		mockUserRepo.AssertExpectations(t)
 	})
 }
 

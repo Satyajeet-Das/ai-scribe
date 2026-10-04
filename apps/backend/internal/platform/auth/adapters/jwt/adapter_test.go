@@ -53,6 +53,22 @@ func (m *MockUserRepo) GetByClerkID(ctx context.Context, clerkID string) (*user.
 	return args.Get(0).(*user.User), args.Error(1)
 }
 
+func (m *MockUserRepo) GetByRollNo(ctx context.Context, rollNo string) (*user.User, error) {
+	args := m.Called(ctx, rollNo)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*user.User), args.Error(1)
+}
+
+func (m *MockUserRepo) SearchStudents(ctx context.Context, query string, limit int) ([]user.User, error) {
+	args := m.Called(ctx, query, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]user.User), args.Error(1)
+}
+
 func (m *MockUserRepo) Create(ctx context.Context, u *user.User) error {
 	args := m.Called(ctx, u)
 	return args.Error(0)
