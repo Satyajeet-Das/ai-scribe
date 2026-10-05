@@ -520,13 +520,17 @@ export const assignmentsApi = {
   },
 
   async getExamAssignments(examId: string): Promise<Assignment[]> {
-    const res = await apiFetch<{ assignments: Assignment[] }>(`/assignments/exam/${examId}`);
-    return res.assignments || [];
+    const res = await apiFetch<{ data?: Assignment[]; assignments?: Assignment[] }>(
+      `/assignments?exam_id=${encodeURIComponent(examId)}&limit=100`
+    );
+    return res.data || res.assignments || [];
   },
 
   async getStudentAssignments(studentId: string): Promise<Assignment[]> {
-    const res = await apiFetch<{ assignments: Assignment[] }>(`/assignments/student/${studentId}`);
-    return res.assignments || [];
+    const res = await apiFetch<{ data?: Assignment[]; assignments?: Assignment[] }>(
+      `/assignments?student_id=${encodeURIComponent(studentId)}&limit=100`
+    );
+    return res.data || res.assignments || [];
   },
 
   async revokeAssignment(id: string): Promise<void> {
@@ -559,7 +563,7 @@ export const studentsApi = {
 // Sessions & Answers API (Backend Sprint 2 Aligned)
 // -----------------------------------------------------------------------------
 export const sessionsApi = {
-  async startSession(payload: { assignmentId: string }): Promise<Session> {
+  async startSession(payload: { assignmentId?: string; examId?: string }): Promise<Session> {
     return apiFetch<Session>("/sessions", {
       method: "POST",
       body: JSON.stringify(payload),

@@ -17,6 +17,7 @@ import (
 
 type AssignmentReader interface {
 	GetAssignment(ctx context.Context, id uuid.UUID) (*assignment.Assignment, error)
+	GetActiveAssignment(ctx context.Context, examID, studentID uuid.UUID) (*assignment.Assignment, error)
 }
 
 type ExamReader interface {
@@ -100,10 +101,21 @@ func (s *sessionService) StartSession(ctx context.Context, req StartSessionReque
 		return nil, 0, err
 	}
 
-	asgn, err := s.assignmentReader.GetAssignment(ctx, req.AssignmentID)
-	if err != nil {
-		return nil, 0, err
+	var asgn *assignment.Assignment
+	if req.AssignmentID != nil && *req.AssignmentID != uuid.Nil {
+		var err error
+		asgn, err = s.assignmentReader.GetAssignment(ctx, *req.AssignmentID)
+		if err != nil {
+			return nil, 0, err
+		}
+	} else if req.ExamID != nil && *req.ExamID != uuid.Nil {
+		var err error
+		asgn, err = s.assignmentReader.GetActiveAssignment(ctx, *req.ExamID, callerID)
+		if err != nil {
+			return nil, 0, err
+		}
 	}
+
 	if asgn == nil {
 		return nil, 0, ErrInvalidAssignment
 	}
@@ -131,7 +143,7 @@ func (s *sessionService) StartSession(ctx context.Context, req StartSessionReque
 		return nil, 0, ErrExamNotPublished
 	}
 
-	existingActive, err := s.repo.GetActiveByAssignmentID(ctx, req.AssignmentID)
+	existingActive, err := s.repo.GetActiveByAssignmentID(ctx, asgn.ID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -146,11 +158,11 @@ func (s *sessionService) StartSession(ctx context.Context, req StartSessionReque
 			BaseWithCreatedAt: model.BaseWithCreatedAt{CreatedAt: now},
 			BaseWithUpdatedAt: model.BaseWithUpdatedAt{UpdatedAt: now},
 		},
-		AssignmentID: req.AssignmentID,
-		ExamID:       asgn.ExamID,
-		StudentID:    asgn.StudentID,
-		Status:       StatusPending,
-		StartedAt:    now,
+		AssignmentID:   asgn.ID,
+		ExamID:         asgn.ExamID,
+		StudentID:      asgn.StudentID,
+		Status:         StatusPending,
+		StartedAt:      now,
 		LastActivityAt: now,
 	}
 
@@ -177,13 +189,10 @@ func (s *sessionService) StartSession(ctx context.Context, req StartSessionReque
 	sess.Status = nextState
 
 	if err := s.txManager.WithTx(ctx, func(tx database.DBTX) error {
-		// Currently repo.Create uses the pool directly. We need to update Repository to accept DBTX, 
-		// but since we haven't updated repo, we will just call it as before for now, or update it later.
-		// Wait, repo.Create(ctx, sess) doesn't accept tx. Let's just use repo.Create.
 		return s.repo.Create(ctx, sess)
 	}); err != nil {
 		s.logger.Error().Err(err).
-			Str("assignment_id", req.AssignmentID.String()).
+			Str("assignment_id", asgn.ID.String()).
 			Str("student_id", asgn.StudentID.String()).
 			Msg("failed to create exam session")
 		return nil, 0, err
@@ -201,7 +210,7 @@ func (s *sessionService) StartSession(ctx context.Context, req StartSessionReque
 	s.logger.Info().
 		Str("event", "session.started").
 		Str("session_id", sess.ID.String()).
-		Str("assignment_id", req.AssignmentID.String()).
+		Str("assignment_id", asgn.ID.String()).
 		Str("student_id", asgn.StudentID.String()).
 		Msg("exam session started successfully")
 
@@ -365,21 +374,27 @@ func (s *sessionService) LockAndValidate(ctx context.Context, id uuid.UUID, even
 		return nil, nil, ErrUnauthorizedStudent
 	}
 
-	// Passive Expiration Check
+	// Passive Expiration Check and Emergency Unpublish Check
 	if sess.Status == StatusInProgress {
 		ex, err := s.examReader.GetExam(ctx, sess.ExamID)
 		if err != nil {
 			_ = unlock(ctx)
 			return nil, nil, err
 		}
-		if ex != nil && ex.DurationMins > 0 {
-			maxAllowed := time.Duration(ex.DurationMins) * time.Minute
-			if time.Since(sess.StartedAt) > maxAllowed {
-				if err := s.txManager.WithTx(ctx, func(tx database.DBTX) error {
-					return s.repo.Expire(ctx, id)
-				}); err == nil {
-					sess.Status = StatusExpired
-					_ = s.cache.DeleteState(ctx, id)
+		if ex != nil {
+			if ex.Status != exam.StatusPublished && event != EventSystemExpire {
+				_ = unlock(ctx)
+				return nil, nil, ErrExamNotPublished
+			}
+			if ex.DurationMins > 0 {
+				maxAllowed := time.Duration(ex.DurationMins) * time.Minute
+				if time.Since(sess.StartedAt) > maxAllowed {
+					if err := s.txManager.WithTx(ctx, func(tx database.DBTX) error {
+						return s.repo.Expire(ctx, id)
+					}); err == nil {
+						sess.Status = StatusExpired
+						_ = s.cache.DeleteState(ctx, id)
+					}
 				}
 			}
 		}

@@ -51,26 +51,56 @@ func (s *examService) GetExamForCaller(ctx context.Context, id uuid.UUID, caller
 		return nil, err
 	}
 
-	if !caller.CanManage(e.CreatedBy) {
-		return nil, ErrUnauthorizedCreator
+	if caller.IsAdmin() {
+		return e, nil
 	}
 
-	return e, nil
+	if caller.IsTeacher() {
+		if !caller.CanManage(e.CreatedBy) {
+			return nil, ErrUnauthorizedCreator
+		}
+		return e, nil
+	}
+
+	if caller.IsStudent() {
+		if e.Status != StatusPublished {
+			return nil, ErrExamNotFound
+		}
+		isAssigned, err := s.repo.IsStudentAssigned(ctx, id, caller.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !isAssigned {
+			return nil, ErrUnauthorizedCreator
+		}
+		return e, nil
+	}
+
+	return nil, ErrInvalidCallerRole
 }
 
 func (s *examService) ListExams(ctx context.Context, params ListExamsParams, caller Caller) ([]Exam, int, error) {
-	if !caller.IsAdmin() && !caller.IsTeacher() {
-		return nil, 0, ErrInvalidCallerRole
-	}
-
 	params.Defaults()
 
-	// Teachers can only see their own exams
-	if caller.IsTeacher() && !caller.IsAdmin() {
-		params.CreatedBy = &caller.ID
+	if caller.IsStudent() {
+		pub := StatusPublished
+		params.Status = &pub
+		params.AssignedStudentID = &caller.ID
+		return s.repo.List(ctx, params)
 	}
 
-	return s.repo.List(ctx, params)
+	if caller.IsTeacher() {
+		if !caller.IsAdmin() {
+			params.CreatedBy = &caller.ID
+		}
+		return s.repo.List(ctx, params)
+	}
+
+	if caller.IsAdmin() {
+		return s.repo.List(ctx, params)
+	}
+
+	return nil, 0, ErrInvalidCallerRole
 }
 
 func (s *examService) CreateExam(ctx context.Context, req CreateExamRequest, caller Caller) (*Exam, error) {
@@ -235,14 +265,14 @@ func (s *examService) UnpublishExam(ctx context.Context, id uuid.UUID, caller Ca
 		return nil, ErrInvalidExamState
 	}
 
-	// Business rule: verify exam does not have active assignments or student sessions
+	// Emergency unpublishing: log if active sessions/assignments exist, but allow unpublishing
 	hasRelations, err := s.repo.HasActiveSessionsOrAssignments(ctx, id)
 	if err != nil {
 		s.logger.Error().Err(err).Str("exam_id", id.String()).Msg("failed to check relations before unpublish")
 		return nil, err
 	}
 	if hasRelations {
-		return nil, ErrCannotUnpublishActiveExam
+		s.logger.Warn().Str("exam_id", id.String()).Msg("emergency unpublish invoked while active sessions or assignments exist")
 	}
 
 	if err := s.repo.Unpublish(ctx, id); err != nil {

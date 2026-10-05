@@ -102,6 +102,7 @@ func TestAssignmentService_CreateAssignment(t *testing.T) {
 	teacherID := uuid.New()
 	publishedExamID := uuid.New()
 	draftExamID := uuid.New()
+	archivedExamID := uuid.New()
 
 	examReader := &mockExamReader{
 		exams: map[uuid.UUID]*exam.Exam{
@@ -113,6 +114,11 @@ func TestAssignmentService_CreateAssignment(t *testing.T) {
 			draftExamID: {
 				Title:     "Draft History Exam",
 				Status:    exam.StatusDraft,
+				CreatedBy: creatorID,
+			},
+			archivedExamID: {
+				Title:     "Archived Exam",
+				Status:    exam.StatusArchived,
 				CreatedBy: creatorID,
 			},
 		},
@@ -169,18 +175,26 @@ func TestAssignmentService_CreateAssignment(t *testing.T) {
 	}, creatorID)
 	assert.ErrorIs(t, err, ErrStudentIneligible)
 
-	// 5. Assigning draft exam fails
-	_, err = svc.CreateAssignment(ctx, CreateAssignmentRequest{
+	// 5. Assigning draft exam succeeds (allows assigning students before publishing)
+	draftAsgn, err := svc.CreateAssignment(ctx, CreateAssignmentRequest{
 		ExamID:    draftExamID,
 		StudentID: studentID,
 	}, creatorID)
-	assert.ErrorIs(t, err, ErrExamNotPublished)
+	require.NoError(t, err)
+	assert.Equal(t, StatusAssigned, draftAsgn.Status)
 
-	// 6. Duplicate active assignment fails
+	// 6. Assigning archived exam fails
+	_, err = svc.CreateAssignment(ctx, CreateAssignmentRequest{
+		ExamID:    archivedExamID,
+		StudentID: studentID,
+	}, creatorID)
+	assert.ErrorIs(t, err, ErrExamArchived)
+
+	// 7. Duplicate active assignment fails
 	_, err = svc.CreateAssignment(ctx, req, creatorID)
 	assert.ErrorIs(t, err, ErrDuplicateAssignment)
 
-	// 7. Unauthorized creator fails
+	// 8. Unauthorized creator fails
 	otherUser := uuid.New()
 	validOtherStudent := uuid.New()
 	userReader.users[validOtherStudent] = &user.User{Role: "STUDENT", IsActive: true}
@@ -189,6 +203,16 @@ func TestAssignmentService_CreateAssignment(t *testing.T) {
 		StudentID: validOtherStudent,
 	}, otherUser)
 	assert.ErrorIs(t, err, ErrUnauthorized)
+
+	// 9. Admin can assign to someone else's exam
+	adminUser := uuid.New()
+	userReader.users[adminUser] = &user.User{Role: "ADMIN", IsActive: true}
+	adminAsgn, err := svc.CreateAssignment(ctx, CreateAssignmentRequest{
+		ExamID:    publishedExamID,
+		StudentID: validOtherStudent,
+	}, adminUser)
+	require.NoError(t, err)
+	assert.Equal(t, StatusAssigned, adminAsgn.Status)
 }
 
 func TestAssignmentService_RevokeAssignment(t *testing.T) {

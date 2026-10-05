@@ -98,12 +98,15 @@ func (r *pgRepository) List(ctx context.Context, limit, offset int, examID, stud
 	}
 
 	query := `
-		SELECT id, exam_id, student_id, assigned_at, status, created_at, updated_at
-		FROM assignments
-		WHERE ($1::uuid IS NULL OR exam_id = $1)
-		  AND ($2::uuid IS NULL OR student_id = $2)
-		  AND ($3::text IS NULL OR status = $3)
-		ORDER BY assigned_at DESC
+		SELECT a.id, a.exam_id, a.student_id, a.assigned_at, a.status, a.created_at, a.updated_at,
+		       COALESCE(TRIM(CONCAT(u.first_name, ' ', u.last_name)), '') AS student_name,
+		       COALESCE(u.roll_no, '') AS student_roll_no
+		FROM assignments a
+		LEFT JOIN users u ON a.student_id = u.id
+		WHERE ($1::uuid IS NULL OR a.exam_id = $1)
+		  AND ($2::uuid IS NULL OR a.student_id = $2)
+		  AND ($3::text IS NULL OR a.status = $3)
+		ORDER BY a.assigned_at DESC
 		LIMIT $4 OFFSET $5
 	`
 	rows, err := r.pool.Query(ctx, query, examID, studentID, statusFilter, limit, offset)
@@ -123,6 +126,8 @@ func (r *pgRepository) List(ctx context.Context, limit, offset int, examID, stud
 			&a.Status,
 			&a.CreatedAt,
 			&a.UpdatedAt,
+			&a.StudentName,
+			&a.StudentRollNo,
 		); err != nil {
 			return nil, 0, err
 		}

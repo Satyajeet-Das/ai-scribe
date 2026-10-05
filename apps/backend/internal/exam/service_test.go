@@ -16,15 +16,17 @@ import (
 )
 
 type mockExamRepo struct {
-	mu           sync.Mutex
-	exams        map[uuid.UUID]*Exam
-	hasRelations map[uuid.UUID]bool
+	mu               sync.Mutex
+	exams            map[uuid.UUID]*Exam
+	hasRelations     map[uuid.UUID]bool
+	assignedStudents map[string]bool
 }
 
 func newMockExamRepo() *mockExamRepo {
 	return &mockExamRepo{
-		exams:        make(map[uuid.UUID]*Exam),
-		hasRelations: make(map[uuid.UUID]bool),
+		exams:            make(map[uuid.UUID]*Exam),
+		hasRelations:     make(map[uuid.UUID]bool),
+		assignedStudents: make(map[string]bool),
 	}
 }
 
@@ -56,6 +58,12 @@ func (m *mockExamRepo) List(ctx context.Context, params ListExamsParams) ([]Exam
 		}
 		if params.CreatedBy != nil && e.CreatedBy != *params.CreatedBy {
 			continue
+		}
+		if params.AssignedStudentID != nil && *params.AssignedStudentID != uuid.Nil {
+			key := e.ID.String() + ":" + params.AssignedStudentID.String()
+			if !m.assignedStudents[key] {
+				continue
+			}
 		}
 		if params.Search != "" {
 			searchLower := strings.ToLower(params.Search)
@@ -174,6 +182,12 @@ func (m *mockExamRepo) HasActiveSessionsOrAssignments(ctx context.Context, examI
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.hasRelations[examID], nil
+}
+
+func (m *mockExamRepo) IsStudentAssigned(ctx context.Context, examID, studentID uuid.UUID) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.assignedStudents[examID.String()+":"+studentID.String()], nil
 }
 
 func TestExamService_CreateAndGet(t *testing.T) {
@@ -441,14 +455,8 @@ func TestExamService_PublishAndUnpublish_LifecycleRules(t *testing.T) {
 		assert.ErrorIs(t, err, ErrExamAlreadyPublished)
 	})
 
-	t.Run("unpublish with active sessions fails", func(t *testing.T) {
+	t.Run("emergency unpublish with active sessions succeeds and reverts to DRAFT", func(t *testing.T) {
 		repo.hasRelations[exam.ID] = true
-		_, err := svc.UnpublishExam(ctx, exam.ID, teacher)
-		assert.ErrorIs(t, err, ErrCannotUnpublishActiveExam)
-	})
-
-	t.Run("unpublish without active relations succeeds and reverts to DRAFT", func(t *testing.T) {
-		repo.hasRelations[exam.ID] = false
 		reverted, err := svc.UnpublishExam(ctx, exam.ID, teacher)
 		require.NoError(t, err)
 		assert.Equal(t, StatusDraft, reverted.Status)
@@ -555,4 +563,68 @@ func TestExamService_ConcurrentUpdates(t *testing.T) {
 	fetched, err := svc.GetExam(ctx, exam.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Updated Title", fetched.Title)
+}
+
+func TestExamService_StudentAccess(t *testing.T) {
+	repo := newMockExamRepo()
+	logger := zerolog.Nop()
+	svc := NewService(repo, &logger)
+	ctx := context.Background()
+
+	teacher := Caller{ID: uuid.New(), Role: platformauth.RoleTeacher}
+	student := Caller{ID: uuid.New(), Role: platformauth.RoleStudent}
+	otherStudent := Caller{ID: uuid.New(), Role: platformauth.RoleStudent}
+
+	// Create 2 exams: one draft, one published
+	draftExam, err := svc.CreateExam(ctx, CreateExamRequest{
+		Title:        "Draft Math Exam",
+		Subject:      "Math",
+		DurationMins: 45,
+	}, teacher)
+	require.NoError(t, err)
+
+	publishedExam, err := svc.CreateExam(ctx, CreateExamRequest{
+		Title:        "Published Science Exam",
+		Subject:      "Science",
+		DurationMins: 60,
+	}, teacher)
+	require.NoError(t, err)
+
+	_, err = svc.PublishExam(ctx, publishedExam.ID, teacher)
+	require.NoError(t, err)
+
+	// Assign student to both exams (in mock repo)
+	repo.assignedStudents[draftExam.ID.String()+":"+student.ID.String()] = true
+	repo.assignedStudents[publishedExam.ID.String()+":"+student.ID.String()] = true
+
+	t.Run("student sees only assigned published exams in ListExams", func(t *testing.T) {
+		exams, total, err := svc.ListExams(ctx, ListExamsParams{}, student)
+		require.NoError(t, err)
+		assert.Equal(t, 1, total)
+		assert.Equal(t, 1, len(exams))
+		assert.Equal(t, publishedExam.ID, exams[0].ID)
+	})
+
+	t.Run("unassigned student sees no exams", func(t *testing.T) {
+		exams, total, err := svc.ListExams(ctx, ListExamsParams{}, otherStudent)
+		require.NoError(t, err)
+		assert.Equal(t, 0, total)
+		assert.Equal(t, 0, len(exams))
+	})
+
+	t.Run("student can get assigned published exam", func(t *testing.T) {
+		e, err := svc.GetExamForCaller(ctx, publishedExam.ID, student)
+		require.NoError(t, err)
+		assert.Equal(t, publishedExam.ID, e.ID)
+	})
+
+	t.Run("student cannot get draft exam even if assigned", func(t *testing.T) {
+		_, err := svc.GetExamForCaller(ctx, draftExam.ID, student)
+		assert.ErrorIs(t, err, ErrExamNotFound)
+	})
+
+	t.Run("student cannot get exam if not assigned", func(t *testing.T) {
+		_, err := svc.GetExamForCaller(ctx, publishedExam.ID, otherStudent)
+		assert.ErrorIs(t, err, ErrUnauthorizedCreator)
+	})
 }

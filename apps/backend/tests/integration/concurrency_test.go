@@ -119,7 +119,7 @@ func TestConcurrency_SessionFSMAndLocks(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start Session
-	req := session.StartSessionRequest{AssignmentID: asgn.ID}
+	req := session.StartSessionRequest{AssignmentID: &asgn.ID}
 	sess, _, err := sessionSvc.StartSession(ctx, req, student.ID)
 	require.NoError(t, err)
 	require.Equal(t, session.StatusInProgress, sess.Status)

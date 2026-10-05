@@ -24,6 +24,10 @@ func (c Caller) IsTeacher() bool {
 	return c.Role == platformauth.RoleTeacher
 }
 
+func (c Caller) IsStudent() bool {
+	return c.Role == platformauth.RoleStudent
+}
+
 func (c Caller) CanManage(ownerID uuid.UUID) bool {
 	if c.IsAdmin() {
 		return true
@@ -54,12 +58,13 @@ func (r *UpdateExamRequest) Validate() error {
 }
 
 type ListExamsParams struct {
-	Limit     int        `query:"limit" json:"limit"`
-	Offset    int        `query:"offset" json:"offset"`
-	Status    *Status    `query:"status" json:"status,omitempty"`
-	Subject   string     `query:"subject" json:"subject,omitempty"`
-	Search    string     `query:"search" json:"search,omitempty"`
-	CreatedBy *uuid.UUID `query:"createdBy" json:"createdBy,omitempty"`
+	Limit             int        `query:"limit" json:"limit"`
+	Offset            int        `query:"offset" json:"offset"`
+	Status            *Status    `query:"status" json:"status,omitempty"`
+	Subject           string     `query:"subject" json:"subject,omitempty"`
+	Search            string     `query:"search" json:"search,omitempty"`
+	CreatedBy         *uuid.UUID `query:"createdBy" json:"createdBy,omitempty"`
+	AssignedStudentID *uuid.UUID `query:"assignedStudentId" json:"assignedStudentId,omitempty"`
 }
 
 func (p *ListExamsParams) Defaults() {
@@ -75,16 +80,17 @@ func (p *ListExamsParams) Defaults() {
 }
 
 type ExamResponse struct {
-	ID           uuid.UUID  `json:"id"`
-	Title        string     `json:"title"`
-	Subject      string     `json:"subject"`
-	Description  string     `json:"description"`
-	DurationMins int        `json:"durationMins"`
-	Status       Status     `json:"status"`
-	CreatedBy    uuid.UUID  `json:"createdBy"`
-	PublishedAt  *time.Time `json:"publishedAt,omitempty"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	ID            uuid.UUID  `json:"id"`
+	Title         string     `json:"title"`
+	Subject       string     `json:"subject"`
+	Description   string     `json:"description"`
+	DurationMins  int        `json:"durationMins"`
+	Status        Status     `json:"status"`
+	CreatedBy     uuid.UUID  `json:"createdBy"`
+	PublishedAt   *time.Time `json:"publishedAt,omitempty"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
+	AssignedCount int        `json:"assignedCount"`
 }
 
 type ExamListResponse struct {
@@ -97,16 +103,17 @@ type ExamListResponse struct {
 
 func ToExamResponse(e *Exam) ExamResponse {
 	return ExamResponse{
-		ID:           e.ID,
-		Title:        e.Title,
-		Subject:      e.Subject,
-		Description:  e.Description,
-		DurationMins: e.DurationMins,
-		Status:       e.Status,
-		CreatedBy:    e.CreatedBy,
-		PublishedAt:  e.PublishedAt,
-		CreatedAt:    e.CreatedAt,
-		UpdatedAt:    e.UpdatedAt,
+		ID:            e.ID,
+		Title:         e.Title,
+		Subject:       e.Subject,
+		Description:   e.Description,
+		DurationMins:  e.DurationMins,
+		Status:        e.Status,
+		CreatedBy:     e.CreatedBy,
+		PublishedAt:   e.PublishedAt,
+		CreatedAt:     e.CreatedAt,
+		UpdatedAt:     e.UpdatedAt,
+		AssignedCount: e.AssignedCount,
 	}
 }
 

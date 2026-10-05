@@ -25,25 +25,19 @@ export default function ExamsPage() {
   // Assignment Modal state
   const [selectedExamForAssign, setSelectedExamForAssign] = useState<Exam | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const fetchExams = async () => {
+    try {
+      const res = await examsApi.getExams();
+      setExams(res.exams || []);
+    } catch (err) {
+      console.warn("Backend unavailable, using local mock data fallback:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    let ignore = false;
-    examsApi
-      .getExams()
-      .then((res) => {
-        if (!ignore) {
-          setExams(res.exams || []);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!ignore) {
-          console.warn("Backend unavailable, using local mock data fallback:", err);
-          setLoading(false);
-        }
-      });
-    return () => {
-      ignore = true;
-    };
+    fetchExams();
   }, []);
 
   const handleCreateExam = async (payload: {
@@ -142,6 +136,18 @@ export default function ExamsPage() {
     }
   };
 
+  const handleAssignmentChanged = async () => {
+    if (selectedExamForAssign) {
+      try {
+        const list = await assignmentsApi.getExamAssignments(selectedExamForAssign.id);
+        setAssignments(list);
+      } catch {
+        // ignore
+      }
+    }
+    fetchExams();
+  };
+
   return (
     <ProtectedRoute allowedRoles={["TEACHER", "ADMIN"]}>
       <div className="min-h-screen bg-background pb-16">
@@ -190,7 +196,11 @@ export default function ExamsPage() {
               </DialogDescription>
             </DialogHeader>
             {selectedExamForAssign && (
-              <AssignmentManager examId={selectedExamForAssign.id} assignments={assignments} />
+              <AssignmentManager
+                examId={selectedExamForAssign.id}
+                assignments={assignments}
+                onAssignmentChanged={handleAssignmentChanged}
+              />
             )}
           </DialogContent>
         </Dialog>

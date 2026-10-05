@@ -15,10 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ProtectedRoute } from "@/components/auth/protected-route";
-import { sessionsApi, assignmentsApi, examsApi } from "@/services/api";
+import { sessionsApi, examsApi } from "@/services/api";
 import { useAuthStore } from "@/store/auth-store";
 import { DESIGN_TOKENS } from "@/lib/constants";
 import { useDebounce } from "@/hooks/use-debounce";
+import type { Exam } from "@/types/exam-types";
 
 interface AssignedExamItem {
   assignmentId: string;
@@ -52,59 +53,52 @@ const mockAssignedExams: AssignedExamItem[] = [
 export default function StudentSessionsPage() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
-  const [items, setItems] = useState<AssignedExamItem[]>(mockAssignedExams);
+  const [items, setItems] = useState<AssignedExamItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebounce(query, 300);
   const [startingId, setStartingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     let ignore = false;
+    setLoading(true);
 
-    assignmentsApi
-      .getStudentAssignments(user.id)
-      .then(async (assignments) => {
+    examsApi
+      .getExams({ status: "PUBLISHED" })
+      .then((res) => {
         if (ignore) return;
-        if (!assignments || assignments.length === 0) {
-          return;
-        }
+        const examList: Exam[] = Array.isArray(res)
+          ? res
+          : res.exams || (res as { data?: Exam[] }).data || [];
 
-        const examDetails = await Promise.all(
-          assignments.map(async (a) => {
-            try {
-              const exam = await examsApi.getExam(a.examId);
-              return {
-                assignmentId: a.id,
-                examId: a.examId,
-                title: exam.title,
-                subject: exam.subject,
-                durationMins: exam.durationMins,
-                status: (a.status === "ACTIVE" ? "PENDING" : "SUBMITTED") as
-                  | "PENDING"
-                  | "IN_PROGRESS"
-                  | "SUBMITTED",
-              };
-            } catch {
-              return {
-                assignmentId: a.id,
-                examId: a.examId,
-                title: `Exam #${a.examId.slice(0, 8)}`,
-                subject: "Assessment",
-                durationMins: 45,
-                status: "PENDING" as const,
-              };
-            }
-          })
-        );
-
-        if (!ignore && examDetails.length > 0) {
-          setItems(examDetails);
+        if (examList.length > 0) {
+          const mapped: AssignedExamItem[] = examList.map((exam) => ({
+            assignmentId: exam.id,
+            examId: exam.id,
+            title: exam.title,
+            subject: exam.subject,
+            durationMins: exam.durationMins,
+            status: "PENDING",
+          }));
+          setItems(mapped);
+        } else {
+          setItems([]);
         }
       })
       .catch((err) => {
         if (!ignore) {
-          console.warn("Failed to load real assignments, using mock fallback:", err);
+          console.warn("Failed to load real exams, falling back to mock:", err);
+          setItems(mockAssignedExams);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
         }
       });
 
@@ -123,18 +117,16 @@ export default function StudentSessionsPage() {
   }, [items, debouncedQuery]);
 
   const handleStartExam = async (item: AssignedExamItem) => {
-    setStartingId(item.assignmentId);
+    setStartingId(item.examId);
     setError(null);
     try {
       const session = await sessionsApi.startSession({
-        assignmentId: item.assignmentId,
+        examId: item.examId,
       });
       router.push(`/sessions/${session.id}`);
-    } catch (err) {
-      console.warn("Backend session start failed, falling back to simulated session room:", err);
-      // Fallback allows full UI review
-      const mockSessionId = crypto.randomUUID();
-      router.push(`/sessions/${mockSessionId}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to start exam session";
+      setError(msg);
     } finally {
       setStartingId(null);
     }
@@ -182,7 +174,12 @@ export default function StudentSessionsPage() {
             </div>
 
             {/* Assessment Cards Grid */}
-            {filteredItems.length === 0 ? (
+            {loading ? (
+              <div className="flex flex-col items-center justify-center p-12 text-center">
+                <Loader2 className="size-8 animate-spin text-primary mb-3" />
+                <p className="text-sm text-muted-foreground">Loading your assigned assessments...</p>
+              </div>
+            ) : filteredItems.length === 0 ? (
               <Card className="flex flex-col items-center justify-center p-12 text-center border-dashed">
                 <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-3">
                   <BookOpen className="size-8 text-muted-foreground/60" />

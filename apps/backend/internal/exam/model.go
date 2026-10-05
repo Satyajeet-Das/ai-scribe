@@ -37,8 +37,9 @@ type Exam struct {
 	DurationMins int        `json:"durationMins" db:"duration_mins"`
 	Status       Status     `json:"status" db:"status"`
 	CreatedBy    uuid.UUID  `json:"createdBy" db:"created_by"`
-	PublishedAt  *time.Time `json:"publishedAt,omitempty" db:"published_at"`
-	DeletedAt    *time.Time `json:"deletedAt,omitempty" db:"deleted_at"`
+	PublishedAt   *time.Time `json:"publishedAt,omitempty" db:"published_at"`
+	DeletedAt     *time.Time `json:"deletedAt,omitempty" db:"deleted_at"`
+	AssignedCount int        `json:"assignedCount" db:"assigned_count"`
 }
 
 func (e *Exam) IsDraft() bool {

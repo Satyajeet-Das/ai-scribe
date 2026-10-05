@@ -24,6 +24,7 @@ type UserReader interface {
 
 type Service interface {
 	GetAssignment(ctx context.Context, id uuid.UUID) (*Assignment, error)
+	GetActiveAssignment(ctx context.Context, examID, studentID uuid.UUID) (*Assignment, error)
 	ListAssignments(ctx context.Context, limit, offset int, examID, studentID *uuid.UUID, status *Status) ([]Assignment, int, error)
 	CreateAssignment(ctx context.Context, req CreateAssignmentRequest, callerID uuid.UUID) (*Assignment, error)
 	RevokeAssignment(ctx context.Context, id uuid.UUID, callerID uuid.UUID) error
@@ -49,6 +50,10 @@ func (s *assignmentService) GetAssignment(ctx context.Context, id uuid.UUID) (*A
 	return s.repo.GetByID(ctx, id)
 }
 
+func (s *assignmentService) GetActiveAssignment(ctx context.Context, examID, studentID uuid.UUID) (*Assignment, error) {
+	return s.repo.GetActiveByExamAndStudent(ctx, examID, studentID)
+}
+
 func (s *assignmentService) ListAssignments(ctx context.Context, limit, offset int, examID, studentID *uuid.UUID, status *Status) ([]Assignment, int, error) {
 	if limit <= 0 {
 		limit = 20
@@ -60,6 +65,19 @@ func (s *assignmentService) ListAssignments(ctx context.Context, limit, offset i
 		offset = 0
 	}
 	return s.repo.List(ctx, limit, offset, examID, studentID, status)
+}
+
+func (s *assignmentService) isCallerAuthorized(ctx context.Context, callerID, ownerID uuid.UUID) bool {
+	if callerID == uuid.Nil || ownerID == callerID {
+		return true
+	}
+	if s.userReader != nil {
+		callerUser, err := s.userReader.GetByID(ctx, callerID)
+		if err == nil && callerUser != nil && strings.EqualFold(callerUser.Role, "ADMIN") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *assignmentService) CreateAssignment(ctx context.Context, req CreateAssignmentRequest, callerID uuid.UUID) (*Assignment, error) {
@@ -75,13 +93,19 @@ func (s *assignmentService) CreateAssignment(ctx context.Context, req CreateAssi
 		return nil, exam.ErrExamNotFound
 	}
 
-	if callerID != uuid.Nil && ex.CreatedBy != callerID {
+	if !s.isCallerAuthorized(ctx, callerID, ex.CreatedBy) {
 		return nil, ErrUnauthorized
 	}
 
-	if ex.Status != exam.StatusPublished {
-		return nil, ErrExamNotPublished
+	if ex.Status == exam.StatusArchived {
+		return nil, ErrExamArchived
 	}
+	if ex.Status != exam.StatusDraft && ex.Status != exam.StatusPublished {
+		return nil, ErrInvalidAssignmentState
+	}
+
+	var studentName string
+	var studentRollNo string
 
 	// Verify that the student exists and is eligible
 	if s.userReader != nil {
@@ -101,6 +125,10 @@ func (s *assignmentService) CreateAssignment(ctx context.Context, req CreateAssi
 		if !stu.IsActive {
 			return nil, ErrStudentIneligible
 		}
+		studentName = strings.TrimSpace(stu.FirstName + " " + stu.LastName)
+		if stu.RollNo != nil {
+			studentRollNo = *stu.RollNo
+		}
 	}
 
 	existing, err := s.repo.GetActiveByExamAndStudent(ctx, req.ExamID, req.StudentID)
@@ -118,14 +146,17 @@ func (s *assignmentService) CreateAssignment(ctx context.Context, req CreateAssi
 			BaseWithCreatedAt: model.BaseWithCreatedAt{CreatedAt: now},
 			BaseWithUpdatedAt: model.BaseWithUpdatedAt{UpdatedAt: now},
 		},
-		ExamID:     req.ExamID,
-		StudentID:  req.StudentID,
-		AssignedAt: now,
-		Status:     StatusAssigned,
+		ExamID:        req.ExamID,
+		StudentID:     req.StudentID,
+		StudentName:   studentName,
+		StudentRollNo: studentRollNo,
+		AssignedAt:    now,
+		Status:        StatusAssigned,
 	}
 
 	if err := s.repo.Create(ctx, a); err != nil {
-		s.logger.Error().Err(err).
+		s.logger.Error().
+			Err(err).
 			Str("exam_id", req.ExamID.String()).
 			Str("student_id", req.StudentID.String()).
 			Msg("failed to create assignment")
@@ -163,7 +194,7 @@ func (s *assignmentService) RevokeAssignment(ctx context.Context, id uuid.UUID, 
 		return exam.ErrExamNotFound
 	}
 
-	if callerID != uuid.Nil && ex.CreatedBy != callerID {
+	if !s.isCallerAuthorized(ctx, callerID, ex.CreatedBy) {
 		return ErrUnauthorized
 	}
 

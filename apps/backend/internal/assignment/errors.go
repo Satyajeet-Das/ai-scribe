@@ -12,4 +12,5 @@ var (
 	ErrUnauthorized             = errors.New("unauthorized to manage this assignment")
 	ErrStudentNotFound          = errors.New("student not found")
 	ErrStudentIneligible        = errors.New("student is not eligible for assignment")
+	ErrExamArchived             = errors.New("cannot assign exam: archived exams cannot be assigned")
 )

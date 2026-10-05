@@ -20,6 +20,7 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle2,
+  Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -384,12 +385,16 @@ export function ExamDashboard({
                         <Calendar className="size-3" />
                         Created {new Date(exam.createdAt).toLocaleDateString()}
                       </span>
-                      {exam.publishedAt && (
-                        <span className="text-emerald-700 dark:text-emerald-400">
-                          Published {new Date(exam.publishedAt).toLocaleDateString()}
-                        </span>
-                      )}
+                      <span className="flex items-center gap-1 font-medium text-foreground/80">
+                        <Users className="size-3 text-muted-foreground" />
+                        {(exam.assignedCount ?? exam.candidates ?? 0)} assigned
+                      </span>
                     </div>
+                    {exam.publishedAt && (
+                      <span className="text-emerald-700 dark:text-emerald-400">
+                        Published {new Date(exam.publishedAt).toLocaleDateString()}
+                      </span>
+                    )}
                     {isAdmin && (
                       <span className="text-[11px] text-muted-foreground/75 truncate">
                         Owner: {exam.createdBy}
@@ -408,6 +413,11 @@ export function ExamDashboard({
                     <Button variant="outline" size="sm" onClick={() => onOpenAssignments?.(exam)}>
                       <UserCheck className="mr-1.5 size-3.5" />
                       Assign
+                      {typeof (exam.assignedCount ?? exam.candidates) === "number" && (
+                        <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[10px] font-mono">
+                          {exam.assignedCount ?? exam.candidates}
+                        </Badge>
+                      )}
                     </Button>
 
                     {/* DRAFT STATE: Edit, Publish, Delete */}
@@ -460,7 +470,7 @@ export function ExamDashboard({
                           size="sm"
                           aria-label="Revert to draft"
                           onClick={() => openConfirm(exam, "unpublish")}
-                          className="text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                          className="border-amber-300/80 bg-amber-50/50 text-amber-800 hover:bg-amber-100 hover:text-amber-950 focus-visible:ring-amber-500/30 active:bg-amber-200/60 dark:border-amber-800/80 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-900/50 dark:hover:text-amber-100"
                         >
                           <RotateCcw className="mr-1.5 size-3.5" />
                           Unpublish

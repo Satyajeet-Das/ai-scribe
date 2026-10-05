@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { UserPlus, X, Loader2, AlertCircle, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,19 +44,29 @@ const fallbackAssignments: Assignment[] = [
 export function AssignmentManager({
   examId = "exam-1",
   assignments = fallbackAssignments,
+  onAssignmentChanged,
 }: {
   examId?: string;
   assignments?: Assignment[];
+  onAssignmentChanged?: () => void;
 }) {
   const [items, setItems] = useState<Assignment[]>(
     assignments.length > 0 ? assignments : fallbackAssignments
   );
   const [open, setOpen] = useState(false);
+  const [studentToRevoke, setStudentToRevoke] = useState<Assignment | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const active = items.filter((item) => item.status === "ACTIVE");
+  useEffect(() => {
+    if (assignments && assignments.length > 0) {
+      setItems(assignments);
+    }
+  }, [assignments]);
+
+  const isActive = (status: string) => status === "ACTIVE" || status === "ASSIGNED";
+  const active = items.filter((item) => isActive(item.status));
   const activeStudentIds = active.map((item) => item.studentId);
 
   const handleAssign = async () => {
@@ -73,7 +83,6 @@ export function AssignmentManager({
 
     setSaving(true);
     try {
-      // Backend assignment API call transmits the selected student's internal UUID
       const created = await assignmentsApi.createAssignment(examId, selectedStudent.id);
       const enriched: Assignment = {
         ...created,
@@ -83,9 +92,30 @@ export function AssignmentManager({
       setItems((current) => [enriched, ...current]);
       setSelectedStudent(null);
       setOpen(false);
+      onAssignmentChanged?.();
     } catch (err: unknown) {
-      // If backend returns duplicate or invalid, display backend authoritative error
       const msg = err instanceof Error ? err.message : "Failed to assign student";
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmRevoke = async () => {
+    if (!studentToRevoke) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await assignmentsApi.revokeAssignment(studentToRevoke.id);
+      setItems((current) =>
+        current.map((item) =>
+          item.id === studentToRevoke.id ? { ...item, status: "REVOKED" } : item
+        )
+      );
+      setStudentToRevoke(null);
+      onAssignmentChanged?.();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to remove student assignment";
       setError(msg);
     } finally {
       setSaving(false);
@@ -96,11 +126,57 @@ export function AssignmentManager({
     <Card className="border border-border">
       <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-4">
         <div>
-          <CardTitle className="text-lg font-bold">Assigned Candidates</CardTitle>
-          <CardDescription className="text-xs text-muted-foreground mt-0.5">
-            {active.length} active students currently authorized to take this assessment.
+          <div className="flex items-center gap-2.5">
+            <CardTitle className="text-lg font-bold">Assigned Candidates</CardTitle>
+            <Badge variant="secondary" className="font-mono text-xs">
+              {active.length} Assigned
+            </Badge>
+          </div>
+          <CardDescription className="text-xs text-muted-foreground mt-1">
+            {active.length} student{active.length === 1 ? "" : "s"} currently authorized to take this assessment.
           </CardDescription>
         </div>
+
+        {/* Revocation Confirmation Dialog */}
+        <Dialog
+          open={!!studentToRevoke}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setStudentToRevoke(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Remove Student Assignment</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to unassign{" "}
+                <span className="font-semibold text-foreground">
+                  {studentToRevoke?.studentName || studentToRevoke?.studentRollNo || "this candidate"}
+                </span>{" "}
+                {studentToRevoke?.studentRollNo && `(${studentToRevoke.studentRollNo})`} from this exam?
+                They will immediately lose access to start or continue this assessment.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setStudentToRevoke(null)}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                type="button"
+                onClick={handleConfirmRevoke}
+                disabled={saving}
+              >
+                {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+                {saving ? "Removing..." : "Confirm Removal"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog
           open={open}
@@ -223,24 +299,18 @@ export function AssignmentManager({
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge
-                      variant={assignment.status === "ACTIVE" ? "default" : "outline"}
+                      variant={isActive(assignment.status) ? "default" : "outline"}
                       className="text-xs"
                     >
                       {assignment.status}
                     </Badge>
-                    {assignment.status === "ACTIVE" && (
+                    {isActive(assignment.status) && (
                       <Button
                         size="icon"
                         variant="ghost"
                         className="size-7 text-muted-foreground hover:text-destructive"
                         aria-label={`Revoke assignment for ${displayRoll || assignment.studentId}`}
-                        onClick={() =>
-                          setItems((current) =>
-                            current.map((item) =>
-                              item.id === assignment.id ? { ...item, status: "REVOKED" } : item
-                            )
-                          )
-                        }
+                        onClick={() => setStudentToRevoke(assignment)}
                       >
                         <X className="size-3.5" />
                       </Button>

@@ -109,9 +109,10 @@ func TestExamRepositoryAndService_Integration(t *testing.T) {
 		}
 		require.NoError(t, assignmentRepo.Create(ctx, asgn))
 
-		// Attempt unpublish while active assignment exists -> must fail
-		_, err = examSvc.UnpublishExam(ctx, created.ID, teacherCaller)
-		assert.ErrorIs(t, err, exam.ErrCannotUnpublishActiveExam)
+		// Emergency unpublish while active assignment exists -> must succeed and revert to DRAFT
+		unpublished, err := examSvc.UnpublishExam(ctx, created.ID, teacherCaller)
+		require.NoError(t, err)
+		assert.Equal(t, exam.StatusDraft, unpublished.Status)
 
 		// Attempt delete while active assignment exists -> must fail
 		err = examSvc.DeleteExam(ctx, created.ID, teacherCaller)

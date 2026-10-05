@@ -19,24 +19,28 @@ func (r *CreateAssignmentRequest) Validate() error {
 }
 
 type AssignmentResponse struct {
-	ID         uuid.UUID `json:"id"`
-	ExamID     uuid.UUID `json:"examId"`
-	StudentID  uuid.UUID `json:"studentId"`
-	AssignedAt time.Time `json:"assignedAt"`
-	Status     Status    `json:"status"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	ID            uuid.UUID `json:"id"`
+	ExamID        uuid.UUID `json:"examId"`
+	StudentID     uuid.UUID `json:"studentId"`
+	StudentName   string    `json:"studentName,omitempty"`
+	StudentRollNo string    `json:"studentRollNo,omitempty"`
+	AssignedAt    time.Time `json:"assignedAt"`
+	Status        Status    `json:"status"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 func ToAssignmentResponse(a *Assignment) AssignmentResponse {
 	return AssignmentResponse{
-		ID:         a.ID,
-		ExamID:     a.ExamID,
-		StudentID:  a.StudentID,
-		AssignedAt: a.AssignedAt,
-		Status:     a.Status,
-		CreatedAt:  a.CreatedAt,
-		UpdatedAt:  a.UpdatedAt,
+		ID:            a.ID,
+		ExamID:        a.ExamID,
+		StudentID:     a.StudentID,
+		StudentName:   a.StudentName,
+		StudentRollNo: a.StudentRollNo,
+		AssignedAt:    a.AssignedAt,
+		Status:        a.Status,
+		CreatedAt:     a.CreatedAt,
+		UpdatedAt:     a.UpdatedAt,
 	}
 }
 

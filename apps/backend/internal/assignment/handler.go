@@ -30,9 +30,11 @@ func (h *Handler) RegisterRoutes(g *echo.Group, authMiddleware echo.MiddlewareFu
 	}
 
 	assignments.GET("", h.ListAssignments)
+	assignments.GET("/exam/:examId", h.ListExamAssignments)
 	assignments.POST("", h.CreateAssignment)
 	assignments.GET("/:id", h.GetAssignment)
 	assignments.POST("/:id/revoke", h.RevokeAssignment)
+	assignments.DELETE("/:id", h.RevokeAssignment)
 }
 
 func (h *Handler) GetAssignment(c echo.Context) error {
@@ -48,6 +50,28 @@ func (h *Handler) GetAssignment(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, ToAssignmentResponse(a))
+}
+
+func (h *Handler) ListExamAssignments(c echo.Context) error {
+	idParam := c.Param("examId")
+	examID, err := uuid.Parse(idParam)
+	if err != nil {
+		return httperrs.NewBadRequestError("Invalid exam ID format", false, nil, nil, nil)
+	}
+
+	assignments, total, err := h.service.ListAssignments(c.Request().Context(), 100, 0, &examID, nil, nil)
+	if err != nil {
+		return h.mapError(err)
+	}
+
+	resList := ToAssignmentResponseList(assignments)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"data":        resList,
+		"assignments": resList,
+		"total":       total,
+		"limit":       100,
+		"offset":      0,
+	})
 }
 
 func (h *Handler) ListAssignments(c echo.Context) error {
@@ -90,11 +114,13 @@ func (h *Handler) ListAssignments(c echo.Context) error {
 		return h.mapError(err)
 	}
 
+	resList := ToAssignmentResponseList(assignments)
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"data":   ToAssignmentResponseList(assignments),
-		"total":  total,
-		"limit":  limit,
-		"offset": offset,
+		"data":        resList,
+		"assignments": resList,
+		"total":       total,
+		"limit":       limit,
+		"offset":      offset,
 	})
 }
 
@@ -139,9 +165,10 @@ func (h *Handler) mapError(err error) error {
 		return httperrs.NewNotFoundError(err.Error(), true, nil)
 	}
 	if errors.Is(err, ErrUnauthorized) {
-		return httperrs.NewForbiddenError("Forbidden: only the exam creator can manage assignments", false)
+		return httperrs.NewForbiddenError("Forbidden: only the exam creator or admin can manage assignments", false)
 	}
 	if errors.Is(err, ErrExamNotPublished) ||
+		errors.Is(err, ErrExamArchived) ||
 		errors.Is(err, ErrDuplicateAssignment) ||
 		errors.Is(err, ErrAssignmentRevoked) ||
 		errors.Is(err, ErrAssignmentAlreadyRevoked) ||

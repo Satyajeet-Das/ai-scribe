@@ -28,21 +28,26 @@ func (h *Handler) RegisterRoutes(g *echo.Group, authMiddleware echo.MiddlewareFu
 	if authMiddleware != nil {
 		exams.Use(authMiddleware)
 	}
+
+	// Read routes: open to all authenticated roles (Admin, Teacher, Student)
+	exams.GET("", h.ListExams)
+	exams.GET("/:id", h.GetExam)
+
+	// Authoring/management routes: restricted to roleMiddleware (Teacher, Admin)
+	mgmt := exams.Group("")
 	for _, m := range roleMiddleware {
 		if m != nil {
-			exams.Use(m)
+			mgmt.Use(m)
 		}
 	}
 
-	exams.GET("", h.ListExams)
-	exams.POST("", h.CreateExam)
-	exams.GET("/:id", h.GetExam)
-	exams.PUT("/:id", h.UpdateExam)
-	exams.PATCH("/:id", h.UpdateExam)
-	exams.DELETE("/:id", h.DeleteExam)
-	exams.POST("/:id/publish", h.PublishExam)
-	exams.POST("/:id/unpublish", h.UnpublishExam)
-	exams.POST("/:id/archive", h.ArchiveExam)
+	mgmt.POST("", h.CreateExam)
+	mgmt.PUT("/:id", h.UpdateExam)
+	mgmt.PATCH("/:id", h.UpdateExam)
+	mgmt.DELETE("/:id", h.DeleteExam)
+	mgmt.POST("/:id/publish", h.PublishExam)
+	mgmt.POST("/:id/unpublish", h.UnpublishExam)
+	mgmt.POST("/:id/archive", h.ArchiveExam)
 }
 
 func (h *Handler) getCaller(c echo.Context) (Caller, error) {

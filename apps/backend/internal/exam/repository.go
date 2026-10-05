@@ -22,6 +22,7 @@ type Repository interface {
 	Archive(ctx context.Context, id uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	HasActiveSessionsOrAssignments(ctx context.Context, examID uuid.UUID) (bool, error)
+	IsStudentAssigned(ctx context.Context, examID, studentID uuid.UUID) (bool, error)
 }
 
 type pgRepository struct {
@@ -36,7 +37,8 @@ func NewRepository(pool *pgxpool.Pool) Repository {
 
 func (r *pgRepository) GetByID(ctx context.Context, id uuid.UUID) (*Exam, error) {
 	query := `
-		SELECT id, title, subject, description, duration_mins, status, created_by, published_at, created_at, updated_at, deleted_at
+		SELECT id, title, subject, description, duration_mins, status, created_by, published_at, created_at, updated_at, deleted_at,
+		       COALESCE((SELECT COUNT(*) FROM assignments WHERE exam_id = exams.id AND status = 'ASSIGNED'), 0) AS assigned_count
 		FROM exams
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -53,6 +55,7 @@ func (r *pgRepository) GetByID(ctx context.Context, id uuid.UUID) (*Exam, error)
 		&e.CreatedAt,
 		&e.UpdatedAt,
 		&e.DeletedAt,
+		&e.AssignedCount,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -88,6 +91,12 @@ func (r *pgRepository) List(ctx context.Context, params ListExamsParams) ([]Exam
 		argIdx++
 	}
 
+	if params.AssignedStudentID != nil && *params.AssignedStudentID != uuid.Nil {
+		conditions = append(conditions, fmt.Sprintf("id IN (SELECT exam_id FROM assignments WHERE student_id = $%d AND status = 'ASSIGNED')", argIdx))
+		args = append(args, *params.AssignedStudentID)
+		argIdx++
+	}
+
 	if params.Search != "" {
 		searchPattern := "%" + params.Search + "%"
 		conditions = append(conditions, fmt.Sprintf("(title ILIKE $%d OR subject ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx, argIdx))
@@ -104,7 +113,8 @@ func (r *pgRepository) List(ctx context.Context, params ListExamsParams) ([]Exam
 	}
 
 	selectQuery := fmt.Sprintf(`
-		SELECT id, title, subject, description, duration_mins, status, created_by, published_at, created_at, updated_at, deleted_at
+		SELECT id, title, subject, description, duration_mins, status, created_by, published_at, created_at, updated_at, deleted_at,
+		       COALESCE((SELECT COUNT(*) FROM assignments WHERE exam_id = exams.id AND status = 'ASSIGNED'), 0) AS assigned_count
 		FROM exams
 		WHERE %s
 		ORDER BY created_at DESC
@@ -134,6 +144,7 @@ func (r *pgRepository) List(ctx context.Context, params ListExamsParams) ([]Exam
 			&e.CreatedAt,
 			&e.UpdatedAt,
 			&e.DeletedAt,
+			&e.AssignedCount,
 		); err != nil {
 			return nil, 0, fmt.Errorf("exam.List scan: %w", err)
 		}
@@ -292,6 +303,20 @@ func (r *pgRepository) HasActiveSessionsOrAssignments(ctx context.Context, examI
 	var exists bool
 	if err := r.pool.QueryRow(ctx, query, examID).Scan(&exists); err != nil {
 		return false, fmt.Errorf("exam.HasActiveSessionsOrAssignments: %w", err)
+	}
+	return exists, nil
+}
+
+func (r *pgRepository) IsStudentAssigned(ctx context.Context, examID, studentID uuid.UUID) (bool, error) {
+	query := `
+		SELECT EXISTS (
+			SELECT 1 FROM assignments
+			WHERE exam_id = $1 AND student_id = $2 AND status = 'ASSIGNED'
+		)
+	`
+	var exists bool
+	if err := r.pool.QueryRow(ctx, query, examID, studentID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("exam.IsStudentAssigned: %w", err)
 	}
 	return exists, nil
 }

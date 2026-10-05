@@ -1,7 +1,7 @@
 export type ExamStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
 export type QuestionType = "MCQ" | "ESSAY" | "VOICE";
 export type UserRole = "TEACHER" | "STUDENT" | "PROCTOR" | "ADMIN";
-export type AssignmentStatus = "ACTIVE" | "REVOKED";
+export type AssignmentStatus = "ASSIGNED" | "REVOKED" | "ACTIVE";
 
 export interface Exam {
   id: string;
@@ -15,6 +15,7 @@ export interface Exam {
   createdAt: string;
   updatedAt: string;
   candidates?: number;
+  assignedCount?: number;
   questions?: number;
 }
 

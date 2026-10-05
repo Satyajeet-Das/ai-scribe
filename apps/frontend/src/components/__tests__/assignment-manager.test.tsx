@@ -127,4 +127,33 @@ describe("AssignmentManager", () => {
       expect(screen.getByText("Assigned")).toBeInTheDocument();
     });
   });
+
+  it("opens confirmation dialog and revokes student assignment when confirmed", async () => {
+    vi.mocked(assignmentsApi.revokeAssignment).mockResolvedValue();
+    const onAssignmentChanged = vi.fn();
+
+    render(
+      <AssignmentManager
+        examId="exam-100"
+        assignments={initialAssignments}
+        onAssignmentChanged={onAssignmentChanged}
+      />
+    );
+
+    const revokeBtn = screen.getByRole("button", {
+      name: /revoke assignment for 23cs001/i,
+    });
+    fireEvent.click(revokeBtn);
+
+    expect(screen.getByText("Remove Student Assignment")).toBeInTheDocument();
+    expect(screen.getByText(/Are you sure you want to unassign/i)).toBeInTheDocument();
+
+    const confirmRemovalBtn = screen.getByRole("button", { name: /confirm removal/i });
+    fireEvent.click(confirmRemovalBtn);
+
+    await waitFor(() => {
+      expect(assignmentsApi.revokeAssignment).toHaveBeenCalledWith("assign-1");
+      expect(onAssignmentChanged).toHaveBeenCalled();
+    });
+  });
 });

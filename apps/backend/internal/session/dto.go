@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -10,11 +11,20 @@ import (
 var validate = validator.New()
 
 type StartSessionRequest struct {
-	AssignmentID uuid.UUID `json:"assignmentId" validate:"required"`
+	AssignmentID *uuid.UUID `json:"assignmentId,omitempty"`
+	ExamID       *uuid.UUID `json:"examId,omitempty"`
 }
 
 func (r *StartSessionRequest) Validate() error {
-	return validate.Struct(r)
+	if err := validate.Struct(r); err != nil {
+		return err
+	}
+	hasAssignment := r.AssignmentID != nil && *r.AssignmentID != uuid.Nil
+	hasExam := r.ExamID != nil && *r.ExamID != uuid.Nil
+	if !hasAssignment && !hasExam {
+		return errors.New("either assignmentId or examId is required")
+	}
+	return nil
 }
 
 type SessionResponse struct {

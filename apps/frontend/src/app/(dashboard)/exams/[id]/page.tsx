@@ -16,6 +16,7 @@ import {
   Trash2,
   AlertCircle,
   Shield,
+  Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -105,6 +106,23 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
 
     loadData();
   }, [examId]);
+
+  const handleReloadAssignments = async () => {
+    try {
+      const [assignmentsData, examData] = await Promise.allSettled([
+        assignmentsApi.getExamAssignments(examId),
+        examsApi.getExam(examId),
+      ]);
+      if (assignmentsData.status === "fulfilled") {
+        setAssignments(assignmentsData.value);
+      }
+      if (examData.status === "fulfilled") {
+        setExam(examData.value);
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const handleUpdateExam = async (id: string, payload: Partial<Exam>): Promise<Exam> => {
     try {
@@ -276,7 +294,7 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
                             variant="outline"
                             size="sm"
                             onClick={() => setConfirmAction("unpublish")}
-                            className="gap-1.5 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
+                            className="gap-1.5 border-amber-300/80 bg-amber-50/50 text-amber-800 hover:bg-amber-100 hover:text-amber-950 focus-visible:ring-amber-500/30 active:bg-amber-200/60 dark:border-amber-800/80 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-900/50 dark:hover:text-amber-100"
                           >
                             <RotateCcw className="size-4" />
                             Revert to Draft
@@ -312,6 +330,10 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
                       <Clock className="size-4 text-primary" />
                       Duration: <strong className="text-foreground">{exam.durationMins} minutes</strong>
                     </span>
+                    <span className="flex items-center gap-1.5">
+                      <Users className="size-4 text-primary" />
+                      Assigned: <strong className="text-foreground">{exam.assignedCount ?? assignments.filter(a => a.status === "ASSIGNED" || a.status === "ACTIVE").length} students</strong>
+                    </span>
                     {exam.createdAt && (
                       <span className="flex items-center gap-1.5">
                         <Calendar className="size-4" />
@@ -334,7 +356,11 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
 
             {/* Candidate Assignments Section */}
             <div className="mt-4">
-              <AssignmentManager examId={examId} assignments={assignments} />
+              <AssignmentManager
+                examId={examId}
+                assignments={assignments}
+                onAssignmentChanged={handleReloadAssignments}
+              />
             </div>
           </div>
         </div>

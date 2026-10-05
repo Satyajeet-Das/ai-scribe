@@ -88,6 +88,15 @@ func (m *mockAssignmentReader) GetAssignment(ctx context.Context, id uuid.UUID) 
 	return nil, assignment.ErrAssignmentNotFound
 }
 
+func (m *mockAssignmentReader) GetActiveAssignment(ctx context.Context, examID, studentID uuid.UUID) (*assignment.Assignment, error) {
+	for _, a := range m.assignments {
+		if a.ExamID == examID && a.StudentID == studentID && a.Status == assignment.StatusAssigned {
+			return a, nil
+		}
+	}
+	return nil, nil
+}
+
 type mockExamReader struct {
 	exams map[uuid.UUID]*exam.Exam
 }
@@ -189,7 +198,7 @@ func TestSessionService_StartSession(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Starting valid session succeeds
-	req := StartSessionRequest{AssignmentID: assignmentID}
+	req := StartSessionRequest{AssignmentID: &assignmentID}
 	sess, duration, err := svc.StartSession(ctx, req, studentID)
 	require.NoError(t, err)
 	assert.Equal(t, StatusInProgress, sess.Status)
@@ -208,7 +217,7 @@ func TestSessionService_StartSession(t *testing.T) {
 		StudentID: studentID,
 		Status:    assignment.StatusAssigned,
 	}
-	_, _, err = svc.StartSession(ctx, StartSessionRequest{AssignmentID: asgn2}, otherStudent)
+	_, _, err = svc.StartSession(ctx, StartSessionRequest{AssignmentID: &asgn2}, otherStudent)
 	assert.ErrorIs(t, err, ErrUnauthorizedStudent)
 
 	// 4. Revoked assignment fails
@@ -218,8 +227,32 @@ func TestSessionService_StartSession(t *testing.T) {
 		StudentID: studentID,
 		Status:    assignment.StatusRevoked,
 	}
-	_, _, err = svc.StartSession(ctx, StartSessionRequest{AssignmentID: asgnRevoked}, studentID)
+	_, _, err = svc.StartSession(ctx, StartSessionRequest{AssignmentID: &asgnRevoked}, studentID)
 	assert.ErrorIs(t, err, ErrAssignmentRevoked)
+
+	// 5. Starting session by ExamID succeeds for assigned student
+	examID2 := uuid.New()
+	asgn3 := uuid.New()
+	asgnReader.assignments[asgn3] = &assignment.Assignment{
+		Base:      model.Base{BaseWithId: model.BaseWithId{ID: asgn3}},
+		ExamID:    examID2,
+		StudentID: studentID,
+		Status:    assignment.StatusAssigned,
+	}
+	examReader.exams[examID2] = &exam.Exam{
+		Base:         model.Base{BaseWithId: model.BaseWithId{ID: examID2}},
+		Title:        "Chemistry 101",
+		Status:       exam.StatusPublished,
+		DurationMins: 45,
+	}
+	questionReader.questions[examID2] = []question.Question{
+		{Base: model.Base{BaseWithId: model.BaseWithId{ID: uuid.New()}}},
+	}
+	sess2, duration2, err := svc.StartSession(ctx, StartSessionRequest{ExamID: &examID2}, studentID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusInProgress, sess2.Status)
+	assert.Equal(t, 45, duration2)
+	assert.Equal(t, examID2, sess2.ExamID)
 }
 
 func TestSessionService_SubmitSession(t *testing.T) {

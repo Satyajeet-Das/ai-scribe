@@ -17,8 +17,10 @@ const (
 
 type Assignment struct {
 	model.Base
-	ExamID     uuid.UUID `json:"examId" db:"exam_id"`
-	StudentID  uuid.UUID `json:"studentId" db:"student_id"`
-	AssignedAt time.Time `json:"assignedAt" db:"assigned_at"`
-	Status     Status    `json:"status" db:"status"`
+	ExamID        uuid.UUID `json:"examId" db:"exam_id"`
+	StudentID     uuid.UUID `json:"studentId" db:"student_id"`
+	StudentName   string    `json:"studentName,omitempty" db:"student_name"`
+	StudentRollNo string    `json:"studentRollNo,omitempty" db:"student_roll_no"`
+	AssignedAt    time.Time `json:"assignedAt" db:"assigned_at"`
+	Status        Status    `json:"status" db:"status"`
 }
