@@ -47,10 +47,26 @@ Sprint 3: **Exam Management** has been successfully completed and verified for p
   - `POST /api/v1/exams/:id/archive` (200 OK)
 - **OpenAPI 3.0**: Synchronized `apps/backend/static/openapi.json` with all endpoints, DTOs, parameters, error responses, and `ExamListResponse` envelope.
 
+### 5. Frontend Exam Management UI & Integration
+- **Centralized API Client (`apps/frontend/src/services/api.ts`)**:
+  - Full CRUD & lifecycle operations: `getExams`, `getExam`, `createExam`, `updateExam`, `publishExam`, `unpublishExam`, `archiveExam`, `deleteExam`.
+  - Normalized response parsing handling pagination and envelopes (`exams` and `data` arrays).
+  - Strongly typed with unified `ApiError` error propagation.
+- **State-Aware Components & Forms**:
+  - `CreateExamDialog`: Accessible modal with Zod schema validation (1-600 mins, title 3-255 chars, subject 2-100 chars), inline validation errors, and API error alerts.
+  - `EditExamDialog`: Strict lifecycle state enforcement:
+    - `DRAFT`: all fields fully editable.
+    - `PUBLISHED`: timing (`durationMins`) is locked with an informative banner explaining that timing cannot be altered for active/scheduled exams; description and metadata remain editable.
+    - `ARCHIVED`: read-only modal with clear notice of permanent immutability.
+  - `ConfirmActionDialog`: Accessible confirmation dialog for `publish`, `unpublish`, `archive`, and `delete` with lifecycle-specific warnings, destructive styling for deletions, and double-submission safeguards.
+  - `ExamDashboard`: Responsive assessment catalog with metrics cards, debounced search (300ms), status filter dropdown, pagination, empty states, skeleton loading, and role awareness (Educator vs. Administrator views).
+  - `ExamDetailPage`: Complete assessment header with status styling badges, metadata rows (subject, duration, created date, published date), action toolbar, and question/candidate assignment manager integration.
+
 ---
 
 ## Verification & Test Results
 
+### Backend
 1. **Service Unit Tests (`internal/exam/service_test.go`)**:
    - Table-driven unit tests covering all happy paths and error paths.
    - Comprehensive lifecycle state transition validations.
@@ -68,7 +84,17 @@ Sprint 3: **Exam Management** has been successfully completed and verified for p
    - `go vet ./...` — PASS (0 warnings).
    - `golangci-lint run ./...` — PASS (0 warnings).
 
+### Frontend
+1. **Vitest Unit & Integration Tests (`apps/frontend/src/components/__tests__/exam-management.test.tsx`)**:
+   - 20 tests covering all dashboard lifecycles, dialogs, validation rules, search/filter, and pagination.
+   - Full E2E teacher lifecycle flow: `Login → Exam Dashboard → Create Exam → Save Draft → Publish`.
+   - Complete frontend suite: **11 passed test files, 102 passed tests (100% pass)**.
+2. **TypeScript & Static Analysis**:
+   - `npx tsc --noEmit` — PASS (0 type errors).
+   - `npm run lint` — PASS (0 errors, 0 warnings).
+
 ---
 
 ## Conclusion
-Sprint 3 is signed off as complete and production ready. The foundation is ready for Sprint 4 (Question Management).
+Sprint 3: Exam Management is 100% complete, fully integrated across backend and frontend, and verified for production readiness.
+
