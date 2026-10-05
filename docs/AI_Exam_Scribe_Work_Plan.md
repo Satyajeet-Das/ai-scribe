@@ -26,12 +26,12 @@ The backend should remain a modular monolith initially, with clear boundaries so
 
 # Sprint Overview
 
-| Sprint | Focus | Primary Outcome |
-|---|---|---|
-| 1 | Foundation & Project Architecture | Stable Go backend foundation |
-| 2 | Pluggable Authentication | JWT now, Clerk-ready later |
-| 3 | Exam Management | Complete exam CRUD |
-| 4 | Question Management | Question bank and exam-question relationships |
+| Sprint | Focus | Status | Primary Outcome |
+|---|---|---|---|
+| 1 | Foundation & Project Architecture | Completed | Stable Go backend foundation |
+| 2 | Pluggable Authentication & Exam FSM | Completed | JWT, refresh rotation, revocation, FSM runtime |
+| 3 | Exam Management | Completed | Complete exam lifecycle FSM, owner/admin auth, search, CRUD |
+| 4 | Question Management | Next | Question bank and exam-question relationships |
 | 5 | Assignments & Student Access | Exams assigned to students |
 | 6 | Exam Session & FSM | Controlled exam runtime |
 | 7 | WebSocket Foundation | Reliable realtime connection layer |
