@@ -12,11 +12,14 @@ import (
 
 type Service interface {
 	GetExam(ctx context.Context, id uuid.UUID) (*Exam, error)
-	ListExams(ctx context.Context, limit, offset int, status *Status) ([]Exam, int, error)
-	CreateExam(ctx context.Context, req CreateExamRequest, createdBy uuid.UUID) (*Exam, error)
-	UpdateExam(ctx context.Context, id uuid.UUID, req UpdateExamRequest, callerID uuid.UUID) (*Exam, error)
-	PublishExam(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*Exam, error)
-	ArchiveExam(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*Exam, error)
+	GetExamForCaller(ctx context.Context, id uuid.UUID, caller Caller) (*Exam, error)
+	ListExams(ctx context.Context, params ListExamsParams, caller Caller) ([]Exam, int, error)
+	CreateExam(ctx context.Context, req CreateExamRequest, caller Caller) (*Exam, error)
+	UpdateExam(ctx context.Context, id uuid.UUID, req UpdateExamRequest, caller Caller) (*Exam, error)
+	PublishExam(ctx context.Context, id uuid.UUID, caller Caller) (*Exam, error)
+	UnpublishExam(ctx context.Context, id uuid.UUID, caller Caller) (*Exam, error)
+	ArchiveExam(ctx context.Context, id uuid.UUID, caller Caller) (*Exam, error)
+	DeleteExam(ctx context.Context, id uuid.UUID, caller Caller) error
 }
 
 type examService struct {
@@ -42,20 +45,39 @@ func (s *examService) GetExam(ctx context.Context, id uuid.UUID) (*Exam, error) 
 	return e, nil
 }
 
-func (s *examService) ListExams(ctx context.Context, limit, offset int, status *Status) ([]Exam, int, error) {
-	if limit <= 0 {
-		limit = 20
+func (s *examService) GetExamForCaller(ctx context.Context, id uuid.UUID, caller Caller) (*Exam, error) {
+	e, err := s.GetExam(ctx, id)
+	if err != nil {
+		return nil, err
 	}
-	if limit > 100 {
-		limit = 100
+
+	if !caller.CanManage(e.CreatedBy) {
+		return nil, ErrUnauthorizedCreator
 	}
-	if offset < 0 {
-		offset = 0
-	}
-	return s.repo.List(ctx, limit, offset, status)
+
+	return e, nil
 }
 
-func (s *examService) CreateExam(ctx context.Context, req CreateExamRequest, createdBy uuid.UUID) (*Exam, error) {
+func (s *examService) ListExams(ctx context.Context, params ListExamsParams, caller Caller) ([]Exam, int, error) {
+	if !caller.IsAdmin() && !caller.IsTeacher() {
+		return nil, 0, ErrInvalidCallerRole
+	}
+
+	params.Defaults()
+
+	// Teachers can only see their own exams
+	if caller.IsTeacher() && !caller.IsAdmin() {
+		params.CreatedBy = &caller.ID
+	}
+
+	return s.repo.List(ctx, params)
+}
+
+func (s *examService) CreateExam(ctx context.Context, req CreateExamRequest, caller Caller) (*Exam, error) {
+	if !caller.IsAdmin() && !caller.IsTeacher() {
+		return nil, ErrInvalidCallerRole
+	}
+
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -72,7 +94,7 @@ func (s *examService) CreateExam(ctx context.Context, req CreateExamRequest, cre
 		Description:  req.Description,
 		DurationMins: req.DurationMins,
 		Status:       StatusDraft,
-		CreatedBy:    createdBy,
+		CreatedBy:    caller.ID,
 	}
 
 	if err := s.repo.Create(ctx, e); err != nil {
@@ -83,13 +105,13 @@ func (s *examService) CreateExam(ctx context.Context, req CreateExamRequest, cre
 	s.logger.Info().
 		Str("event", "exam.created").
 		Str("exam_id", e.ID.String()).
-		Str("created_by", createdBy.String()).
+		Str("created_by", caller.ID.String()).
 		Msg("exam created successfully")
 
 	return e, nil
 }
 
-func (s *examService) UpdateExam(ctx context.Context, id uuid.UUID, req UpdateExamRequest, callerID uuid.UUID) (*Exam, error) {
+func (s *examService) UpdateExam(ctx context.Context, id uuid.UUID, req UpdateExamRequest, caller Caller) (*Exam, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -102,11 +124,20 @@ func (s *examService) UpdateExam(ctx context.Context, id uuid.UUID, req UpdateEx
 		return nil, ErrExamNotFound
 	}
 
-	if callerID != uuid.Nil && existing.CreatedBy != callerID {
+	if !caller.CanManage(existing.CreatedBy) {
 		return nil, ErrUnauthorizedCreator
 	}
 
-	if existing.Status != StatusDraft {
+	if existing.Status == StatusArchived {
+		return nil, ErrExamAlreadyArchived
+	}
+
+	if existing.Status == StatusPublished {
+		// Published exams cannot have unsafe structural changes (duration alteration)
+		if req.DurationMins != nil && *req.DurationMins != existing.DurationMins {
+			return nil, ErrPublishedStructuralChange
+		}
+	} else if existing.Status != StatusDraft {
 		return nil, ErrExamNotDraft
 	}
 
@@ -136,7 +167,7 @@ func (s *examService) UpdateExam(ctx context.Context, id uuid.UUID, req UpdateEx
 	return existing, nil
 }
 
-func (s *examService) PublishExam(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*Exam, error) {
+func (s *examService) PublishExam(ctx context.Context, id uuid.UUID, caller Caller) (*Exam, error) {
 	existing, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -145,7 +176,7 @@ func (s *examService) PublishExam(ctx context.Context, id uuid.UUID, callerID uu
 		return nil, ErrExamNotFound
 	}
 
-	if callerID != uuid.Nil && existing.CreatedBy != callerID {
+	if !caller.CanManage(existing.CreatedBy) {
 		return nil, ErrUnauthorizedCreator
 	}
 
@@ -181,7 +212,7 @@ func (s *examService) PublishExam(ctx context.Context, id uuid.UUID, callerID uu
 	return existing, nil
 }
 
-func (s *examService) ArchiveExam(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*Exam, error) {
+func (s *examService) UnpublishExam(ctx context.Context, id uuid.UUID, caller Caller) (*Exam, error) {
 	existing, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -190,7 +221,57 @@ func (s *examService) ArchiveExam(ctx context.Context, id uuid.UUID, callerID uu
 		return nil, ErrExamNotFound
 	}
 
-	if callerID != uuid.Nil && existing.CreatedBy != callerID {
+	if !caller.CanManage(existing.CreatedBy) {
+		return nil, ErrUnauthorizedCreator
+	}
+
+	if existing.Status == StatusDraft {
+		return nil, ErrExamNotPublished
+	}
+	if existing.Status == StatusArchived {
+		return nil, ErrExamAlreadyArchived
+	}
+	if existing.Status != StatusPublished {
+		return nil, ErrInvalidExamState
+	}
+
+	// Business rule: verify exam does not have active assignments or student sessions
+	hasRelations, err := s.repo.HasActiveSessionsOrAssignments(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("exam_id", id.String()).Msg("failed to check relations before unpublish")
+		return nil, err
+	}
+	if hasRelations {
+		return nil, ErrCannotUnpublishActiveExam
+	}
+
+	if err := s.repo.Unpublish(ctx, id); err != nil {
+		s.logger.Error().Err(err).Str("exam_id", id.String()).Msg("failed to unpublish exam")
+		return nil, err
+	}
+
+	existing.Status = StatusDraft
+	existing.PublishedAt = nil
+	existing.UpdatedAt = time.Now().UTC()
+
+	s.logger.Info().
+		Str("event", "exam.unpublished").
+		Str("exam_id", id.String()).
+		Msg("exam unpublished successfully")
+
+	return existing, nil
+}
+
+func (s *examService) ArchiveExam(ctx context.Context, id uuid.UUID, caller Caller) (*Exam, error) {
+	existing, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, ErrExamNotFound
+	}
+
+	if !caller.CanManage(existing.CreatedBy) {
 		return nil, ErrUnauthorizedCreator
 	}
 
@@ -212,4 +293,39 @@ func (s *examService) ArchiveExam(ctx context.Context, id uuid.UUID, callerID uu
 		Msg("exam archived successfully")
 
 	return existing, nil
+}
+
+func (s *examService) DeleteExam(ctx context.Context, id uuid.UUID, caller Caller) error {
+	existing, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return ErrExamNotFound
+	}
+
+	if !caller.CanManage(existing.CreatedBy) {
+		return ErrUnauthorizedCreator
+	}
+
+	hasRelations, err := s.repo.HasActiveSessionsOrAssignments(ctx, id)
+	if err != nil {
+		s.logger.Error().Err(err).Str("exam_id", id.String()).Msg("failed to check relations before delete")
+		return err
+	}
+	if hasRelations {
+		return ErrCannotDeleteActiveExam
+	}
+
+	if err := s.repo.Delete(ctx, id); err != nil {
+		s.logger.Error().Err(err).Str("exam_id", id.String()).Msg("failed to delete exam")
+		return err
+	}
+
+	s.logger.Info().
+		Str("event", "exam.deleted").
+		Str("exam_id", id.String()).
+		Msg("exam deleted successfully")
+
+	return nil
 }
