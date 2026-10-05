@@ -65,6 +65,14 @@ func registerSystemRoutes(e *echo.Echo, health *handler.HealthHandler, openapi *
 		e.GET("/status", health.CheckHealth)
 	}
 
+	// Serve OpenAPI spec with strict no-cache headers to prevent browser caching
+	e.GET("/static/openapi.json", func(c echo.Context) error {
+		c.Response().Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		c.Response().Header().Set("Pragma", "no-cache")
+		c.Response().Header().Set("Expires", "0")
+		return c.File("static/openapi.json")
+	})
+
 	e.Static("/static", "static")
 
 	if openapi != nil {

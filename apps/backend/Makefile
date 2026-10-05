@@ -13,6 +13,9 @@ run: ## Run server locally
 migrate: ## Run database migrations
 	go run ./cmd/migrate
 
+openapi: ## Regenerate OpenAPI documentation from Go codebase
+	go run ./cmd/openapi-gen
+
 
 test: ## Run unit tests
 	go test -race -v ./...

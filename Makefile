@@ -23,6 +23,9 @@ run-backend: ## Run Go server locally
 migrate-backend: ## Run database migrations
 	cd apps/backend && go run ./cmd/migrate
 
+openapi: ## Regenerate OpenAPI documentation from Go codebase
+	cd apps/backend && go run ./cmd/openapi-gen
+
 
 test-backend: ## Run Go unit tests
 	cd apps/backend && go test -race -v ./...

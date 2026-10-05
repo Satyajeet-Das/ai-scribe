@@ -1,3 +1,5 @@
+//go:generate go run ./cmd/openapi-gen
+
 package main
 
 import (
@@ -6,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/labstack/echo/v4"
 
 	"github.com/Satyajeet-Das/ai-scribe/internal/answer"
 	"github.com/Satyajeet-Das/ai-scribe/internal/assignment"
@@ -20,6 +24,7 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/http/middleware"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/job"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/logger"
+	"github.com/Satyajeet-Das/ai-scribe/internal/platform/openapi"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/redis"
 	"github.com/Satyajeet-Das/ai-scribe/internal/question"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
@@ -148,6 +153,24 @@ func main() {
 	assignmentHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	sessionHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	answerHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
+
+	// In development, auto-sync OpenAPI spec and watch for Go source changes
+	if cfg.Primary.Env != "production" {
+		if err := openapi.SyncOpenAPISpec(router.Routes(), "static/openapi.json"); err != nil {
+			log.Warn().Err(err).Msg("failed to sync openapi spec on startup")
+		} else {
+			log.Info().Msg("synchronized OpenAPI documentation from Go codebase")
+		}
+
+		openapiWatcher := openapi.NewWatcher(
+			func() []*echo.Route { return router.Routes() },
+			"static/openapi.json",
+			[]string{"internal", "cmd"},
+			&log,
+		)
+		openapiWatcher.Start()
+		defer openapiWatcher.Stop()
+	}
 
 	srv := httpPlatform.NewServer(&cfg.Server, router, &log)
 

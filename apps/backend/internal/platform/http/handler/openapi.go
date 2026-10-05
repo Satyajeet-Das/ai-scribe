@@ -15,15 +15,35 @@ func NewOpenAPIHandler() *OpenAPIHandler {
 }
 
 func (h *OpenAPIHandler) ServeOpenAPIUI(c echo.Context) error {
-	templateBytes, err := os.ReadFile("static/openapi.html")
+	specBytes, err := os.ReadFile("static/openapi.json")
 	if err != nil {
-		return fmt.Errorf("failed to read OpenAPI UI template: %w", err)
+		// Fallback to static template if json reading fails
+		templateBytes, readErr := os.ReadFile("static/openapi.html")
+		if readErr != nil {
+			return fmt.Errorf("failed to read OpenAPI UI template: %w", readErr)
+		}
+		c.Response().Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		return c.HTML(http.StatusOK, string(templateBytes))
 	}
 
-	c.Response().Header().Set("Cache-Control", "no-cache")
-	if err := c.HTML(http.StatusOK, string(templateBytes)); err != nil {
-		return fmt.Errorf("failed to write HTML response: %w", err)
-	}
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>AI Exam Scribe API Reference</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <script id="api-reference" type="application/json">
+%s
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>`, string(specBytes))
 
-	return nil
+	c.Response().Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Response().Header().Set("Pragma", "no-cache")
+	c.Response().Header().Set("Expires", "0")
+
+	return c.HTML(http.StatusOK, html)
 }
