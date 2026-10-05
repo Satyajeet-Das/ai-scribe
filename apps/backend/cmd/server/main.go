@@ -143,7 +143,7 @@ func main() {
 	authHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, loginRateLimiter)
 	studentHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
 	studentHandler.RegisterRoutes(router.Group(""), authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
-	examHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
+	examHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
 	questionHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	assignmentHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	sessionHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
