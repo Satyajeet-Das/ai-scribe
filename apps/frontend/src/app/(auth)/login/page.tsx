@@ -70,6 +70,7 @@ function LoginContent() {
           firstName: data.firstName,
           lastName: data.lastName,
           role: data.role,
+          rollNo: data.rollNo,
         });
       } else {
         authedUser = await login({ email: data.email, password: data.password });

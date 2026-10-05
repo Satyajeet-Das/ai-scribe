@@ -21,6 +21,7 @@ export type AuthSubmitData =
       firstName: string;
       lastName: string;
       role: AuthRole;
+      rollNo?: string;
     };
 
 interface AuthFormsProps {
@@ -40,8 +41,8 @@ const ROLE_OPTIONS: { value: AuthRole; label: string }[] = [
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
   return (
-    <p id={id} className="text-xs text-destructive" role="alert">
-      {message}
+    <p id={id} className="text-xs font-medium text-destructive mt-1 flex items-center gap-1" role="alert">
+      <span>{message}</span>
     </p>
   );
 }
@@ -99,6 +100,39 @@ export function AuthForms({
     }
     setErrors(fieldErrors);
     return false;
+  };
+
+  const handleBlur = (field: string) => {
+    const result = isRegister
+      ? RegisterSchema.safeParse({
+          email: email.trim(),
+          password,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          role,
+          rollNo: rollNo.trim(),
+        })
+      : LoginSchema.safeParse({ email: email.trim(), password });
+
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        const key = issue.path[0];
+        if (key === field) {
+          setErrors((prev) => ({ ...prev, [field]: issue.message }));
+          return;
+        }
+      }
+    }
+    // If this field is valid, clear its error
+    clearError(field);
+  };
+
+  const handleRoleChange = (newRole: AuthRole) => {
+    setRole(newRole);
+    if (newRole === "TEACHER") {
+      clearError("rollNo");
+      setRollNo("");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -190,7 +224,9 @@ export function AuthForms({
           {isRegister && (
             <>
               <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">I am a</legend>
+                <legend className="text-sm font-medium">
+                  I am a <span className="text-destructive font-medium ml-0.5" aria-hidden="true">*</span>
+                </legend>
                 <div className="grid grid-cols-2 gap-2">
                   {ROLE_OPTIONS.map((option) => (
                     <Button
@@ -199,7 +235,7 @@ export function AuthForms({
                       variant={role === option.value ? "default" : "outline"}
                       className="h-10 w-full"
                       aria-pressed={role === option.value}
-                      onClick={() => setRole(option.value)}
+                      onClick={() => handleRoleChange(option.value)}
                     >
                       {option.label}
                     </Button>
@@ -209,15 +245,20 @@ export function AuthForms({
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="firstName">First name</Label>
+                  <Label htmlFor="firstName">
+                    First name <span className="text-destructive font-medium ml-0.5" aria-hidden="true">*</span>
+                  </Label>
                   <Input
                     id="firstName"
                     placeholder="Jane"
                     value={firstName}
+                    required
+                    aria-required="true"
                     onChange={(e) => {
                       setFirstName(e.target.value);
                       clearError("firstName");
                     }}
+                    onBlur={() => handleBlur("firstName")}
                     autoComplete="given-name"
                     aria-invalid={!!errors.firstName}
                     aria-describedby={errors.firstName ? "firstName-error" : undefined}
@@ -225,15 +266,20 @@ export function AuthForms({
                   <FieldError id="firstName-error" message={errors.firstName} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="lastName">Last name</Label>
+                  <Label htmlFor="lastName">
+                    Last name <span className="text-destructive font-medium ml-0.5" aria-hidden="true">*</span>
+                  </Label>
                   <Input
                     id="lastName"
                     placeholder="Doe"
                     value={lastName}
+                    required
+                    aria-required="true"
                     onChange={(e) => {
                       setLastName(e.target.value);
                       clearError("lastName");
                     }}
+                    onBlur={() => handleBlur("lastName")}
                     autoComplete="family-name"
                     aria-invalid={!!errors.lastName}
                     aria-describedby={errors.lastName ? "lastName-error" : undefined}
@@ -245,16 +291,19 @@ export function AuthForms({
               {role === "STUDENT" && (
                 <div className="space-y-1.5">
                   <Label htmlFor="rollNo">
-                    Roll number <span className="text-destructive">*</span>
+                    Roll number <span className="text-destructive font-medium ml-0.5" aria-hidden="true">*</span>
                   </Label>
                   <Input
                     id="rollNo"
                     placeholder="e.g. 23CS001"
                     value={rollNo}
+                    required
+                    aria-required="true"
                     onChange={(e) => {
                       setRollNo(e.target.value);
                       clearError("rollNo");
                     }}
+                    onBlur={() => handleBlur("rollNo")}
                     autoComplete="off"
                     aria-invalid={!!errors.rollNo}
                     aria-describedby={errors.rollNo ? "rollNo-error" : undefined}
@@ -266,16 +315,21 @@ export function AuthForms({
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">
+              Email <span className="text-destructive font-medium ml-0.5" aria-hidden="true">*</span>
+            </Label>
             <Input
               id="email"
               type="email"
               placeholder="name@example.com"
               value={email}
+              required
+              aria-required="true"
               onChange={(e) => {
                 setEmail(e.target.value);
                 clearError("email");
               }}
+              onBlur={() => handleBlur("email")}
               autoComplete="email"
               aria-invalid={!!errors.email}
               aria-describedby={errors.email ? "email-error" : undefined}
@@ -284,17 +338,22 @@ export function AuthForms({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">
+              Password <span className="text-destructive font-medium ml-0.5" aria-hidden="true">*</span>
+            </Label>
             <div className="relative">
               <Input
                 id="password"
                 type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
                 value={password}
+                required
+                aria-required="true"
                 onChange={(e) => {
                   setPassword(e.target.value);
                   clearError("password");
                 }}
+                onBlur={() => handleBlur("password")}
                 autoComplete={isRegister ? "new-password" : "current-password"}
                 className="pr-10"
                 aria-invalid={!!errors.password}

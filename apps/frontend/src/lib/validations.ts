@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 export const LoginSchema = z.object({
-  email: z.string().trim().email("Please enter a valid email address"),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Email is required")
+    .email("Please enter a valid email address"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -9,14 +13,26 @@ export type LoginFormData = z.infer<typeof LoginSchema>;
 
 export const RegisterSchema = z
   .object({
-    email: z.string().trim().email("Please enter a valid email address"),
+    email: z
+      .string()
+      .trim()
+      .min(1, "Email is required")
+      .email("Please enter a valid email address"),
     password: z
       .string()
+      .min(1, "Password is required")
       .min(8, "Password must be at least 8 characters")
       .regex(/[A-Za-z]/, "Password must contain at least one letter")
       .regex(/[0-9]/, "Password must contain at least one number"),
-    firstName: z.string().trim().min(2, "First name must be at least 2 characters"),
-    lastName: z.string().trim().min(1, "Last name is required"),
+    firstName: z
+      .string()
+      .trim()
+      .min(1, "First name is required")
+      .min(2, "First name must be at least 2 characters"),
+    lastName: z
+      .string()
+      .trim()
+      .min(1, "Last name is required"),
     role: z.enum(["TEACHER", "STUDENT"], {
       required_error: "Please select a role",
     }),
@@ -25,7 +41,7 @@ export const RegisterSchema = z
   .refine(
     (data) => {
       if (data.role === "STUDENT") {
-        return Boolean(data.rollNo && data.rollNo.length > 0);
+        return Boolean(data.rollNo && data.rollNo.trim().length > 0);
       }
       return true;
     },

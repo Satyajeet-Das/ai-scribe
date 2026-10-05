@@ -27,12 +27,26 @@ describe("LoginSchema", () => {
     }
   });
 
+  it("rejects empty email", () => {
+    const res = LoginSchema.safeParse({
+      email: "",
+      password: "SecretPassword123",
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.error.issues[0].message).toMatch(/email is required/i);
+    }
+  });
+
   it("rejects empty password", () => {
     const res = LoginSchema.safeParse({
       email: "valid@email.com",
       password: "",
     });
     expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.error.issues[0].message).toMatch(/password is required/i);
+    }
   });
 });
 
@@ -92,6 +106,39 @@ describe("RegisterSchema", () => {
     expect(res.success).toBe(false);
     if (!res.success) {
       expect(res.error.issues[0].message).toMatch(/at least one number/i);
+    }
+  });
+
+  it("rejects empty first name", () => {
+    const res = RegisterSchema.safeParse({
+      ...validStudentPayload,
+      firstName: "",
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.error.issues[0].message).toMatch(/first name is required/i);
+    }
+  });
+
+  it("rejects single character first name", () => {
+    const res = RegisterSchema.safeParse({
+      ...validStudentPayload,
+      firstName: "A",
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.error.issues[0].message).toMatch(/at least 2 characters/i);
+    }
+  });
+
+  it("rejects empty last name", () => {
+    const res = RegisterSchema.safeParse({
+      ...validStudentPayload,
+      lastName: "",
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.error.issues[0].message).toMatch(/last name is required/i);
     }
   });
 
