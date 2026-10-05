@@ -115,20 +115,20 @@ describe("CreateExamSchema", () => {
     expect(res.success).toBe(true);
   });
 
-  it("rejects durations under 5 minutes", () => {
+  it("rejects non-positive durations under 1 minute", () => {
     const res = CreateExamSchema.safeParse({
       title: "Quick Quiz",
       subject: "Math",
-      durationMins: 3,
+      durationMins: 0,
     });
     expect(res.success).toBe(false);
   });
 
-  it("rejects durations over 360 minutes", () => {
+  it("rejects durations over 600 minutes", () => {
     const res = CreateExamSchema.safeParse({
       title: "Marathon Exam",
       subject: "Math",
-      durationMins: 500,
+      durationMins: 601,
     });
     expect(res.success).toBe(false);
   });

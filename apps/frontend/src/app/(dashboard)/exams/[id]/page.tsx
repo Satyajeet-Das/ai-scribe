@@ -2,23 +2,68 @@
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Clock, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  BookOpen,
+  Clock,
+  Loader2,
+  Calendar,
+  Edit,
+  CheckCircle2,
+  RotateCcw,
+  Archive,
+  Trash2,
+  AlertCircle,
+  Shield,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { QuestionManager } from "@/components/question-manager";
 import { AssignmentManager } from "@/components/assignment-manager";
 import { ProtectedRoute } from "@/components/auth/protected-route";
-import { examsApi, questionsApi, assignmentsApi } from "@/services/api";
+import { EditExamDialog } from "@/components/edit-exam-dialog";
+import { ConfirmActionDialog, type ConfirmActionType } from "@/components/confirm-action-dialog";
+import { examsApi, questionsApi, assignmentsApi, ApiError } from "@/services/api";
+import { useAuthStore } from "@/store/auth-store";
 import { DESIGN_TOKENS } from "@/lib/constants";
-import type { Exam, Question, Assignment } from "@/types/exam-types";
+import type { Exam, Question, Assignment, ExamStatus } from "@/types/exam-types";
+
+const statusStyles: Record<ExamStatus, string> = {
+  DRAFT: "bg-muted text-muted-foreground border-border",
+  PUBLISHED:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200 border-emerald-300 dark:border-emerald-800 font-semibold",
+  ARCHIVED:
+    "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 border-amber-300 dark:border-amber-800",
+};
 
 export default function ExamDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const examId = resolvedParams.id;
+  const router = useRouter();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === "ADMIN";
 
   const [exam, setExam] = useState<Exam | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Lifecycle & Dialog states
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmActionType | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+
+  const showFeedback = (type: "success" | "error", message: string) => {
+    setFeedback({ type, message });
+    setTimeout(() => {
+      setFeedback(null);
+    }, 6000);
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -61,6 +106,50 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
     loadData();
   }, [examId]);
 
+  const handleUpdateExam = async (id: string, payload: Partial<Exam>): Promise<Exam> => {
+    try {
+      const updated = await examsApi.updateExam(id, payload);
+      setExam(updated);
+      showFeedback("success", "Assessment details updated successfully.");
+      return updated;
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to update exam";
+      showFeedback("error", msg);
+      throw err;
+    }
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction || !exam) return;
+
+    setActionLoading(true);
+    try {
+      if (confirmAction === "publish") {
+        const updated = await examsApi.publishExam(exam.id);
+        setExam(updated);
+        showFeedback("success", `Assessment "${exam.title}" published successfully.`);
+      } else if (confirmAction === "unpublish") {
+        const updated = await examsApi.unpublishExam(exam.id);
+        setExam(updated);
+        showFeedback("success", `Assessment "${exam.title}" reverted to draft.`);
+      } else if (confirmAction === "archive") {
+        const updated = await examsApi.archiveExam(exam.id);
+        setExam(updated);
+        showFeedback("success", `Assessment "${exam.title}" archived.`);
+      } else if (confirmAction === "delete") {
+        await examsApi.deleteExam(exam.id);
+        router.push("/exams");
+        return;
+      }
+      setConfirmAction(null);
+    } catch (err: unknown) {
+      const msg = err instanceof ApiError ? err.message : "Action could not be completed.";
+      showFeedback("error", msg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <ProtectedRoute allowedRoles={["TEACHER", "ADMIN"]}>
@@ -76,7 +165,7 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
       <div className="min-h-screen bg-background pb-16">
         <div className={DESIGN_TOKENS.layout.container}>
           <div className="py-6 sm:py-8 flex flex-col gap-8">
-            {/* Top Navigation & Header */}
+            {/* Top Navigation & Breadcrumbs */}
             <div>
               <Link
                 href="/exams"
@@ -86,25 +175,155 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
                 Back to all exams
               </Link>
 
+              {/* Feedback alert */}
+              {feedback && (
+                <div
+                  role="alert"
+                  className={`mb-4 flex items-center justify-between gap-3 rounded-lg border p-4 text-sm font-medium transition-all ${
+                    feedback.type === "success"
+                      ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
+                      : "bg-destructive/10 border-destructive/20 text-destructive"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {feedback.type === "success" ? (
+                      <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="size-4 text-destructive shrink-0" />
+                    )}
+                    <span>{feedback.message}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFeedback(null)}
+                    className="text-xs opacity-70 hover:opacity-100 ml-4 underline"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              {/* Exam Header */}
               {exam && (
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <h1 className={DESIGN_TOKENS.typography.h1}>{exam.title}</h1>
-                      <Badge variant="outline">{exam.status}</Badge>
+                <div className="flex flex-col gap-4 border-b pb-6">
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h1 className={DESIGN_TOKENS.typography.h1}>{exam.title}</h1>
+                        <Badge
+                          variant="outline"
+                          className={`${statusStyles[exam.status]} px-2.5 py-0.5 text-xs font-semibold`}
+                        >
+                          {exam.status}
+                        </Badge>
+                        {isAdmin && (
+                          <Badge variant="secondary" className="text-xs">
+                            <Shield className="mr-1 size-3 text-primary" />
+                            Admin View
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm text-muted-foreground max-w-3xl">
+                        {exam.description || "No description provided."}
+                      </p>
                     </div>
-                    <p className="mt-1 text-sm text-muted-foreground">{exam.description}</p>
+
+                    {/* Action Toolbar */}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {exam.status === "DRAFT" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditOpen(true)}
+                            className="gap-1.5"
+                          >
+                            <Edit className="size-4" />
+                            Edit Exam
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => setConfirmAction("publish")}
+                            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+                          >
+                            <CheckCircle2 className="size-4" />
+                            Publish
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setConfirmAction("delete")}
+                            className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Trash2 className="size-4" />
+                            Delete
+                          </Button>
+                        </>
+                      )}
+
+                      {exam.status === "PUBLISHED" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditOpen(true)}
+                            className="gap-1.5"
+                          >
+                            <Edit className="size-4" />
+                            Edit Details
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setConfirmAction("unpublish")}
+                            className="gap-1.5 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
+                          >
+                            <RotateCcw className="size-4" />
+                            Revert to Draft
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setConfirmAction("archive")}
+                            className="gap-1.5 text-muted-foreground hover:text-foreground"
+                          >
+                            <Archive className="size-4" />
+                            Archive
+                          </Button>
+                        </>
+                      )}
+
+                      {exam.status === "ARCHIVED" && (
+                        <div className="flex items-center gap-2 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-300">
+                          <Archive className="size-3.5" />
+                          Archived (Read-Only)
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground">
+                  {/* Metadata Row */}
+                  <div className="flex flex-wrap items-center gap-6 pt-2 text-xs font-medium text-muted-foreground border-t">
                     <span className="flex items-center gap-1.5">
-                      <BookOpen className="size-4" />
-                      {exam.subject}
+                      <BookOpen className="size-4 text-primary" />
+                      Subject: <strong className="text-foreground">{exam.subject}</strong>
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <Clock className="size-4" />
-                      {exam.durationMins} minutes
+                      <Clock className="size-4 text-primary" />
+                      Duration: <strong className="text-foreground">{exam.durationMins} minutes</strong>
                     </span>
+                    {exam.createdAt && (
+                      <span className="flex items-center gap-1.5">
+                        <Calendar className="size-4" />
+                        Created: {new Date(exam.createdAt).toLocaleDateString()}
+                      </span>
+                    )}
+                    {exam.publishedAt && (
+                      <span className="flex items-center gap-1.5">
+                        <CheckCircle2 className="size-4 text-emerald-600" />
+                        Published: {new Date(exam.publishedAt).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -119,6 +338,30 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
             </div>
           </div>
         </div>
+
+        {/* Edit Exam Dialog */}
+        {exam && (
+          <EditExamDialog
+            exam={exam}
+            open={editOpen}
+            onOpenChange={setEditOpen}
+            onSubmit={async (id, payload) => {
+              return await handleUpdateExam(id, payload);
+            }}
+          />
+        )}
+
+        {/* Confirmation Dialog */}
+        {exam && (
+          <ConfirmActionDialog
+            action={confirmAction}
+            examTitle={exam.title}
+            open={Boolean(confirmAction)}
+            onOpenChange={(open) => !open && setConfirmAction(null)}
+            onConfirm={handleConfirmAction}
+            loading={actionLoading}
+          />
+        )}
       </div>
     </ProtectedRoute>
   );

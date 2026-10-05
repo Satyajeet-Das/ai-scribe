@@ -7,28 +7,24 @@ import {
   ChevronLeft,
   ChevronRight,
   FilePlus2,
-  Loader2,
   Plus,
   Search,
   SlidersHorizontal,
   UserCheck,
-  Users,
   Archive,
+  RotateCcw,
+  Edit,
+  Trash2,
+  Shield,
+  Clock,
+  Calendar,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -36,60 +32,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { ExamCardsSkeleton, StatsSkeleton } from "@/components/ui/exam-skeleton";
+import { CreateExamDialog } from "@/components/create-exam-dialog";
+import { EditExamDialog } from "@/components/edit-exam-dialog";
+import { ConfirmActionDialog, type ConfirmActionType } from "@/components/confirm-action-dialog";
 import { useDebounce } from "@/hooks/use-debounce";
-import { CreateExamSchema } from "@/lib/validations";
+import { useAuthStore } from "@/store/auth-store";
 import { DESIGN_TOKENS, DEFAULT_PAGE_SIZE } from "@/lib/constants";
 import type { Exam, ExamStatus } from "@/types/exam-types";
 
-const fallbackExams: Exam[] = [
-  {
-    id: "exam-1",
-    title: "Foundations of Biology",
-    subject: "Biology",
-    description: "Cells, systems, and the living world.",
-    durationMins: 45,
-    status: "PUBLISHED",
-    createdBy: "teacher-1",
-    publishedAt: "2025-02-14",
-    createdAt: "2025-02-01",
-    updatedAt: "2025-02-14",
-    candidates: 24,
-    questions: 18,
-  },
-  {
-    id: "exam-2",
-    title: "Algebraic Reasoning",
-    subject: "Mathematics",
-    description: "Linear equations and proportional thinking.",
-    durationMins: 60,
-    status: "DRAFT",
-    createdBy: "teacher-1",
-    createdAt: "2025-02-12",
-    updatedAt: "2025-02-18",
-    candidates: 0,
-    questions: 12,
-  },
-  {
-    id: "exam-3",
-    title: "Modern World History",
-    subject: "History",
-    description: "A guided review of twentieth-century events.",
-    durationMins: 40,
-    status: "ARCHIVED",
-    createdBy: "teacher-1",
-    createdAt: "2024-11-02",
-    updatedAt: "2024-12-01",
-    candidates: 31,
-    questions: 20,
-  },
-];
-
 const statusStyles: Record<ExamStatus, string> = {
-  DRAFT: "bg-muted text-muted-foreground",
+  DRAFT: "bg-muted text-muted-foreground border-border",
   PUBLISHED:
-    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200 border-emerald-300 dark:border-emerald-800",
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200 border-emerald-300 dark:border-emerald-800 font-semibold",
   ARCHIVED:
     "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 border-amber-300 dark:border-amber-800",
 };
@@ -97,52 +52,76 @@ const statusStyles: Record<ExamStatus, string> = {
 interface ExamDashboardProps {
   exams?: Exam[];
   loading?: boolean;
+  total?: number;
   onCreateExam?: (payload: {
     title: string;
     subject: string;
     description: string;
     durationMins: number;
-  }) => Promise<void>;
-  onPublishExam?: (id: string) => Promise<void>;
-  onArchiveExam?: (id: string) => Promise<void>;
+  }) => Promise<Exam>;
+  onUpdateExam?: (id: string, payload: Partial<Exam>) => Promise<Exam>;
+  onPublishExam?: (id: string) => Promise<Exam>;
+  onUnpublishExam?: (id: string) => Promise<Exam>;
+  onArchiveExam?: (id: string) => Promise<Exam>;
+  onDeleteExam?: (id: string) => Promise<void>;
   onOpenQuestions?: (exam: Exam) => void;
   onOpenAssignments?: (exam: Exam) => void;
+  onSearchChange?: (query: string) => void;
+  onStatusChange?: (status: ExamStatus | "ALL") => void;
 }
 
 export function ExamDashboard({
-  exams = fallbackExams,
+  exams = [],
   loading = false,
+  total,
   onCreateExam,
+  onUpdateExam,
   onPublishExam,
+  onUnpublishExam,
   onArchiveExam,
+  onDeleteExam,
   onOpenQuestions,
   onOpenAssignments,
+  onSearchChange,
+  onStatusChange,
 }: ExamDashboardProps) {
-  const [items, setItems] = useState<Exam[]>(exams);
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === "ADMIN";
+
+  // Search & Filter state
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebounce(query, 300);
   const [status, setStatus] = useState<"ALL" | ExamStatus>("ALL");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = DEFAULT_PAGE_SIZE;
 
-  // Form fields & validation errors
-  const [title, setTitle] = useState("");
-  const [subject, setSubject] = useState("");
-  const [description, setDescription] = useState("");
-  const [durationMins, setDurationMins] = useState("60");
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  // Dialog States
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingExam, setEditingExam] = useState<Exam | null>(null);
 
-  // Keep items synced if prop changes
-  const displayItems = exams.length > 0 ? exams : items;
+  // Confirm Action State
+  const [confirmAction, setConfirmAction] = useState<ConfirmActionType | null>(null);
+  const [targetExam, setTargetExam] = useState<Exam | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Feedback notifications
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+
+  const showFeedback = (type: "success" | "error", message: string) => {
+    setFeedback({ type, message });
+    setTimeout(() => {
+      setFeedback(null);
+    }, 6000);
+  };
 
   // Debounced search and status filter
   const filtered = useMemo(() => {
-    return displayItems.filter((exam) => {
+    return exams.filter((exam) => {
       const matchesStatus = status === "ALL" || exam.status === status;
       const matchesQuery =
         debouncedQuery === "" ||
@@ -151,9 +130,10 @@ export function ExamDashboard({
           .includes(debouncedQuery.toLowerCase());
       return matchesStatus && matchesQuery;
     });
-  }, [displayItems, debouncedQuery, status]);
+  }, [exams, debouncedQuery, status]);
 
   // Paginated slice
+  const effectiveTotal = total ?? filtered.length;
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
   const paginatedExams = useMemo(() => {
@@ -161,94 +141,39 @@ export function ExamDashboard({
     return filtered.slice(start, start + pageSize);
   }, [filtered, safePage, pageSize]);
 
-  const handleCreate = async () => {
-    setFormErrors({});
-    const numDuration = parseInt(durationMins, 10) || 0;
+  // Handle action confirmation
+  const handleConfirmAction = async () => {
+    if (!confirmAction || !targetExam) return;
 
-    const validation = CreateExamSchema.safeParse({
-      title,
-      subject,
-      description,
-      durationMins: numDuration,
-    });
-
-    if (!validation.success) {
-      const errors: Record<string, string> = {};
-      validation.error.errors.forEach((err) => {
-        if (err.path[0]) errors[err.path[0] as string] = err.message;
-      });
-      setFormErrors(errors);
-      return;
-    }
-
-    setSubmitting(true);
+    setActionLoading(true);
     try {
-      if (onCreateExam) {
-        await onCreateExam({
-          title: title.trim(),
-          subject: subject.trim(),
-          description: description.trim(),
-          durationMins: numDuration,
-        });
-      } else {
-        const newExam: Exam = {
-          id: crypto.randomUUID(),
-          title: title.trim(),
-          subject: subject.trim(),
-          description: description.trim() || "No description provided.",
-          durationMins: numDuration,
-          status: "DRAFT",
-          createdBy: "teacher-1",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          candidates: 0,
-          questions: 0,
-        };
-        setItems((current) => [newExam, ...current]);
+      if (confirmAction === "publish" && onPublishExam) {
+        await onPublishExam(targetExam.id);
+        showFeedback("success", `Assessment "${targetExam.title}" published successfully.`);
+      } else if (confirmAction === "unpublish" && onUnpublishExam) {
+        await onUnpublishExam(targetExam.id);
+        showFeedback("success", `Assessment "${targetExam.title}" reverted to draft.`);
+      } else if (confirmAction === "archive" && onArchiveExam) {
+        await onArchiveExam(targetExam.id);
+        showFeedback("success", `Assessment "${targetExam.title}" archived.`);
+      } else if (confirmAction === "delete" && onDeleteExam) {
+        await onDeleteExam(targetExam.id);
+        showFeedback("success", `Assessment "${targetExam.title}" deleted.`);
       }
-
-      setTitle("");
-      setSubject("");
-      setDescription("");
-      setDurationMins("60");
-      setCreateOpen(false);
+      setTargetExam(null);
+      setConfirmAction(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Action could not be completed.";
+      showFeedback("error", msg);
+      throw err;
     } finally {
-      setSubmitting(false);
+      setActionLoading(false);
     }
   };
 
-  const handlePublish = async (id: string) => {
-    setActionLoadingId(id);
-    try {
-      if (onPublishExam) {
-        await onPublishExam(id);
-      } else {
-        setItems((current) =>
-          current.map((exam) =>
-            exam.id === id
-              ? { ...exam, status: "PUBLISHED", publishedAt: new Date().toISOString() }
-              : exam
-          )
-        );
-      }
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
-  const handleArchive = async (id: string) => {
-    setActionLoadingId(id);
-    try {
-      if (onArchiveExam) {
-        await onArchiveExam(id);
-      } else {
-        setItems((current) =>
-          current.map((exam) => (exam.id === id ? { ...exam, status: "ARCHIVED" } : exam))
-        );
-      }
-    } finally {
-      setActionLoadingId(null);
-    }
+  const openConfirm = (exam: Exam, action: ConfirmActionType) => {
+    setTargetExam(exam);
+    setConfirmAction(action);
   };
 
   return (
@@ -259,147 +184,84 @@ export function ExamDashboard({
           <div className="flex items-center gap-2">
             <h1 className={DESIGN_TOKENS.typography.h1}>Exam Management</h1>
             <Badge variant="outline" className="text-xs font-semibold">
-              Educator
+              {isAdmin ? (
+                <span className="flex items-center gap-1 text-primary">
+                  <Shield className="size-3" />
+                  Administrator
+                </span>
+              ) : (
+                "Educator"
+              )}
             </Badge>
           </div>
           <p className={DESIGN_TOKENS.typography.muted}>
-            Author accessible assessments, configure voice accommodations, and monitor student
-            assignments.
+            Author accessible assessments, enforce lifecycle states, and allocate student testing accommodations.
           </p>
         </div>
 
-        {/* Create Exam Dialog */}
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger
-            render={
-              <Button className="shrink-0 font-medium">
-                <Plus className="mr-1.5 size-4" />
-                Create New Exam
-              </Button>
-            }
-          />
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle className="text-xl">Create New Assessment</DialogTitle>
-              <DialogDescription>
-                Set up initial metadata for your exam. Questions and accommodations can be added
-                after saving.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="flex flex-col gap-4 py-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="exam-title" className="text-sm font-medium">
-                  Exam Title <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="exam-title"
-                  placeholder="e.g. Midterm General Physics"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  aria-invalid={!!formErrors.title}
-                />
-                {formErrors.title && <p className="text-xs text-destructive">{formErrors.title}</p>}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="exam-subject" className="text-sm font-medium">
-                    Subject / Course <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="exam-subject"
-                    placeholder="e.g. Physics 101"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    aria-invalid={!!formErrors.subject}
-                  />
-                  {formErrors.subject && (
-                    <p className="text-xs text-destructive">{formErrors.subject}</p>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="exam-duration" className="text-sm font-medium">
-                    Duration (Minutes) <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="exam-duration"
-                    type="number"
-                    min="5"
-                    max="360"
-                    value={durationMins}
-                    onChange={(e) => setDurationMins(e.target.value)}
-                    aria-invalid={!!formErrors.durationMins}
-                  />
-                  {formErrors.durationMins && (
-                    <p className="text-xs text-destructive">{formErrors.durationMins}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="exam-desc" className="text-sm font-medium">
-                  Description / Instructions
-                </Label>
-                <Textarea
-                  id="exam-desc"
-                  rows={3}
-                  placeholder="Briefly state covered topics, rules, and allowed assistive materials..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  aria-invalid={!!formErrors.description}
-                />
-                {formErrors.description && (
-                  <p className="text-xs text-destructive">{formErrors.description}</p>
-                )}
-              </div>
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button
-                variant="outline"
-                type="button"
-                onClick={() => {
-                  setFormErrors({});
-                  setCreateOpen(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button type="button" onClick={handleCreate} disabled={submitting}>
-                {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-                {submitting ? "Saving..." : "Create Draft"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button className="shrink-0 font-medium" onClick={() => setCreateOpen(true)}>
+          <Plus className="mr-1.5 size-4" />
+          Create New Exam
+        </Button>
       </header>
+
+      {/* Action Feedback Banner */}
+      {feedback && (
+        <div
+          role="alert"
+          className={`flex items-start gap-3 rounded-lg border p-4 text-sm font-medium transition-all ${
+            feedback.type === "success"
+              ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
+              : "bg-destructive/10 border-destructive/20 text-destructive"
+          }`}
+        >
+          {feedback.type === "success" ? (
+            <CheckCircle2 className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+          ) : (
+            <AlertCircle className="size-5 shrink-0 text-destructive mt-0.5" />
+          )}
+          <div className="flex-1">
+            <p>{feedback.message}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="size-7 p-0 -mr-1.5 -mt-1 text-muted-foreground hover:text-foreground"
+            onClick={() => setFeedback(null)}
+          >
+            ×
+          </Button>
+        </div>
+      )}
 
       {/* Metric Cards or Loading Stats Skeleton */}
       {loading ? (
         <StatsSkeleton />
       ) : (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <StatCard
-            label="Total Exams"
-            value={displayItems.length}
-            detail="Across all subjects"
+            label="Total Assessments"
+            value={effectiveTotal}
+            detail="Managed in catalog"
             icon={BookOpen}
           />
           <StatCard
-            label="Active Candidates"
-            value={displayItems
-              .filter((item) => item.status === "PUBLISHED")
-              .reduce((sum, item) => sum + (item.candidates ?? 0), 0)}
-            detail="Currently assigned"
-            icon={Users}
+            label="Published Exams"
+            value={exams.filter((item) => item.status === "PUBLISHED").length}
+            detail="Active for allocation"
+            icon={CheckCircle2}
           />
           <StatCard
             label="Drafts in Progress"
-            value={displayItems.filter((item) => item.status === "DRAFT").length}
-            detail="Ready for question review"
+            value={exams.filter((item) => item.status === "DRAFT").length}
+            detail="Editable drafts"
             icon={FilePlus2}
+          />
+          <StatCard
+            label="Archived Records"
+            value={exams.filter((item) => item.status === "ARCHIVED").length}
+            detail="Permanently frozen"
+            icon={Archive}
           />
         </div>
       )}
@@ -413,12 +275,13 @@ export function ExamDashboard({
           />
           <Input
             className="pl-9"
-            aria-label="Search exams"
+            aria-label="Search assessments"
             placeholder="Search exams by title, subject, or description..."
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
               setCurrentPage(1);
+              onSearchChange?.(e.target.value);
             }}
           />
         </div>
@@ -427,11 +290,13 @@ export function ExamDashboard({
           <Select
             value={status}
             onValueChange={(val) => {
-              setStatus(val as typeof status);
+              const newStatus = val as typeof status;
+              setStatus(newStatus);
               setCurrentPage(1);
+              onStatusChange?.(newStatus);
             }}
           >
-            <SelectTrigger className="w-full md:w-48" aria-label="Filter by status">
+            <SelectTrigger className="w-full md:w-48" aria-label="Filter by lifecycle status">
               <SlidersHorizontal className="size-4 mr-2 text-muted-foreground" />
               <SelectValue placeholder="All statuses" />
             </SelectTrigger>
@@ -447,7 +312,9 @@ export function ExamDashboard({
 
       {/* Exam Cards Grid or Skeleton */}
       {loading ? (
-        <ExamCardsSkeleton count={pageSize} />
+        <div data-testid="exam-loading-skeleton">
+          <ExamCardsSkeleton count={pageSize} />
+        </div>
       ) : filtered.length === 0 ? (
         <Card className="flex flex-col items-center justify-center p-12 text-center border-dashed">
           <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-3">
@@ -467,6 +334,7 @@ export function ExamDashboard({
               onClick={() => {
                 setQuery("");
                 setStatus("ALL");
+                setCurrentPage(1);
               }}
             >
               Reset Filters
@@ -488,10 +356,15 @@ export function ExamDashboard({
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <CardDescription className="text-xs uppercase font-semibold tracking-wider text-muted-foreground">
-                        {exam.subject} · {exam.durationMins} mins
-                      </CardDescription>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-xs uppercase font-semibold tracking-wider text-muted-foreground">
+                        <span>{exam.subject}</span>
+                        <span>·</span>
+                        <span className="flex items-center gap-1 font-normal lowercase">
+                          <Clock className="size-3" />
+                          {exam.durationMins} mins
+                        </span>
+                      </div>
                       <CardTitle className="text-xl font-bold">{exam.title}</CardTitle>
                     </div>
                     <Badge variant="outline" className={statusStyles[exam.status]}>
@@ -499,17 +372,34 @@ export function ExamDashboard({
                     </Badge>
                   </div>
                 </CardHeader>
+
                 <CardContent className="flex flex-col gap-4 flex-1 justify-between">
                   <p className="min-h-10 text-sm leading-6 text-muted-foreground line-clamp-2">
                     {exam.description || "No description provided for this assessment."}
                   </p>
 
-                  <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3">
-                    <span>{exam.questions ?? 0} questions configured</span>
-                    <span>{exam.candidates ?? 0} candidates assigned</span>
+                  <div className="flex flex-col gap-1.5 text-xs text-muted-foreground border-t pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="size-3" />
+                        Created {new Date(exam.createdAt).toLocaleDateString()}
+                      </span>
+                      {exam.publishedAt && (
+                        <span className="text-emerald-700 dark:text-emerald-400">
+                          Published {new Date(exam.publishedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    {isAdmin && (
+                      <span className="text-[11px] text-muted-foreground/75 truncate">
+                        Owner: {exam.createdBy}
+                      </span>
+                    )}
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t">
+                  {/* Contextual Action Toolbar based on Lifecycle Rules */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
+                    {/* Navigation Actions */}
                     <Button variant="outline" size="sm" onClick={() => onOpenQuestions?.(exam)}>
                       Questions
                       <ChevronRight className="ml-1 size-3.5" />
@@ -520,36 +410,80 @@ export function ExamDashboard({
                       Assign
                     </Button>
 
+                    {/* DRAFT STATE: Edit, Publish, Delete */}
                     {exam.status === "DRAFT" && (
-                      <Button
-                        size="sm"
-                        disabled={actionLoadingId === exam.id}
-                        onClick={() => handlePublish(exam.id)}
-                      >
-                        {actionLoadingId === exam.id ? (
-                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                        ) : (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditingExam(exam)}
+                        >
+                          <Edit className="mr-1.5 size-3.5" />
+                          Edit
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          onClick={() => openConfirm(exam, "publish")}
+                        >
                           <Check className="mr-1.5 size-3.5" />
-                        )}
-                        Publish
-                      </Button>
+                          Publish
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Delete assessment"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => openConfirm(exam, "delete")}
+                        >
+                          <Trash2 className="size-3.5" />
+                          <span className="sr-only">Delete</span>
+                        </Button>
+                      </>
                     )}
 
+                    {/* PUBLISHED STATE: Edit (non-structural), Unpublish, Archive */}
                     {exam.status === "PUBLISHED" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={actionLoadingId === exam.id}
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={() => handleArchive(exam.id)}
-                      >
-                        {actionLoadingId === exam.id ? (
-                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                        ) : (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditingExam(exam)}
+                        >
+                          <Edit className="mr-1.5 size-3.5" />
+                          Edit Info
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label="Revert to draft"
+                          onClick={() => openConfirm(exam, "unpublish")}
+                          className="text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                        >
+                          <RotateCcw className="mr-1.5 size-3.5" />
+                          Unpublish
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => openConfirm(exam, "archive")}
+                        >
                           <Archive className="mr-1.5 size-3.5" />
-                        )}
-                        Archive
-                      </Button>
+                          Archive
+                        </Button>
+                      </>
+                    )}
+
+                    {/* ARCHIVED STATE: Read-only badge */}
+                    {exam.status === "ARCHIVED" && (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300 font-medium py-1 px-2.5 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800">
+                        <Archive className="size-3.5" />
+                        Archived (Read-Only)
+                      </span>
                     )}
                   </div>
                 </CardContent>
@@ -597,6 +531,50 @@ export function ExamDashboard({
           )}
         </div>
       )}
+
+      {/* Create Exam Dialog */}
+      <CreateExamDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSubmit={async (payload) => {
+          if (!onCreateExam) {
+            throw new Error("Create exam handler is not configured");
+          }
+          const created = await onCreateExam(payload);
+          showFeedback("success", `Assessment "${created.title}" drafted successfully.`);
+          return created;
+        }}
+      />
+
+      {/* Edit Exam Dialog */}
+      <EditExamDialog
+        exam={editingExam}
+        open={Boolean(editingExam)}
+        onOpenChange={(val) => !val && setEditingExam(null)}
+        onSubmit={async (id, payload) => {
+          if (!onUpdateExam) {
+            throw new Error("Update exam handler is not configured");
+          }
+          const updated = await onUpdateExam(id, payload);
+          showFeedback("success", `Assessment "${updated.title}" updated successfully.`);
+          return updated;
+        }}
+      />
+
+      {/* Confirmation Action Dialog (Publish, Unpublish, Archive, Delete) */}
+      <ConfirmActionDialog
+        action={confirmAction}
+        examTitle={targetExam?.title || "Assessment"}
+        open={Boolean(confirmAction && targetExam)}
+        onOpenChange={(val) => {
+          if (!val && !actionLoading) {
+            setConfirmAction(null);
+            setTargetExam(null);
+          }
+        }}
+        onConfirm={handleConfirmAction}
+        loading={actionLoading}
+      />
     </div>
   );
 }
@@ -627,4 +605,5 @@ function StatCard({
     </Card>
   );
 }
+
 export default ExamDashboard;

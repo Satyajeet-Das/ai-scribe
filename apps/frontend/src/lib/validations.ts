@@ -42,25 +42,52 @@ export const CreateExamSchema = z.object({
     .string()
     .trim()
     .min(3, "Title must be at least 3 characters")
-    .max(100, "Title is too long"),
+    .max(255, "Title cannot exceed 255 characters"),
   subject: z
     .string()
     .trim()
     .min(2, "Subject must be at least 2 characters")
-    .max(50, "Subject is too long"),
+    .max(100, "Subject cannot exceed 100 characters"),
   description: z
     .string()
     .trim()
-    .max(500, "Description cannot exceed 500 characters")
+    .max(2000, "Description cannot exceed 2000 characters")
     .optional()
     .default(""),
   durationMins: z
     .number({ invalid_type_error: "Duration must be a number" })
-    .min(5, "Duration must be at least 5 minutes")
-    .max(360, "Duration cannot exceed 6 hours (360 minutes)"),
+    .min(1, "Duration must be at least 1 minute")
+    .max(600, "Duration cannot exceed 10 hours (600 minutes)"),
 });
 
 export type CreateExamFormData = z.infer<typeof CreateExamSchema>;
+
+export const UpdateExamSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(3, "Title must be at least 3 characters")
+    .max(255, "Title cannot exceed 255 characters")
+    .optional(),
+  subject: z
+    .string()
+    .trim()
+    .min(2, "Subject must be at least 2 characters")
+    .max(100, "Subject cannot exceed 100 characters")
+    .optional(),
+  description: z
+    .string()
+    .trim()
+    .max(2000, "Description cannot exceed 2000 characters")
+    .optional(),
+  durationMins: z
+    .number({ invalid_type_error: "Duration must be a number" })
+    .min(1, "Duration must be at least 1 minute")
+    .max(600, "Duration cannot exceed 10 hours (600 minutes)")
+    .optional(),
+});
+
+export type UpdateExamFormData = z.infer<typeof UpdateExamSchema>;
 
 export const OptionSchema = z.object({
   id: z.string().optional(),

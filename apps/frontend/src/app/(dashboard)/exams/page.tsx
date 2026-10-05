@@ -51,10 +51,12 @@ export default function ExamsPage() {
     subject: string;
     description: string;
     durationMins: number;
-  }) => {
+  }): Promise<Exam> => {
     try {
       const newExam = await examsApi.createExam(payload);
       setExams((prev) => [newExam, ...prev]);
+      setError(null);
+      return newExam;
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to create exam";
       setError(msg);
@@ -62,27 +64,67 @@ export default function ExamsPage() {
     }
   };
 
-  const handlePublish = async (id: string) => {
+  const handleUpdateExam = async (id: string, payload: Partial<Exam>): Promise<Exam> => {
     try {
-      const updated = await examsApi.publishExam(id);
+      const updated = await examsApi.updateExam(id, payload);
       setExams((prev) => prev.map((e) => (e.id === id ? updated : e)));
+      setError(null);
+      return updated;
     } catch (err) {
-      console.error("Failed to publish exam via API, applying local optimistic state:", err);
-      setExams((prev) =>
-        prev.map((e) =>
-          e.id === id ? { ...e, status: "PUBLISHED", publishedAt: new Date().toISOString() } : e
-        )
-      );
+      const msg = err instanceof ApiError ? err.message : "Failed to update exam";
+      setError(msg);
+      throw err;
     }
   };
 
-  const handleArchive = async (id: string) => {
+  const handlePublish = async (id: string): Promise<Exam> => {
+    try {
+      const updated = await examsApi.publishExam(id);
+      setExams((prev) => prev.map((e) => (e.id === id ? updated : e)));
+      setError(null);
+      return updated;
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to publish exam";
+      setError(msg);
+      throw err;
+    }
+  };
+
+  const handleUnpublish = async (id: string): Promise<Exam> => {
+    try {
+      const updated = await examsApi.unpublishExam(id);
+      setExams((prev) => prev.map((e) => (e.id === id ? updated : e)));
+      setError(null);
+      return updated;
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to revert exam to draft";
+      setError(msg);
+      throw err;
+    }
+  };
+
+  const handleArchive = async (id: string): Promise<Exam> => {
     try {
       const updated = await examsApi.archiveExam(id);
       setExams((prev) => prev.map((e) => (e.id === id ? updated : e)));
+      setError(null);
+      return updated;
     } catch (err) {
-      console.error("Failed to archive exam via API, applying local optimistic state:", err);
-      setExams((prev) => prev.map((e) => (e.id === id ? { ...e, status: "ARCHIVED" } : e)));
+      const msg = err instanceof ApiError ? err.message : "Failed to archive exam";
+      setError(msg);
+      throw err;
+    }
+  };
+
+  const handleDelete = async (id: string): Promise<void> => {
+    try {
+      await examsApi.deleteExam(id);
+      setExams((prev) => prev.filter((e) => e.id !== id));
+      setError(null);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to delete exam";
+      setError(msg);
+      throw err;
     }
   };
 
@@ -96,15 +138,7 @@ export default function ExamsPage() {
       const list = await assignmentsApi.getExamAssignments(exam.id);
       setAssignments(list);
     } catch {
-      setAssignments([
-        {
-          id: "mock-assign-1",
-          examId: exam.id,
-          studentId: "student-001",
-          assignedAt: new Date().toISOString(),
-          status: "ACTIVE",
-        },
-      ]);
+      setAssignments([]);
     }
   };
 
@@ -113,8 +147,15 @@ export default function ExamsPage() {
       <div className="min-h-screen bg-background pb-16">
         {error && (
           <div className={`${DESIGN_TOKENS.layout.container} pt-4`}>
-            <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive font-medium">
-              {error}
+            <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive font-medium flex items-center justify-between">
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="text-xs underline hover:no-underline ml-4"
+              >
+                Dismiss
+              </button>
             </div>
           </div>
         )}
@@ -125,8 +166,11 @@ export default function ExamsPage() {
               exams={exams}
               loading={loading}
               onCreateExam={handleCreateExam}
+              onUpdateExam={handleUpdateExam}
               onPublishExam={handlePublish}
+              onUnpublishExam={handleUnpublish}
               onArchiveExam={handleArchive}
+              onDeleteExam={handleDelete}
               onOpenQuestions={handleOpenQuestions}
               onOpenAssignments={handleOpenAssignments}
             />

@@ -356,15 +356,27 @@ export const authApi = {
 export const examsApi = {
   async getExams(params?: {
     status?: ExamStatus;
+    subject?: string;
+    search?: string;
+    createdBy?: string;
     limit?: number;
     offset?: number;
   }): Promise<{ exams: Exam[]; total: number; limit: number; offset: number }> {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
+    if (params?.subject) query.set("subject", params.subject);
+    if (params?.search) query.set("search", params.search);
+    if (params?.createdBy) query.set("createdBy", params.createdBy);
     if (params?.limit) query.set("limit", String(params.limit));
-    if (params?.offset) query.set("offset", String(params.offset));
+    if (params?.offset !== undefined) query.set("offset", String(params.offset));
     const qStr = query.toString() ? `?${query.toString()}` : "";
-    return apiFetch<{ exams: Exam[]; total: number; limit: number; offset: number }>(`/exams${qStr}`);
+    const res = await apiFetch<{ exams?: Exam[]; data?: Exam[]; total: number; limit: number; offset: number }>(`/exams${qStr}`);
+    return {
+      exams: res.exams || res.data || [],
+      total: res.total ?? (res.exams?.length || res.data?.length || 0),
+      limit: res.limit ?? (params?.limit || 20),
+      offset: res.offset ?? (params?.offset || 0),
+    };
   },
 
   async getExam(id: string): Promise<Exam> {
@@ -396,9 +408,21 @@ export const examsApi = {
     });
   },
 
+  async unpublishExam(id: string): Promise<Exam> {
+    return apiFetch<Exam>(`/exams/${id}/unpublish`, {
+      method: "POST",
+    });
+  },
+
   async archiveExam(id: string): Promise<Exam> {
     return apiFetch<Exam>(`/exams/${id}/archive`, {
       method: "POST",
+    });
+  },
+
+  async deleteExam(id: string): Promise<{ message: string }> {
+    return apiFetch<{ message: string }>(`/exams/${id}`, {
+      method: "DELETE",
     });
   },
 };
