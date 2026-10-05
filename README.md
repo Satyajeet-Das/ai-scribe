@@ -167,6 +167,9 @@ ai-scribe/
 | `GET` | `/docs` | Interactive OpenAPI 3.0 UI (Swagger / Redoc) | Public |
 | `GET` | `/static/openapi.json` | OpenAPI 3.0 specification JSON | Public |
 
+> [!TIP]
+> The OpenAPI specification is automatically kept in sync with the Go codebase. In development, changes to Go structs and routes are detected by a background file watcher and regenerated live. You can also run `make openapi` to regenerate on demand.
+
 ---
 
 ## Quick Start

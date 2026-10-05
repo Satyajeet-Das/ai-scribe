@@ -63,3 +63,25 @@ go test -v ./...
 # Run static analysis
 go vet ./...
 ```
+
+## OpenAPI Documentation
+
+The OpenAPI 3.0 specification (`static/openapi.json`) and interactive documentation UI (`/docs`) stay automatically synchronized with the Go codebase:
+
+- **Automatic Live Sync**: When running the server in development (`make run-backend`), the server synchronizes `static/openapi.json` on startup and runs a background file watcher that re-synchronizes the specification whenever Go source files in `internal/` or `cmd/` are modified and saved.
+- **Manual CLI Generation**:
+  ```bash
+  # From apps/backend:
+  make openapi
+  # or
+  go run ./cmd/openapi-gen
+
+  # From repository root:
+  make openapi
+  ```
+- **Go Generate**:
+  ```bash
+  go generate ./...
+  ```
+- **Interactive UI**: Open `http://localhost:8080/docs` in your browser.
+- **Architecture & System Design**: See [OpenAPI Automation Architecture Guide](../../docs/architecture/openapi-automation.md) for full design details, data flow diagrams, and type mapping specifications.
