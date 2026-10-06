@@ -41,6 +41,7 @@ type Service interface {
 	ExpireSession(ctx context.Context, sessionID uuid.UUID) error
 	LockAndValidate(ctx context.Context, id uuid.UUID, event Event, callerID uuid.UUID) (*Session, func(context.Context) error, error)
 	UpdateActivity(ctx context.Context, id uuid.UUID) error
+	ListSessions(ctx context.Context, studentID uuid.UUID, limit, offset int) ([]Session, int, error)
 }
 
 type sessionService struct {
@@ -148,7 +149,17 @@ func (s *sessionService) StartSession(ctx context.Context, req StartSessionReque
 		return nil, 0, err
 	}
 	if existingActive != nil {
-		return nil, 0, ErrActiveSessionAlreadyExists
+		// Auto-expire if time has elapsed
+		if ex.DurationMins > 0 && time.Since(existingActive.StartedAt) > time.Duration(ex.DurationMins)*time.Minute {
+			_ = s.repo.Expire(ctx, existingActive.ID)
+			return nil, 0, ErrSessionExpired
+		}
+		s.logger.Info().
+			Str("session_id", existingActive.ID.String()).
+			Str("assignment_id", asgn.ID.String()).
+			Str("student_id", callerID.String()).
+			Msg("active session already in progress, returning existing session to rejoin")
+		return existingActive, ex.DurationMins, nil
 	}
 
 	now := time.Now().UTC()
@@ -489,4 +500,17 @@ func (s *sessionService) UpdateActivity(ctx context.Context, id uuid.UUID) error
 	}
 	
 	return s.cache.SetState(ctx, sess.ID, sess, ttl)
+}
+
+func (s *sessionService) ListSessions(ctx context.Context, studentID uuid.UUID, limit, offset int) ([]Session, int, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.repo.ListByStudentID(ctx, studentID, limit, offset)
 }

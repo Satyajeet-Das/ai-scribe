@@ -74,3 +74,10 @@ type SubmitSessionResponse struct {
 	SubmittedAt time.Time `json:"submittedAt"`
 	Message     string    `json:"message"`
 }
+
+type PaginatedSessionsResponse struct {
+	Sessions []SessionResponse `json:"sessions"`
+	Total    int               `json:"total"`
+	Limit    int               `json:"limit"`
+	Offset   int               `json:"offset"`
+}

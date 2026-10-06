@@ -570,6 +570,17 @@ export const sessionsApi = {
     });
   },
 
+  async getSessions(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ sessions: Session[]; total: number }> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", options.limit.toString());
+    if (options?.offset) params.set("offset", options.offset.toString());
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return apiFetch<{ sessions: Session[]; total: number }>(`/sessions${query}`);
+  },
+
   async getSession(id: string): Promise<Session> {
     return apiFetch<Session>(`/sessions/${id}`);
   },

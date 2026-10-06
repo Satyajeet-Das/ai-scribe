@@ -2240,6 +2240,35 @@
       }
     },
     "/api/v1/sessions": {
+      "get": {
+        "description": "Automatically generated operation for GET /api/v1/sessions",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "GET /api/v1/sessions",
+        "tags": [
+          "Sessions"
+        ]
+      },
       "post": {
         "description": "Starts an exam session for an assigned student. Only 1 active session allowed per assignment.",
         "requestBody": {

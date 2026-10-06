@@ -205,9 +205,22 @@ func TestSessionService_StartSession(t *testing.T) {
 	assert.Equal(t, 60, duration)
 	assert.Equal(t, studentID, sess.StudentID)
 
-	// 2. Duplicate active session fails
+	// 2. Active session already in progress returns existing session for seamless rejoin
+	rejoinedSess, rejoinedDuration, err := svc.StartSession(ctx, req, studentID)
+	require.NoError(t, err)
+	assert.Equal(t, sess.ID, rejoinedSess.ID)
+	assert.Equal(t, 60, rejoinedDuration)
+	assert.Equal(t, StatusInProgress, rejoinedSess.Status)
+
+	// 2b. If active session time has elapsed beyond duration, rejoining auto-expires and returns error
+	sess.StartedAt = time.Now().UTC().Add(-65 * time.Minute)
 	_, _, err = svc.StartSession(ctx, req, studentID)
-	assert.ErrorIs(t, err, ErrActiveSessionAlreadyExists)
+	assert.ErrorIs(t, err, ErrSessionExpired)
+	assert.Equal(t, StatusExpired, sess.Status)
+
+	// Reset session status for subsequent tests
+	sess.Status = StatusInProgress
+	sess.StartedAt = time.Now().UTC()
 
 	// 3. Unauthorized student fails
 	otherStudent := uuid.New()
@@ -296,4 +309,33 @@ func TestSessionService_SubmitSession(t *testing.T) {
 	// 2. Submit already submitted fails
 	_, err = svc.SubmitSession(ctx, sessID, studentID)
 	assert.ErrorIs(t, err, ErrSessionAlreadySubmitted)
+}
+
+func TestSessionService_ListSessions(t *testing.T) {
+	logger := zerolog.Nop()
+	repo := newMockSessionRepo()
+	studentID := uuid.New()
+	sess1 := uuid.New()
+	sess2 := uuid.New()
+
+	repo.sessions[sess1] = &Session{
+		Base:      model.Base{BaseWithId: model.BaseWithId{ID: sess1}},
+		StudentID: studentID,
+		Status:    StatusInProgress,
+		StartedAt: time.Now().UTC(),
+	}
+	repo.sessions[sess2] = &Session{
+		Base:      model.Base{BaseWithId: model.BaseWithId{ID: sess2}},
+		StudentID: studentID,
+		Status:    StatusSubmitted,
+		StartedAt: time.Now().UTC().Add(-2 * time.Hour),
+	}
+
+	svc := NewService(repo, nil, nil, nil, newMockCache(), &mockTxManager{}, &mockTaskEnqueuer{}, &logger)
+	ctx := context.Background()
+
+	sessions, total, err := svc.ListSessions(ctx, studentID, 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, 2, total)
+	assert.Len(t, sessions, 2)
 }

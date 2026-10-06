@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -30,6 +31,7 @@ func (h *Handler) RegisterRoutes(g *echo.Group, authMiddleware echo.MiddlewareFu
 	}
 
 	sessions.POST("", h.StartSession)
+	sessions.GET("", h.ListSessions)
 	sessions.GET("/:id", h.GetSession)
 	sessions.POST("/:id/submit", h.SubmitSession)
 	sessions.POST("/:id/next", h.NextQuestion)
@@ -163,4 +165,43 @@ func (h *Handler) PreviousQuestion(c echo.Context) error {
 	}
 
 	return c.JSON(200, sess)
+}
+
+func (h *Handler) ListSessions(c echo.Context) error {
+	userIDStr := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
+
+	limit := 20
+	if l := c.QueryParam("limit"); l != "" {
+		if val, parseErr := strconv.Atoi(l); parseErr == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	offset := 0
+	if o := c.QueryParam("offset"); o != "" {
+		if val, parseErr := strconv.Atoi(o); parseErr == nil && val >= 0 {
+			offset = val
+		}
+	}
+
+	sessions, total, err := h.service.ListSessions(c.Request().Context(), callerID, limit, offset)
+	if err != nil {
+		return h.mapError(err)
+	}
+
+	sessionResponses := make([]SessionResponse, len(sessions))
+	for i, s := range sessions {
+		sessionResponses[i] = ToSessionResponse(&s, 0)
+	}
+
+	return c.JSON(http.StatusOK, PaginatedSessionsResponse{
+		Sessions: sessionResponses,
+		Total:    total,
+		Limit:    limit,
+		Offset:   offset,
+	})
 }

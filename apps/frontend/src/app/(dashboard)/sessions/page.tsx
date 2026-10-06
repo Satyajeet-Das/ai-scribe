@@ -68,23 +68,56 @@ export default function StudentSessionsPage() {
     let ignore = false;
     setLoading(true);
 
-    examsApi
-      .getExams({ status: "PUBLISHED" })
-      .then((res) => {
+    Promise.allSettled([
+      examsApi.getExams({ status: "PUBLISHED" }),
+      sessionsApi.getSessions({ limit: 100 }),
+    ])
+      .then(([examsOutcome, sessionsOutcome]) => {
         if (ignore) return;
-        const examList: Exam[] = Array.isArray(res)
-          ? res
-          : res.exams || (res as { data?: Exam[] }).data || [];
+
+        let examList: Exam[] = [];
+        if (examsOutcome.status === "fulfilled") {
+          const res = examsOutcome.value;
+          examList = Array.isArray(res)
+            ? res
+            : res.exams || (res as { data?: Exam[] }).data || [];
+        }
+
+        const sessionByExam = new Map<string, { id: string; status: string }>();
+        if (sessionsOutcome.status === "fulfilled") {
+          const res = sessionsOutcome.value;
+          const sList = Array.isArray(res)
+            ? res
+            : (res as { sessions?: typeof res.sessions }).sessions || [];
+          for (const s of sList) {
+            if (s.examId) {
+              sessionByExam.set(s.examId, { id: s.id, status: s.status });
+            }
+          }
+        }
 
         if (examList.length > 0) {
-          const mapped: AssignedExamItem[] = examList.map((exam) => ({
-            assignmentId: exam.id,
-            examId: exam.id,
-            title: exam.title,
-            subject: exam.subject,
-            durationMins: exam.durationMins,
-            status: "PENDING",
-          }));
+          const mapped: AssignedExamItem[] = examList.map((exam) => {
+            const existing = sessionByExam.get(exam.id);
+            let status: "PENDING" | "IN_PROGRESS" | "SUBMITTED" = "PENDING";
+            if (existing) {
+              if (existing.status === "IN_PROGRESS") {
+                status = "IN_PROGRESS";
+              } else if (existing.status === "SUBMITTED" || existing.status === "EXPIRED") {
+                status = "SUBMITTED";
+              }
+            }
+
+            return {
+              assignmentId: exam.id,
+              examId: exam.id,
+              title: exam.title,
+              subject: exam.subject,
+              durationMins: exam.durationMins,
+              status,
+              sessionId: existing?.id,
+            };
+          });
           setItems(mapped);
         } else {
           setItems([]);
@@ -92,7 +125,7 @@ export default function StudentSessionsPage() {
       })
       .catch((err) => {
         if (!ignore) {
-          console.warn("Failed to load real exams, falling back to mock:", err);
+          console.warn("Failed to load assessments or sessions, falling back to mock:", err);
           setItems(mockAssignedExams);
         }
       })
@@ -117,6 +150,12 @@ export default function StudentSessionsPage() {
   }, [items, debouncedQuery]);
 
   const handleStartExam = async (item: AssignedExamItem) => {
+    // If we already have the active in-progress session ID, navigate directly to it!
+    if (item.status === "IN_PROGRESS" && item.sessionId) {
+      router.push(`/sessions/${item.sessionId}`);
+      return;
+    }
+
     setStartingId(item.examId);
     setError(null);
     try {
@@ -125,7 +164,7 @@ export default function StudentSessionsPage() {
       });
       router.push(`/sessions/${session.id}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to start exam session";
+      const msg = err instanceof Error ? err.message : "Failed to enter exam room";
       setError(msg);
     } finally {
       setStartingId(null);
@@ -211,8 +250,25 @@ export default function StudentSessionsPage() {
                           </CardDescription>
                           <CardTitle className="text-xl mt-1 font-bold">{item.title}</CardTitle>
                         </div>
-                        <Badge variant={item.status === "SUBMITTED" ? "secondary" : "outline"}>
-                          {item.status === "PENDING" ? "Ready to Start" : item.status}
+                        <Badge
+                          variant={
+                            item.status === "SUBMITTED"
+                              ? "secondary"
+                              : item.status === "IN_PROGRESS"
+                              ? "default"
+                              : "outline"
+                          }
+                          className={
+                            item.status === "IN_PROGRESS"
+                              ? "bg-emerald-600 hover:bg-emerald-600 text-white dark:bg-emerald-700"
+                              : undefined
+                          }
+                        >
+                          {item.status === "IN_PROGRESS"
+                            ? "In Progress"
+                            : item.status === "PENDING"
+                            ? "Ready to Start"
+                            : "Assessment Completed"}
                         </Badge>
                       </div>
                     </CardHeader>
@@ -238,10 +294,17 @@ export default function StudentSessionsPage() {
                         {startingId === item.assignmentId ? (
                           <>
                             <Loader2 className="animate-spin size-4 mr-2" />
-                            Initializing Exam Room...
+                            {item.status === "IN_PROGRESS"
+                              ? "Reconnecting Exam Room..."
+                              : "Initializing Exam Room..."}
                           </>
                         ) : item.status === "SUBMITTED" ? (
                           "Assessment Completed"
+                        ) : item.status === "IN_PROGRESS" ? (
+                          <>
+                            <Play className="size-4 mr-2 fill-current" />
+                            Resume Exam Room
+                          </>
                         ) : (
                           <>
                             <Play className="size-4 mr-2" />
