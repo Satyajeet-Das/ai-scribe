@@ -147,6 +147,9 @@ export const CreateQuestionSchema = z
 
 export type CreateQuestionFormData = z.infer<typeof CreateQuestionSchema>;
 
+export const UpdateQuestionSchema = CreateQuestionSchema;
+export type UpdateQuestionFormData = CreateQuestionFormData;
+
 export const AssignCandidateSchema = z.object({
   studentId: z.string().trim().min(3, "Candidate ID or Email is required"),
 });

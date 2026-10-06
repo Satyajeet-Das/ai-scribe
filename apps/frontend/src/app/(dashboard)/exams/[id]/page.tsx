@@ -352,7 +352,12 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
             </div>
 
             {/* Question Studio */}
-            <QuestionManager examId={examId} questions={questions} />
+            <QuestionManager
+              examId={examId}
+              examStatus={exam?.status}
+              questions={questions}
+              onQuestionsChange={(updated) => setQuestions(updated)}
+            />
 
             {/* Candidate Assignments Section */}
             <div className="mt-4">

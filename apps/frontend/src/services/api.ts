@@ -430,10 +430,47 @@ export const examsApi = {
 // -----------------------------------------------------------------------------
 // Questions API
 // -----------------------------------------------------------------------------
+export interface CreateOptionPayload {
+  optionKey: string;
+  optionText: string;
+  displayOrder?: number;
+  isCorrect?: boolean;
+}
+
+export interface CreateQuestionPayload {
+  questionNumber?: number;
+  text: string;
+  type: QuestionType;
+  points: number;
+  options?: CreateOptionPayload[];
+}
+
+export interface UpdateQuestionPayload {
+  questionNumber?: number;
+  text?: string;
+  points?: number;
+  type?: QuestionType;
+}
+
+export interface UpdateOptionPayload {
+  optionKey?: string;
+  optionText?: string;
+  displayOrder?: number;
+  isCorrect?: boolean;
+}
+
+export interface ReorderQuestionsPayload {
+  questionIds?: string[];
+  orders?: Array<{ id: string; questionNumber: number }>;
+}
+
 export const questionsApi = {
   async getQuestions(examId: string): Promise<Question[]> {
-    const res = await apiFetch<{ questions: Question[] }>(`/exams/${examId}/questions`);
-    return res.questions || [];
+    const res = await apiFetch<
+      { questions?: Question[]; data?: Question[] } | Question[]
+    >(`/exams/${examId}/questions`);
+    if (Array.isArray(res)) return res;
+    return res.questions || res.data || [];
   },
 
   async getQuestion(id: string): Promise<Question> {
@@ -442,12 +479,7 @@ export const questionsApi = {
 
   async createQuestion(
     examId: string,
-    payload: {
-      questionNumber: number;
-      text: string;
-      type: QuestionType;
-      points: number;
-    }
+    payload: CreateQuestionPayload
   ): Promise<Question> {
     return apiFetch<Question>(`/exams/${examId}/questions`, {
       method: "POST",
@@ -457,11 +489,7 @@ export const questionsApi = {
 
   async updateQuestion(
     id: string,
-    payload: {
-      questionNumber?: number;
-      text?: string;
-      points?: number;
-    }
+    payload: UpdateQuestionPayload
   ): Promise<Question> {
     return apiFetch<Question>(`/questions/${id}`, {
       method: "PUT",
@@ -475,14 +503,23 @@ export const questionsApi = {
     });
   },
 
+  async reorderQuestions(
+    examId: string,
+    payload: ReorderQuestionsPayload
+  ): Promise<Question[]> {
+    const res = await apiFetch<
+      { questions?: Question[]; data?: Question[] } | Question[]
+    >(`/exams/${examId}/questions/reorder`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    if (Array.isArray(res)) return res;
+    return res.questions || res.data || [];
+  },
+
   async createOption(
     questionId: string,
-    payload: {
-      optionKey: string;
-      optionText: string;
-      displayOrder: number;
-      isCorrect: boolean;
-    }
+    payload: CreateOptionPayload
   ): Promise<QuestionOption> {
     return apiFetch<QuestionOption>(`/questions/${questionId}/options`, {
       method: "POST",
@@ -493,7 +530,7 @@ export const questionsApi = {
   async updateOption(
     questionId: string,
     optionId: string,
-    payload: Partial<QuestionOption>
+    payload: UpdateOptionPayload
   ): Promise<QuestionOption> {
     return apiFetch<QuestionOption>(`/questions/${questionId}/options/${optionId}`, {
       method: "PUT",
@@ -505,6 +542,18 @@ export const questionsApi = {
     return apiFetch<void>(`/questions/${questionId}/options/${optionId}`, {
       method: "DELETE",
     });
+  },
+
+  async setCorrectOption(
+    questionId: string,
+    optionId: string
+  ): Promise<QuestionOption> {
+    return apiFetch<QuestionOption>(
+      `/questions/${questionId}/options/${optionId}/correct`,
+      {
+        method: "POST",
+      }
+    );
   },
 };
 
