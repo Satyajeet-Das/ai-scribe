@@ -104,7 +104,7 @@ func main() {
 	examHandler := exam.NewHandler(examService)
 
 	questionRepo := question.NewRepository(db.Pool)
-	questionService := question.NewService(questionRepo, examService, &log)
+	questionService := question.NewService(questionRepo, examService, db, &log)
 	questionHandler := question.NewHandler(questionService)
 
 	assignmentRepo := assignment.NewRepository(db.Pool)

@@ -205,6 +205,30 @@
       },
       "CreateQuestionRequest": {
         "properties": {
+          "options": {
+            "items": {
+              "properties": {
+                "displayOrder": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "isCorrect": {
+                  "type": "boolean"
+                },
+                "optionKey": {
+                  "maxLength": 10,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "optionText": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
           "points": {
             "minimum": 0,
             "type": "integer"
@@ -227,7 +251,6 @@
           }
         },
         "required": [
-          "questionNumber",
           "text",
           "type"
         ],
@@ -1561,6 +1584,98 @@
         ]
       }
     },
+    "/api/v1/exams/{exam_id}/questions/reorder": {
+      "post": {
+        "description": "Automatically generated operation for POST /api/v1/exams/{exam_id}/questions/reorder",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "POST /api/v1/exams/{exam_id}/questions/reorder",
+        "tags": [
+          "Exams"
+        ]
+      },
+      "put": {
+        "description": "Automatically generated operation for PUT /api/v1/exams/{exam_id}/questions/reorder",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateExamRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "PUT /api/v1/exams/{exam_id}/questions/reorder",
+        "tags": [
+          "Exams"
+        ]
+      }
+    },
     "/api/v1/exams/{id}": {
       "delete": {
         "description": "Soft-deletes an exam. Only exams without active student sessions or assignments can be deleted; active exams must be archived.",
@@ -2234,6 +2349,255 @@
           }
         ],
         "summary": "Add an option to an MCQ question",
+        "tags": [
+          "Questions"
+        ]
+      }
+    },
+    "/api/v1/questions/{id}/options/{option_id}": {
+      "delete": {
+        "description": "Automatically generated operation for DELETE /api/v1/questions/{id}/options/{option_id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "option_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "DELETE /api/v1/questions/{id}/options/{option_id}",
+        "tags": [
+          "Questions"
+        ]
+      },
+      "patch": {
+        "description": "Automatically generated operation for PATCH /api/v1/questions/{id}/options/{option_id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "option_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "PATCH /api/v1/questions/{id}/options/{option_id}",
+        "tags": [
+          "Questions"
+        ]
+      },
+      "put": {
+        "description": "Automatically generated operation for PUT /api/v1/questions/{id}/options/{option_id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "option_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "PUT /api/v1/questions/{id}/options/{option_id}",
+        "tags": [
+          "Questions"
+        ]
+      }
+    },
+    "/api/v1/questions/{id}/options/{option_id}/correct": {
+      "post": {
+        "description": "Automatically generated operation for POST /api/v1/questions/{id}/options/{option_id}/correct",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "option_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "POST /api/v1/questions/{id}/options/{option_id}/correct",
+        "tags": [
+          "Questions"
+        ]
+      },
+      "put": {
+        "description": "Automatically generated operation for PUT /api/v1/questions/{id}/options/{option_id}/correct",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "option_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "PUT /api/v1/questions/{id}/options/{option_id}/correct",
         "tags": [
           "Questions"
         ]

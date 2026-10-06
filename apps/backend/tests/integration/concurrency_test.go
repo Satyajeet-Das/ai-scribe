@@ -53,14 +53,11 @@ func TestConcurrency_SessionFSMAndLocks(t *testing.T) {
 	// Initialize Services
 	examSvc := exam.NewService(examRepo, &l)
 	assignmentSvc := assignment.NewService(assignmentRepo, examSvc, userRepo, &l)
-	questionSvc := question.NewService(questionRepo, examSvc, &l)
+	txMgr := &dbTxManager{pool: testDB.Pool}
+	questionSvc := question.NewService(questionRepo, examSvc, txMgr, &l)
 	
 	sessionCache := session.NewRedisCache(redisClient)
 	jobSvc := &mockTaskEnqueuer{}
-	
-	// Create a local wrapper since txManager for WithTx in session needs database.TxManager interface
-	// Oh, pgxpool.Pool doesn't directly implement WithTx. We need the real TxManager.
-	txMgr := &dbTxManager{pool: testDB.Pool}
 
 	sessionSvc := session.NewService(sessionRepo, assignmentSvc, examSvc, questionSvc, sessionCache, txMgr, jobSvc, &l)
 	answerSvc := answer.NewService(answerRepo, sessionSvc, questionSvc, &l)
