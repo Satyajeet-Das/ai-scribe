@@ -29,41 +29,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { Question, QuestionOption } from "@/types/exam-types";
-const sampleQuestions: Question[] = [
-  {
-    id: "q1",
-    examId: "exam",
-    questionNumber: 1,
-    text: "Which structure controls what enters and leaves a cell?",
-    type: "MCQ",
-    points: 2,
-    options: [
-      { id: "a", optionKey: "A", optionText: "Cell wall", displayOrder: 1, isCorrect: false },
-      { id: "b", optionKey: "B", optionText: "Cell membrane", displayOrder: 2, isCorrect: true },
-      { id: "c", optionKey: "C", optionText: "Nucleus", displayOrder: 3, isCorrect: false },
-    ],
-  },
-  {
-    id: "q2",
-    examId: "exam",
-    questionNumber: 2,
-    text: "Explain how plants use sunlight to make food.",
-    type: "ESSAY",
-    points: 5,
-    options: [],
-  },
-  {
-    id: "q3",
-    examId: "exam",
-    questionNumber: 3,
-    text: "Describe one adaptation that helps an animal survive.",
-    type: "VOICE",
-    points: 3,
-    options: [],
-  },
-];
 export function StudentExamRoom({
-  questions = sampleQuestions,
+  questions = [],
   initialSeconds = 42 * 60,
   initialAnswers = {},
   onSubmit,
@@ -85,24 +52,46 @@ export function StudentExamRoom({
   const [contrast, setContrast] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>(initialAnswers);
   const [saving, setSaving] = useState(false);
-  const question = questions[index];
 
   useEffect(() => {
     const timer = window.setInterval(() => setSeconds((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
   useEffect(() => {
     if (saving) {
       const timer = window.setTimeout(() => setSaving(false), 700);
       return () => window.clearTimeout(timer);
     }
   }, [saving]);
+
   const time = useMemo(
     () =>
       `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`,
     [seconds]
   );
+
+  if (!questions || questions.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+        <Card className="max-w-md w-full text-center p-8 border border-dashed">
+          <CardHeader>
+            <CardTitle className="text-xl font-bold">No Questions in Assessment</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              This examination does not have any questions configured yet. Please contact your educator.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const question = questions[index];
+
   const setAnswer = (value: string) => {
+    if (!question) return;
     setSaving(true);
     setAnswers((current) => ({ ...current, [question.id]: value }));
     onAnswerChange?.(question.id, value);

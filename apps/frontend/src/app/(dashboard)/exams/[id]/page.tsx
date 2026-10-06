@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { QuestionManager } from "@/components/question-manager";
 import { AssignmentManager } from "@/components/assignment-manager";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -79,25 +80,19 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
         if (examData.status === "fulfilled") {
           setExam(examData.value);
         } else {
-          setExam({
-            id: examId,
-            title: "Sample Assessment",
-            subject: "General Science",
-            description: "Midterm assessment questions and configurations.",
-            durationMins: 45,
-            status: "DRAFT",
-            createdBy: "teacher-1",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          });
+          setExam(null);
         }
 
         if (questionsData.status === "fulfilled") {
-          setQuestions(questionsData.value);
+          setQuestions(questionsData.value || []);
+        } else {
+          setQuestions([]);
         }
 
         if (assignmentsData.status === "fulfilled") {
-          setAssignments(assignmentsData.value);
+          setAssignments(assignmentsData.value || []);
+        } else {
+          setAssignments([]);
         }
       } finally {
         setLoading(false);
@@ -173,6 +168,36 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
       <ProtectedRoute allowedRoles={["TEACHER", "ADMIN"]}>
         <div className="flex h-96 items-center justify-center">
           <Loader2 className="size-8 animate-spin text-primary" />
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
+  if (!exam) {
+    return (
+      <ProtectedRoute allowedRoles={["TEACHER", "ADMIN"]}>
+        <div className="min-h-screen bg-background pb-16">
+          <div className={DESIGN_TOKENS.layout.container}>
+            <div className="py-8">
+              <Link
+                href="/exams"
+                className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowLeft className="size-4" />
+                Back to all exams
+              </Link>
+              <Card className="flex flex-col items-center justify-center p-12 text-center border-dashed">
+                <BookOpen className="size-12 text-muted-foreground/40 mb-3" />
+                <h2 className="text-xl font-bold">Assessment Not Found</h2>
+                <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+                  The requested assessment could not be found or you do not have permission to view it.
+                </p>
+                <Link href="/exams" className="mt-6">
+                  <Button size="sm">Return to Assessments</Button>
+                </Link>
+              </Card>
+            </div>
+          </div>
         </div>
       </ProtectedRoute>
     );

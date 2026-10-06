@@ -10,58 +10,11 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { sessionsApi, questionsApi } from "@/services/api";
 import type { Question } from "@/types/exam-types";
 
-const fallbackQuestions: Question[] = [
-  {
-    id: "q1",
-    examId: "exam-1",
-    questionNumber: 1,
-    text: "Which cellular structure regulates the passage of molecules into and out of the cell?",
-    type: "MCQ",
-    points: 2,
-    options: [
-      { id: "opt-a", optionKey: "A", optionText: "Cell Wall", displayOrder: 1, isCorrect: false },
-      {
-        id: "opt-b",
-        optionKey: "B",
-        optionText: "Plasma / Cell Membrane",
-        displayOrder: 2,
-        isCorrect: true,
-      },
-      { id: "opt-c", optionKey: "C", optionText: "Nucleolus", displayOrder: 3, isCorrect: false },
-      {
-        id: "opt-d",
-        optionKey: "D",
-        optionText: "Endoplasmic Reticulum",
-        displayOrder: 4,
-        isCorrect: false,
-      },
-    ],
-  },
-  {
-    id: "q2",
-    examId: "exam-1",
-    questionNumber: 2,
-    text: "Describe the role of chlorophyll during the light-dependent reactions of photosynthesis.",
-    type: "ESSAY",
-    points: 5,
-    options: [],
-  },
-  {
-    id: "q3",
-    examId: "exam-1",
-    questionNumber: 3,
-    text: "Give one example of an anatomical adaptation that enables an animal to thermoregulate in arctic climates.",
-    type: "VOICE",
-    points: 3,
-    options: [],
-  },
-];
-
 export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const sessionId = resolvedParams.id;
 
-  const [questions, setQuestions] = useState<Question[]>(fallbackQuestions);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [initialSeconds, setInitialSeconds] = useState(45 * 60);
   const [initialAnswers, setInitialAnswers] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);

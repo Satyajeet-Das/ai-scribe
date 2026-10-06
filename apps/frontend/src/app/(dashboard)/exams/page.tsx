@@ -30,14 +30,38 @@ export default function ExamsPage() {
       const res = await examsApi.getExams();
       setExams(res.exams || []);
     } catch (err) {
-      console.warn("Backend unavailable, using local mock data fallback:", err);
+      const msg = err instanceof ApiError ? err.message : "Failed to load assessments";
+      setError(msg);
+      setExams([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchExams();
+    let ignore = false;
+    async function load() {
+      try {
+        const res = await examsApi.getExams();
+        if (!ignore) {
+          setExams(res.exams || []);
+        }
+      } catch (err) {
+        if (!ignore) {
+          const msg = err instanceof ApiError ? err.message : "Failed to load assessments";
+          setError(msg);
+          setExams([]);
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
+    }
+    load();
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const handleCreateExam = async (payload: {

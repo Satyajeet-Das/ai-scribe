@@ -86,7 +86,7 @@ describe("QuestionManager Component", () => {
       expect(screen.getByText("Written / Essay Response Mode")).toBeInTheDocument();
     });
 
-    it("renders empty state when there are no questions", () => {
+    it("renders empty state when there are no questions and never shows fallback questions", () => {
       render(
         <QuestionManager
           examId="exam-101"
@@ -97,6 +97,7 @@ describe("QuestionManager Component", () => {
 
       expect(screen.getByText("No Questions Configured")).toBeInTheDocument();
       expect(screen.getByText("Add Your First Question")).toBeInTheDocument();
+      expect(screen.queryByText(/Which structure controls what enters and leaves a cell/i)).not.toBeInTheDocument();
     });
   });
 

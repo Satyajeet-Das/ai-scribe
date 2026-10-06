@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { UserPlus, X, Loader2, AlertCircle, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,50 +20,28 @@ import { StudentAutocompleteSelector } from "@/components/student-autocomplete-s
 import type { Assignment } from "@/types/exam-types";
 import type { StudentSearchResult } from "@/types/auth";
 
-const fallbackAssignments: Assignment[] = [
-  {
-    id: "assignment-1",
-    examId: "exam-1",
-    studentId: "student-0038",
-    studentRollNo: "23CS001",
-    studentName: "Rahul Sharma",
-    assignedAt: "2025-02-20",
-    status: "ACTIVE",
-  },
-  {
-    id: "assignment-2",
-    examId: "exam-1",
-    studentId: "student-0042",
-    studentRollNo: "23CS014",
-    studentName: "Priya Singh",
-    assignedAt: "2025-02-20",
-    status: "ACTIVE",
-  },
-];
-
 export function AssignmentManager({
   examId = "exam-1",
-  assignments = fallbackAssignments,
+  assignments = [],
   onAssignmentChanged,
 }: {
   examId?: string;
   assignments?: Assignment[];
   onAssignmentChanged?: () => void;
 }) {
-  const [items, setItems] = useState<Assignment[]>(
-    assignments.length > 0 ? assignments : fallbackAssignments
-  );
+  const [items, setItems] = useState<Assignment[]>(assignments ?? []);
   const [open, setOpen] = useState(false);
   const [studentToRevoke, setStudentToRevoke] = useState<Assignment | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (assignments && assignments.length > 0) {
-      setItems(assignments);
-    }
-  }, [assignments]);
+  // Sync state when assignments prop reference changes
+  const [prevAssignments, setPrevAssignments] = useState(assignments);
+  if (assignments !== prevAssignments) {
+    setPrevAssignments(assignments);
+    setItems(assignments ?? []);
+  }
 
   const isActive = (status: string) => status === "ACTIVE" || status === "ASSIGNED";
   const active = items.filter((item) => isActive(item.status));
@@ -258,9 +236,21 @@ export function AssignmentManager({
 
       <CardContent className="pt-6">
         {items.length === 0 ? (
-          <div className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg">
-            <Users className="mx-auto size-8 text-muted-foreground/50 mb-2" />
-            No candidates have been assigned to this exam yet.
+          <div className="flex flex-col items-center justify-center py-10 px-4 text-center text-sm text-muted-foreground border border-dashed rounded-lg">
+            <Users className="mx-auto size-10 text-muted-foreground/40 mb-3" />
+            <p className="font-semibold text-foreground text-base">No Candidates Assigned</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+              No students are currently allocated to this assessment. Use their roll number or email to grant access.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-4 gap-1.5 font-medium"
+              onClick={() => setOpen(true)}
+            >
+              <UserPlus className="size-4" />
+              Assign Candidate
+            </Button>
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">

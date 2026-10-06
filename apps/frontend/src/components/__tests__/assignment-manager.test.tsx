@@ -39,6 +39,20 @@ describe("AssignmentManager", () => {
     vi.clearAllMocks();
   });
 
+  it("renders clean empty state with CTA when no candidates are assigned", () => {
+    render(<AssignmentManager examId="exam-100" assignments={[]} />);
+
+    expect(screen.getByText("No Candidates Assigned")).toBeInTheDocument();
+    expect(
+      screen.getByText(/No students are currently allocated to this assessment/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: /assign candidate/i }).length
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("23CS001")).not.toBeInTheDocument();
+    expect(screen.queryByText("Rahul Sharma")).not.toBeInTheDocument();
+  });
+
   it("renders existing assigned candidates with roll numbers", () => {
     render(
       <AssignmentManager examId="exam-100" assignments={initialAssignments} />

@@ -46,31 +46,6 @@ import type {
   ExamStatus,
 } from "@/types/exam-types";
 
-const fallbackQuestions: Question[] = [
-  {
-    id: "q-1",
-    examId: "exam-1",
-    questionNumber: 1,
-    text: "Which structure controls what enters and leaves a cell?",
-    type: "MCQ",
-    points: 2,
-    options: [
-      { id: "a", optionKey: "A", optionText: "Cell wall", displayOrder: 1, isCorrect: false },
-      { id: "b", optionKey: "B", optionText: "Cell membrane", displayOrder: 2, isCorrect: true },
-      { id: "c", optionKey: "C", optionText: "Nucleus", displayOrder: 3, isCorrect: false },
-    ],
-  },
-  {
-    id: "q-2",
-    examId: "exam-1",
-    questionNumber: 2,
-    text: "Explain how a plant uses sunlight to make food.",
-    type: "ESSAY",
-    points: 5,
-    options: [],
-  },
-];
-
 export interface QuestionManagerProps {
   examId?: string;
   examStatus?: ExamStatus;
@@ -88,7 +63,7 @@ export function QuestionManager({
   onQuestionsChange,
   isReadOnly: explicitReadOnly,
 }: QuestionManagerProps) {
-  const incomingQuestions = questions ?? initialQuestions ?? fallbackQuestions;
+  const incomingQuestions = questions ?? initialQuestions ?? [];
   const [items, setItems] = useState<Question[]>(incomingQuestions);
   const [selectedId, setSelectedId] = useState<string>(incomingQuestions[0]?.id ?? "");
 
