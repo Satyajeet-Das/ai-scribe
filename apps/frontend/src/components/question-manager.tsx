@@ -444,39 +444,59 @@ export function QuestionManager({
 
                     <div className="grid gap-2.5">
                       {selectedQuestion.options && selectedQuestion.options.length > 0 ? (
-                        selectedQuestion.options.map((opt) => (
-                          <div
-                            key={opt.id}
-                            className={`flex items-center justify-between rounded-lg border p-3 text-sm transition-colors ${
-                              opt.isCorrect
-                                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-950 dark:text-emerald-200"
-                                : "border-border bg-card"
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <span
-                                className={`font-bold text-xs rounded-md px-2.5 py-1 ${
-                                  opt.isCorrect
-                                    ? "bg-emerald-600 text-white"
-                                    : "bg-muted text-foreground"
-                                }`}
-                              >
-                                {opt.optionKey}
-                              </span>
-                              <span className="font-medium">{opt.optionText}</span>
-                            </div>
+                        selectedQuestion.options.map((opt) => {
+                          const optionText =
+                            opt.optionText ||
+                            (opt as unknown as Record<string, string>).text ||
+                            (opt as unknown as Record<string, string>).option_text ||
+                            (opt as unknown as Record<string, string>).value ||
+                            "";
+                          const optionKey =
+                            opt.optionKey ||
+                            (opt as unknown as Record<string, string>).key ||
+                            (opt as unknown as Record<string, string>).option_key ||
+                            "";
+                          const isCorrect = Boolean(
+                            opt.isCorrect ??
+                            (opt as unknown as Record<string, boolean>).is_correct
+                          );
 
-                            {opt.isCorrect && (
-                              <Badge
-                                variant="outline"
-                                className="text-xs text-emerald-700 dark:text-emerald-300 border-emerald-400 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 gap-1"
-                              >
-                                <Check className="size-3" />
-                                Correct Answer
-                              </Badge>
-                            )}
-                          </div>
-                        ))
+                          return (
+                            <div
+                              key={opt.id}
+                              className={`flex items-center justify-between rounded-lg border p-3 text-sm transition-colors ${
+                                isCorrect
+                                  ? "border-emerald-500/60 bg-emerald-500/10 text-foreground dark:border-emerald-500/70 dark:bg-emerald-950/20"
+                                  : "border-border bg-card text-foreground"
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span
+                                  className={`font-bold text-xs rounded-md px-2.5 py-1 shrink-0 ${
+                                    isCorrect
+                                      ? "bg-emerald-600 text-white"
+                                      : "bg-muted text-foreground"
+                                  }`}
+                                >
+                                  {optionKey}
+                                </span>
+                                <span className="font-medium text-foreground break-words">
+                                  {optionText}
+                                </span>
+                              </div>
+
+                              {isCorrect && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs text-emerald-700 dark:text-emerald-300 border-emerald-400 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/40 gap-1 shrink-0 ml-2 font-semibold"
+                                >
+                                  <Check className="size-3" />
+                                  Correct Answer
+                                </Badge>
+                              )}
+                            </div>
+                          );
+                        })
                       ) : (
                         <p className="text-xs text-muted-foreground italic">No options configured.</p>
                       )}
@@ -638,7 +658,29 @@ function QuestionEditorDialog({
 
   const [options, setOptions] = useState<QuestionOption[]>(() => {
     if (questionToEdit?.type === "MCQ" && questionToEdit.options && questionToEdit.options.length > 0) {
-      return questionToEdit.options.map((opt) => ({ ...opt }));
+      return questionToEdit.options.map((opt, i) => ({
+        id: opt.id || crypto.randomUUID(),
+        optionKey:
+          opt.optionKey ||
+          (opt as unknown as Record<string, string>).key ||
+          (opt as unknown as Record<string, string>).option_key ||
+          String.fromCharCode(65 + i),
+        optionText:
+          opt.optionText ||
+          (opt as unknown as Record<string, string>).text ||
+          (opt as unknown as Record<string, string>).option_text ||
+          (opt as unknown as Record<string, string>).value ||
+          "",
+        displayOrder:
+          opt.displayOrder ||
+          (opt as unknown as Record<string, number>).order ||
+          (opt as unknown as Record<string, number>).display_order ||
+          i + 1,
+        isCorrect: Boolean(
+          opt.isCorrect ??
+          (opt as unknown as Record<string, boolean>).is_correct
+        ),
+      }));
     }
     return [
       {
@@ -966,7 +1008,7 @@ function QuestionEditorDialog({
 
                     <Input
                       placeholder={`Option ${opt.optionKey} text...`}
-                      value={opt.optionText}
+                      value={opt.optionText || ""}
                       onChange={(e) => {
                         const val = e.target.value;
                         setOptions(
