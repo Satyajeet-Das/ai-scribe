@@ -3,6 +3,8 @@ import type {
   Question,
   QuestionOption,
   Assignment,
+  StudentAssignedExam,
+  BulkAssignResult,
   Session,
   Answer,
   ExamStatus,
@@ -561,10 +563,21 @@ export const questionsApi = {
 // Assignments API
 // -----------------------------------------------------------------------------
 export const assignmentsApi = {
-  async createAssignment(examId: string, studentId: string): Promise<Assignment> {
+  async createAssignment(examId: string, studentId?: string, rollNo?: string): Promise<Assignment> {
     return apiFetch<Assignment>("/assignments", {
       method: "POST",
-      body: JSON.stringify({ examId, studentId }),
+      body: JSON.stringify({ examId, studentId, rollNo }),
+    });
+  },
+
+  async bulkAssign(
+    examId: string,
+    studentIds?: string[],
+    rollNumbers?: string[]
+  ): Promise<BulkAssignResult> {
+    return apiFetch<BulkAssignResult>("/assignments/bulk", {
+      method: "POST",
+      body: JSON.stringify({ examId, studentIds, rollNumbers }),
     });
   },
 
@@ -575,6 +588,33 @@ export const assignmentsApi = {
     return res.data || res.assignments || [];
   },
 
+  async getExamAssignmentsPaged(
+    examId: string,
+    options?: { limit?: number; offset?: number; status?: string; search?: string }
+  ): Promise<{ data: Assignment[]; total: number; limit: number; offset: number }> {
+    const params = new URLSearchParams();
+    params.set("exam_id", examId);
+    if (options?.limit) params.set("limit", options.limit.toString());
+    if (options?.offset) params.set("offset", options.offset.toString());
+    if (options?.status) params.set("status", options.status);
+    if (options?.search) params.set("search", options.search);
+
+    const res = await apiFetch<{
+      data?: Assignment[];
+      assignments?: Assignment[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/assignments?${params.toString()}`);
+
+    return {
+      data: res.data || res.assignments || [],
+      total: res.total || 0,
+      limit: res.limit || options?.limit || 20,
+      offset: res.offset || options?.offset || 0,
+    };
+  },
+
   async getStudentAssignments(studentId: string): Promise<Assignment[]> {
     const res = await apiFetch<{ data?: Assignment[]; assignments?: Assignment[] }>(
       `/assignments?student_id=${encodeURIComponent(studentId)}&limit=100`
@@ -582,8 +622,47 @@ export const assignmentsApi = {
     return res.data || res.assignments || [];
   },
 
+  async getMyAssignedExams(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ data: StudentAssignedExam[]; total: number; limit: number; offset: number }> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", options.limit.toString());
+    if (options?.offset) params.set("offset", options.offset.toString());
+    const query = params.toString() ? `?${params.toString()}` : "";
+
+    return apiFetch<{
+      data: StudentAssignedExam[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/assignments/my-exams${query}`);
+  },
+
+  async checkAssignment(
+    examId: string,
+    studentId?: string
+  ): Promise<{ assigned: boolean; assignmentId?: string; status?: string; assignment?: Assignment }> {
+    const params = new URLSearchParams();
+    params.set("exam_id", examId);
+    if (studentId) params.set("student_id", studentId);
+
+    return apiFetch<{
+      assigned: boolean;
+      assignmentId?: string;
+      status?: string;
+      assignment?: Assignment;
+    }>(`/assignments/check?${params.toString()}`);
+  },
+
   async revokeAssignment(id: string): Promise<void> {
     return apiFetch<void>(`/assignments/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  async revokeAssignmentByExamAndStudent(examId: string, studentId: string): Promise<void> {
+    return apiFetch<void>(`/exams/${encodeURIComponent(examId)}/assignments/${encodeURIComponent(studentId)}`, {
       method: "DELETE",
     });
   },

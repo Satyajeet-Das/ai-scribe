@@ -210,4 +210,74 @@ describe("StudentAutocompleteSelector", () => {
 
     expect(handleSelect).toHaveBeenCalledWith(null);
   });
+
+  it("supports multiSelect mode with selection chips and removing individual chips", async () => {
+    vi.mocked(studentsApi.searchStudents).mockResolvedValue(mockStudents);
+    const handleSelectMultiple = vi.fn();
+
+    render(
+      <StudentAutocompleteSelector
+        multiSelect={true}
+        selectedStudents={[mockStudents[0]]}
+        onSelectMultiple={handleSelectMultiple}
+      />
+    );
+
+    // Selected chip for Rahul Sharma should be displayed
+    expect(screen.getByText("Rahul Sharma")).toBeInTheDocument();
+    expect(screen.getByText("23CS001")).toBeInTheDocument();
+
+    // Remove the chip
+    const removeBtn = screen.getByRole("button", { name: /remove candidate rahul sharma/i });
+    fireEvent.click(removeBtn);
+
+    expect(handleSelectMultiple).toHaveBeenCalledWith([]);
+  });
+
+  it("clears all selected students in multiSelect mode", () => {
+    const handleSelectMultiple = vi.fn();
+    render(
+      <StudentAutocompleteSelector
+        multiSelect={true}
+        selectedStudents={mockStudents}
+        onSelectMultiple={handleSelectMultiple}
+      />
+    );
+
+    const clearAllBtn = screen.getByRole("button", { name: /clear all/i });
+    expect(clearAllBtn).toBeInTheDocument();
+    fireEvent.click(clearAllBtn);
+
+    expect(handleSelectMultiple).toHaveBeenCalledWith([]);
+  });
+
+  it("displays search error state and provides retry action", async () => {
+    vi.mocked(studentsApi.searchStudents).mockRejectedValueOnce(
+      new Error("Network connection error")
+    );
+
+    render(
+      <StudentAutocompleteSelector onSelect={vi.fn()} selectedStudent={null} />
+    );
+
+    const combobox = screen.getByRole("combobox");
+    fireEvent.change(combobox, { target: { value: "23CS" } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/failed to fetch students/i)
+      ).toBeInTheDocument();
+    });
+
+    const retryBtn = screen.getByRole("button", { name: /retry/i });
+    expect(retryBtn).toBeInTheDocument();
+
+    vi.mocked(studentsApi.searchStudents).mockResolvedValueOnce(mockStudents);
+    fireEvent.click(retryBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Rahul Sharma")).toBeInTheDocument();
+    });
+  });
 });
+

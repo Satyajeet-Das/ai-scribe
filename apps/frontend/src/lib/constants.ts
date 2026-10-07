@@ -24,6 +24,7 @@ export const API_ROUTES = {
   exams: "/api/v1/exams",
   questions: (examId: string) => `/api/v1/exams/${examId}/questions`,
   assignments: (examId: string) => `/api/v1/exams/${examId}/assignments`,
+  myExams: "/api/v1/assignments/my-exams",
   sessions: "/api/v1/sessions",
   sessionDetail: (sessionId: string) => `/api/v1/sessions/${sessionId}`,
   submitSession: (sessionId: string) => `/api/v1/sessions/${sessionId}/submit`,
@@ -116,12 +117,12 @@ export function getRolePortal(role?: string | null): string {
 export function isRoleAllowedRoute(role: string | null | undefined, path: string): boolean {
   if (!role) return false;
   if (role === "ADMIN") {
-    return path.startsWith("/exams") || path.startsWith("/sessions");
+    return path.startsWith("/exams") || path.startsWith("/sessions") || path.startsWith("/my-exams");
   }
   if (role === "TEACHER") {
     return path.startsWith("/exams");
   }
-  return path.startsWith("/sessions");
+  return path.startsWith("/sessions") || path.startsWith("/my-exams");
 }
 
 /**

@@ -43,8 +43,33 @@ export interface Assignment {
   studentId: string;
   studentRollNo?: string;
   studentName?: string;
+  studentEmail?: string;
   assignedAt: string;
   status: AssignmentStatus;
+}
+
+export interface StudentAssignedExam {
+  assignmentId: string;
+  examId: string;
+  title: string;
+  subject: string;
+  description?: string;
+  durationMins: number;
+  examStatus: string;
+  assignedAt: string;
+  status: AssignmentStatus;
+}
+
+export interface BulkAssignFailure {
+  identifier: string;
+  reason: string;
+}
+
+export interface BulkAssignResult {
+  assigned: Assignment[];
+  failed: BulkAssignFailure[];
+  totalAssigned: number;
+  totalFailed: number;
 }
 
 export interface Session {

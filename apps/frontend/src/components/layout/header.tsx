@@ -56,13 +56,22 @@ export function Header() {
               {isHydrated &&
                 isAuthenticated &&
                 (user?.role === "STUDENT" || user?.role === "PROCTOR" || user?.role === "ADMIN") && (
-                  <Link
-                    href="/sessions"
-                    className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-                  >
-                    <Clock className="size-4" />
-                    Candidate Assessments
-                  </Link>
+                  <>
+                    <Link
+                      href="/my-exams"
+                      className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+                    >
+                      <BookOpen className="size-4" />
+                      My Exams
+                    </Link>
+                    <Link
+                      href="/sessions"
+                      className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
+                    >
+                      <Clock className="size-4" />
+                      Candidate Assessments
+                    </Link>
+                  </>
                 )}
               {(!isHydrated || !isAuthenticated) && (
                 <>
@@ -159,14 +168,24 @@ export function Header() {
             {isHydrated &&
               isAuthenticated &&
               (user?.role === "STUDENT" || user?.role === "PROCTOR" || user?.role === "ADMIN") && (
-                <Link
-                  href="/sessions"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="px-3 py-2 rounded-md text-sm font-medium hover:bg-muted text-foreground flex items-center gap-2"
-                >
-                  <Clock className="size-4" />
-                  Candidate Assessments
-                </Link>
+                <>
+                  <Link
+                    href="/my-exams"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="px-3 py-2 rounded-md text-sm font-medium hover:bg-muted text-foreground flex items-center gap-2"
+                  >
+                    <BookOpen className="size-4" />
+                    My Exams
+                  </Link>
+                  <Link
+                    href="/sessions"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="px-3 py-2 rounded-md text-sm font-medium hover:bg-muted text-foreground flex items-center gap-2"
+                  >
+                    <Clock className="size-4" />
+                    Candidate Assessments
+                  </Link>
+                </>
               )}
             {(!isHydrated || !isAuthenticated) && (
               <>
