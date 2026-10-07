@@ -90,9 +90,16 @@ func GetSchemaRegistry() map[string]interface{} {
 		"StudentQuestionOptionResponse": question.StudentQuestionOptionResponse{},
 		"TeacherQuestionResponse":       question.TeacherQuestionResponse{},
 		"StudentQuestionResponse":       question.StudentQuestionResponse{},
-		"CreateAssignmentRequest":       assignment.CreateAssignmentRequest{},
-		"AssignmentResponse":            assignment.AssignmentResponse{},
-		"StartSessionRequest":           session.StartSessionRequest{},
+		"CreateAssignmentRequest":          assignment.CreateAssignmentRequest{},
+		"BulkAssignRequest":                assignment.BulkAssignRequest{},
+		"BulkAssignResponse":               assignment.BulkAssignResponse{},
+		"BulkAssignFailure":                assignment.BulkAssignFailure{},
+		"CheckAssignmentResponse":          assignment.CheckAssignmentResponse{},
+		"StudentAssignedExamResponse":      assignment.StudentAssignedExamResponse{},
+		"StudentAssignedExamsListResponse": assignment.StudentAssignedExamsListResponse{},
+		"AssignmentResponse":               assignment.AssignmentResponse{},
+		"AssignmentListResponse":           assignment.AssignmentListResponse{},
+		"StartSessionRequest":              session.StartSessionRequest{},
 		"SessionResponse":               session.SessionResponse{},
 		"SubmitAnswerRequest":           answer.SubmitAnswerRequest{},
 		"AnswerResponse":                answer.AnswerResponse{},
@@ -704,7 +711,9 @@ func buildDefaultOperation(path, method string) map[string]interface{} {
 		reqSchemaRef = "#/components/schemas/UpdateExamRequest"
 	case strings.HasSuffix(path, "/questions") && method == "post":
 		reqSchemaRef = "#/components/schemas/CreateQuestionRequest"
-	case path == "/api/v1/assignments" && method == "post":
+	case (path == "/api/v1/assignments/bulk" || strings.HasSuffix(path, "/assignments/bulk")) && method == "post":
+		reqSchemaRef = "#/components/schemas/BulkAssignRequest"
+	case (path == "/api/v1/assignments" || strings.HasSuffix(path, "/assignments")) && method == "post":
 		reqSchemaRef = "#/components/schemas/CreateAssignmentRequest"
 	case path == "/api/v1/sessions" && method == "post":
 		reqSchemaRef = "#/components/schemas/StartSessionRequest"

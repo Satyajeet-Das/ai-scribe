@@ -80,6 +80,124 @@
         },
         "type": "object"
       },
+      "AssignmentListResponse": {
+        "properties": {
+          "assignments": {
+            "items": {
+              "properties": {
+                "assignedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "examId": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "ASSIGNED",
+                    "REVOKED"
+                  ],
+                  "type": "string"
+                },
+                "studentId": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "studentName": {
+                  "description": "Full name of the assigned student",
+                  "example": "Alex Rivera",
+                  "type": "string"
+                },
+                "studentRollNo": {
+                  "description": "Roll number of the assigned student",
+                  "example": "23CS001",
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "data": {
+            "items": {
+              "properties": {
+                "assignedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "examId": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "ASSIGNED",
+                    "REVOKED"
+                  ],
+                  "type": "string"
+                },
+                "studentId": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "studentName": {
+                  "description": "Full name of the assigned student",
+                  "example": "Alex Rivera",
+                  "type": "string"
+                },
+                "studentRollNo": {
+                  "description": "Roll number of the assigned student",
+                  "example": "23CS001",
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "AssignmentResponse": {
         "properties": {
           "assignedAt": {
@@ -129,6 +247,198 @@
         },
         "type": "object"
       },
+      "BulkAssignFailure": {
+        "properties": {
+          "identifier": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BulkAssignRequest": {
+        "properties": {
+          "examId": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "type": "string"
+          },
+          "rollNumbers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "studentIds": {
+            "items": {
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "examId"
+        ],
+        "type": "object"
+      },
+      "BulkAssignResponse": {
+        "properties": {
+          "assigned": {
+            "items": {
+              "properties": {
+                "assignedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "examId": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "ASSIGNED",
+                    "REVOKED"
+                  ],
+                  "type": "string"
+                },
+                "studentId": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "studentName": {
+                  "description": "Full name of the assigned student",
+                  "example": "Alex Rivera",
+                  "type": "string"
+                },
+                "studentRollNo": {
+                  "description": "Roll number of the assigned student",
+                  "example": "23CS001",
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "failed": {
+            "items": {
+              "properties": {
+                "identifier": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "totalAssigned": {
+            "type": "integer"
+          },
+          "totalFailed": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CheckAssignmentResponse": {
+        "properties": {
+          "assigned": {
+            "type": "boolean"
+          },
+          "assignedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "assignment": {
+            "nullable": true,
+            "properties": {
+              "assignedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "examId": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "ASSIGNED",
+                  "REVOKED"
+                ],
+                "type": "string"
+              },
+              "studentId": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              },
+              "studentName": {
+                "description": "Full name of the assigned student",
+                "example": "Alex Rivera",
+                "type": "string"
+              },
+              "studentRollNo": {
+                "description": "Roll number of the assigned student",
+                "example": "23CS001",
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "assignmentId": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ASSIGNED",
+              "REVOKED"
+            ],
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreateAssignmentRequest": {
         "properties": {
           "examId": {
@@ -136,15 +446,21 @@
             "format": "uuid",
             "type": "string"
           },
+          "rollNo": {
+            "description": "Unique student roll number (mandatory when role is STUDENT, e.g. 23CS001)",
+            "example": "23CS001",
+            "nullable": true,
+            "type": "string"
+          },
           "studentId": {
             "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             "format": "uuid",
+            "nullable": true,
             "type": "string"
           }
         },
         "required": [
-          "examId",
-          "studentId"
+          "examId"
         ],
         "type": "object"
       },
@@ -563,6 +879,117 @@
             "format": "uuid",
             "nullable": true,
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StudentAssignedExamResponse": {
+        "properties": {
+          "assignedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "assignmentId": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "durationMins": {
+            "description": "Duration of the exam in minutes",
+            "example": 60,
+            "type": "integer"
+          },
+          "examId": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "type": "string"
+          },
+          "examStatus": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ASSIGNED",
+              "REVOKED"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "description": "Academic subject",
+            "example": "Biology",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title or name",
+            "example": "Biology Midterm Examination",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StudentAssignedExamsListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "assignedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "assignmentId": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "durationMins": {
+                  "description": "Duration of the exam in minutes",
+                  "example": 60,
+                  "type": "integer"
+                },
+                "examId": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "examStatus": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "ASSIGNED",
+                    "REVOKED"
+                  ],
+                  "type": "string"
+                },
+                "subject": {
+                  "description": "Academic subject",
+                  "example": "Biology",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Title or name",
+                  "example": "Biology Midterm Examination",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
           }
         },
         "type": "object"
@@ -1008,6 +1435,78 @@
         ]
       }
     },
+    "/api/v1/assignments/bulk": {
+      "post": {
+        "description": "Automatically generated operation for POST /api/v1/assignments/bulk",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkAssignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "POST /api/v1/assignments/bulk",
+        "tags": [
+          "Assignments"
+        ]
+      }
+    },
+    "/api/v1/assignments/check": {
+      "get": {
+        "description": "Automatically generated operation for GET /api/v1/assignments/check",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "GET /api/v1/assignments/check",
+        "tags": [
+          "Assignments"
+        ]
+      }
+    },
     "/api/v1/assignments/exam/{examId}": {
       "get": {
         "description": "Automatically generated operation for GET /api/v1/assignments/exam/{examId}",
@@ -1045,6 +1544,79 @@
           }
         ],
         "summary": "Get assignments for exam (alias)",
+        "tags": [
+          "Assignments"
+        ]
+      }
+    },
+    "/api/v1/assignments/my-exams": {
+      "get": {
+        "description": "Automatically generated operation for GET /api/v1/assignments/my-exams",
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "GET /api/v1/assignments/my-exams",
+        "tags": [
+          "Assignments"
+        ]
+      }
+    },
+    "/api/v1/assignments/student/{studentId}": {
+      "get": {
+        "description": "Automatically generated operation for GET /api/v1/assignments/student/{studentId}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "GET /api/v1/assignments/student/{studentId}",
         "tags": [
           "Assignments"
         ]
@@ -1497,6 +2069,243 @@
           }
         ],
         "summary": "Create an exam",
+        "tags": [
+          "Exams"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/assignments": {
+      "get": {
+        "description": "Automatically generated operation for GET /api/v1/exams/{exam_id}/assignments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "GET /api/v1/exams/{exam_id}/assignments",
+        "tags": [
+          "Exams"
+        ]
+      },
+      "post": {
+        "description": "Automatically generated operation for POST /api/v1/exams/{exam_id}/assignments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "POST /api/v1/exams/{exam_id}/assignments",
+        "tags": [
+          "Exams"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/assignments/bulk": {
+      "post": {
+        "description": "Automatically generated operation for POST /api/v1/exams/{exam_id}/assignments/bulk",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkAssignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "POST /api/v1/exams/{exam_id}/assignments/bulk",
+        "tags": [
+          "Exams"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/assignments/check": {
+      "get": {
+        "description": "Automatically generated operation for GET /api/v1/exams/{exam_id}/assignments/check",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "GET /api/v1/exams/{exam_id}/assignments/check",
+        "tags": [
+          "Exams"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/assignments/{student_id}": {
+      "delete": {
+        "description": "Automatically generated operation for DELETE /api/v1/exams/{exam_id}/assignments/{student_id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke student assignment",
         "tags": [
           "Exams"
         ]

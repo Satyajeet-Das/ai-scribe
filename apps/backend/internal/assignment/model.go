@@ -24,3 +24,15 @@ type Assignment struct {
 	AssignedAt    time.Time `json:"assignedAt" db:"assigned_at"`
 	Status        Status    `json:"status" db:"status"`
 }
+
+type StudentAssignedExam struct {
+	AssignmentID uuid.UUID `json:"assignmentId" db:"assignment_id"`
+	ExamID       uuid.UUID `json:"examId" db:"exam_id"`
+	Title        string    `json:"title" db:"title"`
+	Subject      string    `json:"subject" db:"subject"`
+	Description  string    `json:"description" db:"description"`
+	DurationMins int       `json:"durationMins" db:"duration_mins"`
+	ExamStatus   string    `json:"examStatus" db:"exam_status"`
+	AssignedAt   time.Time `json:"assignedAt" db:"assigned_at"`
+	Status       Status    `json:"status" db:"status"`
+}

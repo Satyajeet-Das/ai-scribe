@@ -13,4 +13,7 @@ var (
 	ErrStudentNotFound          = errors.New("student not found")
 	ErrStudentIneligible        = errors.New("student is not eligible for assignment")
 	ErrExamArchived             = errors.New("cannot assign exam: archived exams cannot be assigned")
+	ErrNoStudentsProvided       = errors.New("at least one student ID or roll number must be provided")
+	ErrBatchTooLarge            = errors.New("batch size exceeds maximum allowed limit of 500")
+	ErrMismatchedStudent        = errors.New("studentId and rollNo refer to different students")
 )
