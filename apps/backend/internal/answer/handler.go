@@ -8,6 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	httperrs "github.com/Satyajeet-Das/ai-scribe/internal/platform/http/errors"
+	"github.com/Satyajeet-Das/ai-scribe/internal/platform/http/middleware"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/validation"
 	"github.com/Satyajeet-Das/ai-scribe/internal/question"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
@@ -29,8 +30,37 @@ func (h *Handler) RegisterRoutes(g *echo.Group, authMiddleware echo.MiddlewareFu
 		sessions.Use(authMiddleware)
 	}
 
+	sessions.GET("/:session_id/questions/:question_id/answer", h.GetAnswer)
 	sessions.PUT("/:session_id/questions/:question_id/answer", h.SubmitAnswer)
+	sessions.POST("/:session_id/questions/:question_id/answer", h.SubmitAnswer)
 	sessions.GET("/:session_id/answers", h.ListAnswers)
+}
+
+func (h *Handler) GetAnswer(c echo.Context) error {
+	sessionIDParam := c.Param("session_id")
+	sessionID, err := uuid.Parse(sessionIDParam)
+	if err != nil {
+		return httperrs.NewBadRequestError("Invalid session ID format", false, nil, nil, nil)
+	}
+
+	questionIDParam := c.Param("question_id")
+	questionID, err := uuid.Parse(questionIDParam)
+	if err != nil {
+		return httperrs.NewBadRequestError("Invalid question ID format", false, nil, nil, nil)
+	}
+
+	userIDStr := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
+
+	ans, err := h.service.GetAnswer(c.Request().Context(), sessionID, questionID, callerID)
+	if err != nil {
+		return h.mapError(err)
+	}
+
+	return c.JSON(http.StatusOK, ToAnswerResponse(ans))
 }
 
 func (h *Handler) SubmitAnswer(c echo.Context) error {
@@ -51,8 +81,11 @@ func (h *Handler) SubmitAnswer(c echo.Context) error {
 		return err
 	}
 
-	userIDStr, _ := c.Get("user_id").(string)
-	callerID, _ := uuid.Parse(userIDStr)
+	userIDStr := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
 
 	ans, err := h.service.SubmitAnswer(c.Request().Context(), sessionID, questionID, req, callerID)
 	if err != nil {
@@ -69,8 +102,11 @@ func (h *Handler) ListAnswers(c echo.Context) error {
 		return httperrs.NewBadRequestError("Invalid session ID format", false, nil, nil, nil)
 	}
 
-	userIDStr, _ := c.Get("user_id").(string)
-	callerID, _ := uuid.Parse(userIDStr)
+	userIDStr := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
 
 	answers, err := h.service.ListAnswers(c.Request().Context(), sessionID, callerID)
 	if err != nil {
@@ -88,11 +124,21 @@ func (h *Handler) mapError(err error) error {
 		return httperrs.NewNotFoundError(err.Error(), true, nil)
 	}
 
-	if errors.Is(err, ErrUnauthorizedStudent) {
+	if errors.Is(err, ErrUnauthorizedStudent) || errors.Is(err, session.ErrUnauthorizedStudent) {
 		return httperrs.NewForbiddenError("Forbidden: only the assigned student can access answers for this session", false)
 	}
 
+	if errors.Is(err, session.ErrSessionAlreadySubmitted) {
+		return httperrs.NewConflictError("session has already been submitted", true)
+	}
+
+	if errors.Is(err, session.ErrSessionExpired) {
+		return httperrs.NewConflictError("session time has expired", true)
+	}
+
 	if errors.Is(err, ErrSessionNotActive) ||
+		errors.Is(err, session.ErrSessionNotInProgress) ||
+		errors.Is(err, session.ErrInvalidTransition) ||
 		errors.Is(err, ErrQuestionNotForExam) ||
 		errors.Is(err, ErrOptionNotForQuestion) ||
 		errors.Is(err, ErrInvalidAnswer) {

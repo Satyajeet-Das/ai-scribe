@@ -6,6 +6,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+
+	"github.com/Satyajeet-Das/ai-scribe/internal/question"
 )
 
 var validate = validator.New()
@@ -33,6 +35,7 @@ type SessionResponse struct {
 	ExamID           uuid.UUID  `json:"examId"`
 	StudentID        uuid.UUID  `json:"studentId"`
 	Status           Status     `json:"status"`
+	CurrentQuestionID *uuid.UUID `json:"currentQuestionId,omitempty"`
 	StartedAt        time.Time  `json:"startedAt"`
 	SubmittedAt      *time.Time `json:"submittedAt,omitempty"`
 	DurationMins     int        `json:"durationMins,omitempty"`
@@ -53,18 +56,24 @@ func ToSessionResponse(s *Session, durationMins int) SessionResponse {
 		remainingSecs = &rem
 	}
 
+	var currentQID *uuid.UUID
+	if s.CurrentQuestionID != uuid.Nil {
+		currentQID = &s.CurrentQuestionID
+	}
+
 	return SessionResponse{
-		ID:               s.ID,
-		AssignmentID:     s.AssignmentID,
-		ExamID:           s.ExamID,
-		StudentID:        s.StudentID,
-		Status:           s.Status,
-		StartedAt:        s.StartedAt,
-		SubmittedAt:      s.SubmittedAt,
-		DurationMins:     durationMins,
-		RemainingSeconds: remainingSecs,
-		CreatedAt:        s.CreatedAt,
-		UpdatedAt:        s.UpdatedAt,
+		ID:                s.ID,
+		AssignmentID:      s.AssignmentID,
+		ExamID:            s.ExamID,
+		StudentID:         s.StudentID,
+		Status:            s.Status,
+		CurrentQuestionID: currentQID,
+		StartedAt:         s.StartedAt,
+		SubmittedAt:       s.SubmittedAt,
+		DurationMins:      durationMins,
+		RemainingSeconds:  remainingSecs,
+		CreatedAt:         s.CreatedAt,
+		UpdatedAt:         s.UpdatedAt,
 	}
 }
 
@@ -80,4 +89,25 @@ type PaginatedSessionsResponse struct {
 	Total    int               `json:"total"`
 	Limit    int               `json:"limit"`
 	Offset   int               `json:"offset"`
+}
+
+type StudentOptionResponse struct {
+	ID           uuid.UUID `json:"id"`
+	OptionKey    string    `json:"optionKey"`
+	OptionText   string    `json:"optionText"`
+	DisplayOrder int       `json:"displayOrder"`
+}
+
+type StudentQuestionResponse struct {
+	ID             uuid.UUID               `json:"id"`
+	ExamID         uuid.UUID               `json:"examId"`
+	QuestionNumber int                     `json:"questionNumber"`
+	Text           string                  `json:"text"`
+	Type           question.Type           `json:"type"`
+	Points         int                     `json:"points"`
+	Options        []StudentOptionResponse `json:"options,omitempty"`
+	IsFirst        bool                    `json:"isFirst"`
+	IsLast         bool                    `json:"isLast"`
+	TotalQuestions int                     `json:"totalQuestions"`
+	CurrentIndex   int                     `json:"currentIndex"`
 }

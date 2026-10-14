@@ -359,3 +359,67 @@ func TestAnswerService_ListAnswers(t *testing.T) {
 		require.ErrorIs(t, err, answer.ErrUnauthorizedStudent)
 	})
 }
+
+func TestAnswerService_GetAnswer(t *testing.T) {
+	ctx := context.Background()
+	studentID := uuid.New()
+	sessionID := uuid.New()
+	qID := uuid.New()
+	optID := uuid.New()
+
+	t.Run("successfully get saved answer for question", func(t *testing.T) {
+		svc, repo, sessReader, _ := setupTestService()
+
+		sess := &session.Session{
+			StudentID: studentID,
+			Status:    session.StatusInProgress,
+		}
+		sess.ID = sessionID
+		sessReader.sessions[sessionID] = sess
+
+		_ = repo.Upsert(ctx, &answer.Answer{
+			SessionID:        sessionID,
+			QuestionID:       qID,
+			SelectedOptionID: &optID,
+			TextAnswer:       "MCQ answer",
+		})
+
+		ans, err := svc.GetAnswer(ctx, sessionID, qID, studentID)
+		require.NoError(t, err)
+		assert.Equal(t, sessionID, ans.SessionID)
+		assert.Equal(t, qID, ans.QuestionID)
+		assert.Equal(t, &optID, ans.SelectedOptionID)
+		assert.Equal(t, "MCQ answer", ans.TextAnswer)
+	})
+
+	t.Run("fails when unauthorized student tries to get answer", func(t *testing.T) {
+		svc, repo, sessReader, _ := setupTestService()
+
+		sess := &session.Session{
+			StudentID: studentID,
+			Status:    session.StatusInProgress,
+		}
+		sess.ID = sessionID
+		sessReader.sessions[sessionID] = sess
+
+		_ = repo.Upsert(ctx, &answer.Answer{SessionID: sessionID, QuestionID: qID})
+
+		otherStudent := uuid.New()
+		_, err := svc.GetAnswer(ctx, sessionID, qID, otherStudent)
+		require.ErrorIs(t, err, answer.ErrUnauthorizedStudent)
+	})
+
+	t.Run("fails when answer not found", func(t *testing.T) {
+		svc, _, sessReader, _ := setupTestService()
+
+		sess := &session.Session{
+			StudentID: studentID,
+			Status:    session.StatusInProgress,
+		}
+		sess.ID = sessionID
+		sessReader.sessions[sessionID] = sess
+
+		_, err := svc.GetAnswer(ctx, sessionID, qID, studentID)
+		require.ErrorIs(t, err, answer.ErrAnswerNotFound)
+	})
+}

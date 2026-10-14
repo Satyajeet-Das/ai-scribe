@@ -23,6 +23,7 @@ type QuestionReader interface {
 
 type Service interface {
 	SubmitAnswer(ctx context.Context, sessionID, questionID uuid.UUID, req SubmitAnswerRequest, callerID uuid.UUID) (*Answer, error)
+	GetAnswer(ctx context.Context, sessionID, questionID uuid.UUID, callerID uuid.UUID) (*Answer, error)
 	ListAnswers(ctx context.Context, sessionID uuid.UUID, callerID uuid.UUID) ([]Answer, error)
 }
 
@@ -122,4 +123,28 @@ func (s *answerService) ListAnswers(ctx context.Context, sessionID uuid.UUID, ca
 	}
 
 	return s.repo.ListBySession(ctx, sessionID)
+}
+
+func (s *answerService) GetAnswer(ctx context.Context, sessionID, questionID uuid.UUID, callerID uuid.UUID) (*Answer, error) {
+	sess, _, err := s.sessionReader.GetSession(ctx, sessionID, callerID)
+	if err != nil {
+		return nil, err
+	}
+	if sess == nil {
+		return nil, session.ErrSessionNotFound
+	}
+
+	if callerID != uuid.Nil && sess.StudentID != callerID {
+		return nil, ErrUnauthorizedStudent
+	}
+
+	ans, err := s.repo.GetBySessionAndQuestion(ctx, sessionID, questionID)
+	if err != nil {
+		return nil, err
+	}
+	if ans == nil {
+		return nil, ErrAnswerNotFound
+	}
+
+	return ans, nil
 }

@@ -191,6 +191,125 @@ func TestConcurrency_SessionFSMAndLocks(t *testing.T) {
 	t.Logf("Final State: %s", finalSess.Status)
 }
 
+func TestConcurrency_StartSession_Idempotency(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	testDB, cleanup := SetupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	log := logger.NewLoggerService(testDB.Config.Observability)
+	l := logger.NewLoggerWithService(testDB.Config.Observability, log)
+
+	redisClient := redis.New(testDB.Config, &l, log)
+	defer redisClient.Close()
+
+	userRepo := user.NewRepository(testDB.Pool)
+	examRepo := exam.NewRepository(testDB.Pool)
+	assignmentRepo := assignment.NewRepository(testDB.Pool)
+	questionRepo := question.NewRepository(testDB.Pool)
+	sessionRepo := session.NewRepository(testDB.Pool)
+
+	examSvc := exam.NewService(examRepo, &l)
+	assignmentSvc := assignment.NewService(assignmentRepo, examSvc, userRepo, &l)
+	txMgr := &dbTxManager{pool: testDB.Pool}
+	questionSvc := question.NewService(questionRepo, examSvc, txMgr, &l)
+	sessionCache := session.NewRedisCache(redisClient)
+	jobSvc := &mockTaskEnqueuer{}
+
+	sessionSvc := session.NewService(sessionRepo, assignmentSvc, examSvc, questionSvc, sessionCache, txMgr, jobSvc, &l)
+
+	studentClerkID := uuid.New().String()
+	student := &user.User{
+		ClerkID:      &studentClerkID,
+		Email:        "student_idempotent@test.com",
+		PasswordHash: "hash",
+		Role:         "STUDENT",
+		FirstName:    "Test",
+		LastName:     "Student",
+		IsActive:     true,
+	}
+	err := userRepo.Create(ctx, student)
+	require.NoError(t, err)
+
+	teacherClerkID := uuid.New().String()
+	teacher := &user.User{
+		ClerkID:      &teacherClerkID,
+		Email:        "teacher_idempotent@test.com",
+		PasswordHash: "hash",
+		Role:         "TEACHER",
+		IsActive:     true,
+	}
+	err = userRepo.Create(ctx, teacher)
+	require.NoError(t, err)
+
+	ex := &exam.Exam{
+		CreatedBy:    teacher.ID,
+		Title:        "Idempotent Exam",
+		Description:  "Testing duplicate starts",
+		DurationMins: 60,
+		Status:       exam.StatusPublished,
+	}
+	err = examRepo.Create(ctx, ex)
+	require.NoError(t, err)
+
+	asgn := &assignment.Assignment{
+		ExamID:    ex.ID,
+		StudentID: student.ID,
+		Status:    assignment.StatusAssigned,
+	}
+	err = assignmentRepo.Create(ctx, asgn)
+	require.NoError(t, err)
+
+	// Race 10 simultaneous StartSession calls
+	concurrency := 10
+	var wg sync.WaitGroup
+	sessionIDs := make(chan uuid.UUID, concurrency)
+	errChan := make(chan error, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := session.StartSessionRequest{AssignmentID: &asgn.ID}
+			sess, _, e := sessionSvc.StartSession(context.Background(), req, student.ID)
+			if e != nil {
+				errChan <- e
+				return
+			}
+			sessionIDs <- sess.ID
+		}()
+	}
+
+	wg.Wait()
+	close(sessionIDs)
+	close(errChan)
+
+	for e := range errChan {
+		require.NoError(t, e)
+	}
+
+	var firstID uuid.UUID
+	count := 0
+	for id := range sessionIDs {
+		if firstID == uuid.Nil {
+			firstID = id
+		} else {
+			assert.Equal(t, firstID, id, "all concurrent starts must return identical session ID")
+		}
+		count++
+	}
+	assert.Equal(t, concurrency, count)
+
+	// Ensure exactly 1 session exists in database for this student
+	sessions, total, err := sessionRepo.ListByStudentID(ctx, student.ID, 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	assert.Len(t, sessions, 1)
+}
+
 // dbTxManager implements database.TxManager for testing
 type dbTxManager struct {
 	pool *pgxpool.Pool

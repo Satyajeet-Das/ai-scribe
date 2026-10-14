@@ -112,12 +112,15 @@ func (r *pgRepository) ListBySession(ctx context.Context, sessionID uuid.UUID) (
 func (r *pgRepository) Upsert(ctx context.Context, a *Answer) error {
 	query := `
 		INSERT INTO answers (id, session_id, question_id, selected_option_id, text_answer, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		SELECT $1, $2, $3, $4, $5, $6, $7
+		FROM sessions s
+		WHERE s.id = $2 AND s.status = 'IN_PROGRESS'
 		ON CONFLICT (session_id, question_id)
 		DO UPDATE SET
 			selected_option_id = EXCLUDED.selected_option_id,
 			text_answer = EXCLUDED.text_answer,
 			updated_at = NOW()
+		WHERE EXISTS (SELECT 1 FROM sessions s WHERE s.id = EXCLUDED.session_id AND s.status = 'IN_PROGRESS')
 		RETURNING id, created_at, updated_at
 	`
 	now := time.Now().UTC()
@@ -127,7 +130,7 @@ func (r *pgRepository) Upsert(ctx context.Context, a *Answer) error {
 	a.CreatedAt = now
 	a.UpdatedAt = now
 
-	return r.pool.QueryRow(ctx, query,
+	err := r.pool.QueryRow(ctx, query,
 		a.ID,
 		a.SessionID,
 		a.QuestionID,
@@ -136,4 +139,11 @@ func (r *pgRepository) Upsert(ctx context.Context, a *Answer) error {
 		a.CreatedAt,
 		a.UpdatedAt,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrSessionNotActive
+		}
+		return err
+	}
+	return nil
 }

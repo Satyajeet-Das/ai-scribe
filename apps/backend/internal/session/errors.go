@@ -15,4 +15,5 @@ var (
 	ErrUnauthorizedStudent       = errors.New("unauthorized: student does not own this session or assignment")
 	ErrNoNextQuestion            = errors.New("already at the last question")
 	ErrNoPreviousQuestion        = errors.New("already at the first question")
+	ErrNoQuestionsInExam         = errors.New("exam has no questions")
 )

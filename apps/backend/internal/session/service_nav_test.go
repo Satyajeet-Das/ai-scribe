@@ -140,3 +140,67 @@ func TestSessionService_LockAndValidate_PassiveExpiration(t *testing.T) {
 	_, err = cache.GetState(ctx, sessID)
 	assert.ErrorIs(t, err, ErrCacheMiss)
 }
+
+func TestSessionService_GetCurrentQuestion(t *testing.T) {
+	repo, _, questionReader, _, svc, sessID, studentID := setupNavTest()
+	ctx := context.Background()
+
+	// Add options to q1 with IsCorrect set
+	examID := repo.sessions[sessID].ExamID
+	opt1ID := uuid.New()
+	opt2ID := uuid.New()
+	questionReader.questions[examID][0].Options = []question.QuestionOption{
+		{
+			Base:         model.Base{BaseWithId: model.BaseWithId{ID: opt1ID}},
+			QuestionID:   questionReader.questions[examID][0].ID,
+			OptionKey:    "A",
+			OptionText:   "Option 1",
+			DisplayOrder: 1,
+			IsCorrect:    true, // Must NOT leak to student
+		},
+		{
+			Base:         model.Base{BaseWithId: model.BaseWithId{ID: opt2ID}},
+			QuestionID:   questionReader.questions[examID][0].ID,
+			OptionKey:    "B",
+			OptionText:   "Option 2",
+			DisplayOrder: 2,
+			IsCorrect:    false,
+		},
+	}
+
+	// 1. Get current question (initially at q1)
+	qResp, err := svc.GetCurrentQuestion(ctx, sessID, studentID)
+	require.NoError(t, err)
+	assert.Equal(t, questionReader.questions[examID][0].ID, qResp.ID)
+	assert.True(t, qResp.IsFirst)
+	assert.False(t, qResp.IsLast)
+	assert.Equal(t, 3, qResp.TotalQuestions)
+	assert.Equal(t, 1, qResp.CurrentIndex)
+	require.Len(t, qResp.Options, 2)
+	assert.Equal(t, "A", qResp.Options[0].OptionKey)
+	assert.Equal(t, "Option 1", qResp.Options[0].OptionText)
+
+	// 2. Unauthorized student cannot view question
+	_, err = svc.GetCurrentQuestion(ctx, sessID, uuid.New())
+	assert.ErrorIs(t, err, ErrUnauthorizedStudent)
+
+	// 3. Navigate to last question (q3)
+	_, err = svc.NextQuestion(ctx, sessID, studentID)
+	require.NoError(t, err)
+	_, err = svc.NextQuestion(ctx, sessID, studentID)
+	require.NoError(t, err)
+
+	qResp3, err := svc.GetCurrentQuestion(ctx, sessID, studentID)
+	require.NoError(t, err)
+	assert.Equal(t, questionReader.questions[examID][2].ID, qResp3.ID)
+	assert.False(t, qResp3.IsFirst)
+	assert.True(t, qResp3.IsLast)
+	assert.Equal(t, 3, qResp3.CurrentIndex)
+
+	// 4. Submit session - GetCurrentQuestion should be rejected
+	_, err = svc.SubmitSession(ctx, sessID, studentID)
+	require.NoError(t, err)
+
+	_, err = svc.GetCurrentQuestion(ctx, sessID, studentID)
+	assert.ErrorIs(t, err, ErrSessionAlreadySubmitted)
+}

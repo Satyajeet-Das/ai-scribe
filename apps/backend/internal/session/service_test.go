@@ -60,6 +60,14 @@ func (m *mockSessionRepo) Create(ctx context.Context, s *Session) error {
 	return nil
 }
 
+func (m *mockSessionRepo) UpdateCurrentQuestion(ctx context.Context, id uuid.UUID, questionID uuid.UUID) error {
+	if s, ok := m.sessions[id]; ok {
+		s.CurrentQuestionID = questionID
+		return nil
+	}
+	return ErrSessionNotFound
+}
+
 func (m *mockSessionRepo) Submit(ctx context.Context, id uuid.UUID, submittedAt time.Time) error {
 	if s, ok := m.sessions[id]; ok {
 		s.Status = StatusSubmitted
@@ -117,6 +125,17 @@ func (m *mockQuestionReader) ListQuestionsByExam(ctx context.Context, examID uui
 		return q, nil
 	}
 	return nil, nil
+}
+
+func (m *mockQuestionReader) GetQuestion(ctx context.Context, id uuid.UUID) (*question.Question, error) {
+	for _, qs := range m.questions {
+		for _, q := range qs {
+			if q.ID == id {
+				return &q, nil
+			}
+		}
+	}
+	return nil, question.ErrQuestionNotFound
 }
 
 type mockCache struct {

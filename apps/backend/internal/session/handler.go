@@ -33,6 +33,8 @@ func (h *Handler) RegisterRoutes(g *echo.Group, authMiddleware echo.MiddlewareFu
 	sessions.POST("", h.StartSession)
 	sessions.GET("", h.ListSessions)
 	sessions.GET("/:id", h.GetSession)
+	sessions.GET("/:id/current-question", h.GetCurrentQuestion)
+	sessions.GET("/:id/questions/current", h.GetCurrentQuestion)
 	sessions.POST("/:id/submit", h.SubmitSession)
 	sessions.POST("/:id/next", h.NextQuestion)
 	sessions.POST("/:id/previous", h.PreviousQuestion)
@@ -105,6 +107,27 @@ func (h *Handler) SubmitSession(c echo.Context) error {
 	})
 }
 
+func (h *Handler) GetCurrentQuestion(c echo.Context) error {
+	idParam := c.Param("id")
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		return httperrs.NewBadRequestError("Invalid session ID format", false, nil, nil, nil)
+	}
+
+	userIDStr := middleware.GetUserID(c)
+	callerID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return httperrs.NewUnauthorizedError("invalid or missing user ID", false)
+	}
+
+	q, err := h.service.GetCurrentQuestion(c.Request().Context(), id, callerID)
+	if err != nil {
+		return h.mapError(err)
+	}
+
+	return c.JSON(http.StatusOK, q)
+}
+
 func (h *Handler) mapError(err error) error {
 	if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrInvalidAssignment) || errors.Is(err, exam.ErrExamNotFound) {
 		return httperrs.NewNotFoundError(err.Error(), true, nil)
@@ -112,15 +135,20 @@ func (h *Handler) mapError(err error) error {
 	if errors.Is(err, ErrUnauthorizedStudent) {
 		return httperrs.NewForbiddenError("Forbidden: only the assigned student can access this session", false)
 	}
-	if errors.Is(err, ErrSessionExpired) ||
-		errors.Is(err, ErrSessionAlreadySubmitted) ||
-		errors.Is(err, ErrSessionNotInProgress) ||
+	if errors.Is(err, ErrSessionAlreadySubmitted) {
+		return httperrs.NewConflictError("session has already been submitted", true)
+	}
+	if errors.Is(err, ErrSessionExpired) {
+		return httperrs.NewConflictError("session time has expired", true)
+	}
+	if errors.Is(err, ErrSessionNotInProgress) ||
 		errors.Is(err, ErrAssignmentRevoked) ||
 		errors.Is(err, ErrExamArchived) ||
 		errors.Is(err, ErrExamNotPublished) ||
 		errors.Is(err, ErrActiveSessionAlreadyExists) ||
 		errors.Is(err, ErrNoNextQuestion) ||
 		errors.Is(err, ErrNoPreviousQuestion) ||
+		errors.Is(err, ErrNoQuestionsInExam) ||
 		errors.Is(err, ErrInvalidTransition) {
 		return httperrs.NewBadRequestError(err.Error(), false, nil, nil, nil)
 	}
@@ -144,7 +172,7 @@ func (h *Handler) NextQuestion(c echo.Context) error {
 		return h.mapError(err)
 	}
 
-	return c.JSON(200, sess)
+	return c.JSON(http.StatusOK, ToSessionResponse(sess, 0))
 }
 
 func (h *Handler) PreviousQuestion(c echo.Context) error {
@@ -164,7 +192,7 @@ func (h *Handler) PreviousQuestion(c echo.Context) error {
 		return h.mapError(err)
 	}
 
-	return c.JSON(200, sess)
+	return c.JSON(http.StatusOK, ToSessionResponse(sess, 0))
 }
 
 func (h *Handler) ListSessions(c echo.Context) error {

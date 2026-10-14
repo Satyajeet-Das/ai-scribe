@@ -32,7 +32,7 @@ var (
 // If the transition is not allowed, it returns ErrInvalidTransition.
 func Transition(current Status, event Event) (Status, error) {
 	switch current {
-	case StatusPending:
+	case StatusPending, StatusNotStarted:
 		if event == EventBegin {
 			return StatusInProgress, nil
 		}
@@ -57,7 +57,7 @@ func Transition(current Status, event Event) (Status, error) {
 	}
 
 	if current != StatusInProgress {
-		return current, ErrSessionNotInProgress
+		return current, fmt.Errorf("%w: %w", ErrInvalidTransition, ErrSessionNotInProgress)
 	}
 
 	return current, fmt.Errorf("%w: cannot transition from %s via event %s", ErrInvalidTransition, current, event)

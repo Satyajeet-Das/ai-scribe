@@ -3,9 +3,11 @@ package session
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog"
 
 	"github.com/Satyajeet-Das/ai-scribe/internal/assignment"
@@ -26,6 +28,7 @@ type ExamReader interface {
 
 type QuestionReader interface {
 	ListQuestionsByExam(ctx context.Context, examID uuid.UUID) ([]question.Question, error)
+	GetQuestion(ctx context.Context, id uuid.UUID) (*question.Question, error)
 }
 
 type TaskEnqueuer interface {
@@ -34,6 +37,7 @@ type TaskEnqueuer interface {
 
 type Service interface {
 	GetSession(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*Session, int, error)
+	GetCurrentQuestion(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*StudentQuestionResponse, error)
 	StartSession(ctx context.Context, req StartSessionRequest, callerID uuid.UUID) (*Session, int, error)
 	SubmitSession(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*Session, error)
 	NextQuestion(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*Session, error)
@@ -95,6 +99,88 @@ func (s *sessionService) GetSession(ctx context.Context, id uuid.UUID, callerID 
 	}
 
 	return sess, ex.DurationMins, nil
+}
+
+func (s *sessionService) GetCurrentQuestion(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*StudentQuestionResponse, error) {
+	sess, _, err := s.GetSession(ctx, id, callerID)
+	if err != nil {
+		return nil, err
+	}
+
+	if callerID != uuid.Nil && sess.StudentID != callerID {
+		return nil, ErrUnauthorizedStudent
+	}
+
+	if sess.Status != StatusInProgress {
+		if sess.Status == StatusSubmitted {
+			return nil, ErrSessionAlreadySubmitted
+		}
+		if sess.Status == StatusExpired {
+			return nil, ErrSessionExpired
+		}
+		return nil, ErrSessionNotInProgress
+	}
+
+	questions, err := s.questionReader.ListQuestionsByExam(ctx, sess.ExamID)
+	if err != nil {
+		return nil, err
+	}
+	if len(questions) == 0 {
+		return nil, ErrNoQuestionsInExam
+	}
+
+	currentQID := sess.CurrentQuestionID
+	if currentQID == uuid.Nil {
+		currentQID = questions[0].ID
+		_ = s.repo.UpdateCurrentQuestion(ctx, sess.ID, currentQID)
+		sess.CurrentQuestionID = currentQID
+	}
+
+	currentIndex := -1
+	for i, q := range questions {
+		if q.ID == currentQID {
+			currentIndex = i
+			break
+		}
+	}
+	if currentIndex == -1 {
+		currentIndex = 0
+		currentQID = questions[0].ID
+		_ = s.repo.UpdateCurrentQuestion(ctx, sess.ID, currentQID)
+		sess.CurrentQuestionID = currentQID
+	}
+
+	qWithOpts, err := s.questionReader.GetQuestion(ctx, currentQID)
+	if err != nil {
+		return nil, err
+	}
+	if qWithOpts == nil {
+		return nil, question.ErrQuestionNotFound
+	}
+
+	opts := make([]StudentOptionResponse, 0, len(qWithOpts.Options))
+	for _, opt := range qWithOpts.Options {
+		opts = append(opts, StudentOptionResponse{
+			ID:           opt.ID,
+			OptionKey:    opt.OptionKey,
+			OptionText:   opt.OptionText,
+			DisplayOrder: opt.DisplayOrder,
+		})
+	}
+
+	return &StudentQuestionResponse{
+		ID:             qWithOpts.ID,
+		ExamID:         qWithOpts.ExamID,
+		QuestionNumber: qWithOpts.QuestionNumber,
+		Text:           qWithOpts.Text,
+		Type:           qWithOpts.Type,
+		Points:         qWithOpts.Points,
+		Options:        opts,
+		IsFirst:        currentIndex == 0,
+		IsLast:         currentIndex == len(questions)-1,
+		TotalQuestions: len(questions),
+		CurrentIndex:   currentIndex + 1,
+	}, nil
 }
 
 func (s *sessionService) StartSession(ctx context.Context, req StartSessionRequest, callerID uuid.UUID) (*Session, int, error) {
@@ -202,6 +288,18 @@ func (s *sessionService) StartSession(ctx context.Context, req StartSessionReque
 	if err := s.txManager.WithTx(ctx, func(tx database.DBTX) error {
 		return s.repo.Create(ctx, sess)
 	}); err != nil {
+		var pgErr *pgconn.PgError
+		if (errors.As(err, &pgErr) && pgErr.Code == "23505") || strings.Contains(err.Error(), "idx_unique_active_session") {
+			existingActive, getErr := s.repo.GetActiveByAssignmentID(ctx, asgn.ID)
+			if getErr == nil && existingActive != nil {
+				s.logger.Info().
+					Str("session_id", existingActive.ID.String()).
+					Str("assignment_id", asgn.ID.String()).
+					Str("student_id", callerID.String()).
+					Msg("concurrent start detected, returning existing active session")
+				return existingActive, ex.DurationMins, nil
+			}
+		}
 		s.logger.Error().Err(err).
 			Str("assignment_id", asgn.ID.String()).
 			Str("student_id", asgn.StudentID.String()).
@@ -288,8 +386,18 @@ func (s *sessionService) NextQuestion(ctx context.Context, id uuid.UUID, callerI
 		return nil, ErrNoNextQuestion
 	}
 
-	sess.CurrentQuestionID = questions[currentIndex+1].ID
-	sess.LastActivityAt = time.Now().UTC()
+	nextQuestionID := questions[currentIndex+1].ID
+	now := time.Now().UTC()
+
+	if err := s.txManager.WithTx(ctx, func(tx database.DBTX) error {
+		return s.repo.UpdateCurrentQuestion(ctx, sess.ID, nextQuestionID)
+	}); err != nil {
+		s.logger.Error().Err(err).Str("session_id", id.String()).Msg("failed to update current question in database")
+		return nil, err
+	}
+
+	sess.CurrentQuestionID = nextQuestionID
+	sess.LastActivityAt = now
 
 	// Update cache with new runtime state
 	ex, err := s.examReader.GetExam(ctx, sess.ExamID)
@@ -333,8 +441,18 @@ func (s *sessionService) PreviousQuestion(ctx context.Context, id uuid.UUID, cal
 		return nil, ErrNoPreviousQuestion
 	}
 
-	sess.CurrentQuestionID = questions[currentIndex-1].ID
-	sess.LastActivityAt = time.Now().UTC()
+	prevQuestionID := questions[currentIndex-1].ID
+	now := time.Now().UTC()
+
+	if err := s.txManager.WithTx(ctx, func(tx database.DBTX) error {
+		return s.repo.UpdateCurrentQuestion(ctx, sess.ID, prevQuestionID)
+	}); err != nil {
+		s.logger.Error().Err(err).Str("session_id", id.String()).Msg("failed to update current question in database")
+		return nil, err
+	}
+
+	sess.CurrentQuestionID = prevQuestionID
+	sess.LastActivityAt = now
 
 	// Update cache with new runtime state
 	ex, err := s.examReader.GetExam(ctx, sess.ExamID)
