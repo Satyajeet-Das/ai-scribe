@@ -19,6 +19,7 @@ import { sessionsApi, examsApi } from "@/services/api";
 import { useAuthStore } from "@/store/auth-store";
 import { DESIGN_TOKENS } from "@/lib/constants";
 import { useDebounce } from "@/hooks/use-debounce";
+import { ExamInstructionsDialog } from "@/components/exam-instructions-dialog";
 import type { Exam } from "@/types/exam-types";
 
 interface AssignedExamItem {
@@ -59,6 +60,10 @@ export default function StudentSessionsPage() {
   const debouncedQuery = useDebounce(query, 300);
   const [startingId, setStartingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Instructions Dialog State
+  const [selectedItem, setSelectedItem] = useState<AssignedExamItem | null>(null);
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
 
   useEffect(() => {
     if (!user?.id) {
@@ -149,19 +154,27 @@ export default function StudentSessionsPage() {
     );
   }, [items, debouncedQuery]);
 
-  const handleStartExam = async (item: AssignedExamItem) => {
-    // If we already have the active in-progress session ID, navigate directly to it!
-    if (item.status === "IN_PROGRESS" && item.sessionId) {
-      router.push(`/sessions/${item.sessionId}`);
+  const handleOpenInstructions = (item: AssignedExamItem) => {
+    setSelectedItem(item);
+    setInstructionsOpen(true);
+  };
+
+  const handleConfirmStart = async () => {
+    if (!selectedItem) return;
+
+    if (selectedItem.status === "IN_PROGRESS" && selectedItem.sessionId) {
+      setInstructionsOpen(false);
+      router.push(`/sessions/${selectedItem.sessionId}`);
       return;
     }
 
-    setStartingId(item.examId);
+    setStartingId(selectedItem.examId);
     setError(null);
     try {
       const session = await sessionsApi.startSession({
-        examId: item.examId,
+        examId: selectedItem.examId,
       });
+      setInstructionsOpen(false);
       router.push(`/sessions/${session.id}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to enter exam room";
@@ -289,7 +302,7 @@ export default function StudentSessionsPage() {
                         size="lg"
                         className="w-full font-semibold"
                         disabled={startingId === item.assignmentId || item.status === "SUBMITTED"}
-                        onClick={() => handleStartExam(item)}
+                        onClick={() => handleOpenInstructions(item)}
                       >
                         {startingId === item.assignmentId ? (
                           <>
@@ -320,6 +333,26 @@ export default function StudentSessionsPage() {
           </div>
         </div>
       </div>
+
+      {/* Instructions & Confirmation Dialog */}
+      <ExamInstructionsDialog
+        open={instructionsOpen}
+        onOpenChange={setInstructionsOpen}
+        exam={
+          selectedItem
+            ? {
+                id: selectedItem.examId,
+                title: selectedItem.title,
+                subject: selectedItem.subject,
+                durationMins: selectedItem.durationMins,
+              }
+            : null
+        }
+        sessionStatus={selectedItem?.status}
+        sessionId={selectedItem?.sessionId}
+        onConfirm={handleConfirmStart}
+        loading={startingId !== null}
+      />
     </ProtectedRoute>
   );
 }

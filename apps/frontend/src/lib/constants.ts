@@ -9,7 +9,7 @@ export const APP_CONFIG = {
   name: "AI Exam Scribe",
   shortName: "Scribe",
   description: "Accessible voice-first examination platform for all learners",
-  apiUrl: env.API_URL,
+  apiUrl: "env.API_URL",
   version: "1.0.0",
 } as const;
 

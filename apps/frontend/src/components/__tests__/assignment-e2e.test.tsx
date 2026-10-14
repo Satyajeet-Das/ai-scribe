@@ -29,6 +29,11 @@ vi.mock("@/services/api", () => ({
   studentsApi: {
     searchStudents: vi.fn(),
   },
+  sessionsApi: {
+    getSessions: vi.fn().mockResolvedValue({ sessions: [], total: 0 }),
+    startSession: vi.fn(),
+    getSession: vi.fn(),
+  },
   registerAuthFailureHandler: vi.fn(),
 }));
 

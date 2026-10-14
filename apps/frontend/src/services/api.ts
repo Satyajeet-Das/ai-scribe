@@ -9,6 +9,8 @@ import type {
   Answer,
   ExamStatus,
   QuestionType,
+  StudentQuestionResponse,
+  StudentOptionResponse,
 } from "@/types/exam-types";
 
 import type {
@@ -38,7 +40,7 @@ export type {
   StudentSearchResult,
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
 const DEFAULT_TIMEOUT_MS = 15000;
 
 // -----------------------------------------------------------------------------
@@ -713,6 +715,14 @@ export const sessionsApi = {
     return apiFetch<Session>(`/sessions/${id}`);
   },
 
+  async getCurrentQuestion(sessionId: string): Promise<StudentQuestionResponse> {
+    return apiFetch<StudentQuestionResponse>(`/sessions/${sessionId}/current-question`);
+  },
+
+  async getQuestionAnswer(sessionId: string, questionId: string): Promise<Answer> {
+    return apiFetch<Answer>(`/sessions/${sessionId}/questions/${questionId}/answer`);
+  },
+
   async nextQuestion(sessionId: string): Promise<Session> {
     return apiFetch<Session>(`/sessions/${sessionId}/next`, {
       method: "POST",
@@ -771,4 +781,5 @@ export const sessionsApi = {
 export const answersApi = {
   submitAnswer: sessionsApi.submitAnswer,
   getAnswers: sessionsApi.getAnswers,
+  getQuestionAnswer: sessionsApi.getQuestionAnswer,
 };

@@ -72,16 +72,42 @@ export interface BulkAssignResult {
   totalFailed: number;
 }
 
+export type SessionStatus = "NOT_STARTED" | "PENDING" | "IN_PROGRESS" | "SUBMITTED" | "EXPIRED";
+
 export interface Session {
   id: string;
   assignmentId: string;
   examId: string;
   studentId: string;
-  status: "IN_PROGRESS" | "SUBMITTED" | "EXPIRED";
+  status: SessionStatus;
+  currentQuestionId?: string;
   startedAt: string;
   submittedAt?: string;
   durationMins?: number;
   remainingSeconds?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface StudentOptionResponse {
+  id: string;
+  optionKey: string;
+  optionText: string;
+  displayOrder: number;
+}
+
+export interface StudentQuestionResponse {
+  id: string;
+  examId: string;
+  questionNumber: number;
+  text: string;
+  type: QuestionType;
+  points: number;
+  options?: StudentOptionResponse[];
+  isFirst: boolean;
+  isLast: boolean;
+  totalQuestions: number;
+  currentIndex: number;
 }
 
 export interface Answer {
@@ -90,6 +116,8 @@ export interface Answer {
   questionId: string;
   selectedOptionId?: string;
   textAnswer: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface User {

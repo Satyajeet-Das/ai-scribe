@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Check,
   ChevronLeft,
@@ -8,8 +8,12 @@ import {
   Clock3,
   Eye,
   Highlighter,
-  Save,
+  Loader2,
+  AlertCircle,
+  RotateCcw,
   Send,
+  AlertTriangle,
+  HelpCircle,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -20,7 +24,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,122 +31,212 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { Question, QuestionOption } from "@/types/exam-types";
+import type { StudentQuestionResponse, StudentOptionResponse, Question } from "@/types/exam-types";
+
+export interface StudentExamRoomProps {
+  currentQuestion: StudentQuestionResponse | null;
+  totalQuestions?: number;
+  initialSeconds?: number;
+  answers: Record<string, string>;
+  saveStatus?: "idle" | "saving" | "saved" | "failed";
+  saveError?: string | null;
+  onSelectOption: (optionId: string) => void;
+  onTextAnswerChange?: (text: string) => void;
+  onRetrySave?: () => void;
+  onNext: () => Promise<void> | void;
+  onPrevious: () => Promise<void> | void;
+  onSubmit: () => Promise<void> | void;
+  onJumpToQuestion?: (index: number) => void;
+  navigating?: boolean;
+  submitting?: boolean;
+  examTitle?: string;
+  subject?: string;
+  onExpire?: () => void;
+  /** Optional voice assistant, rendered above the question. */
+  voiceSlot?: ReactNode;
+
+  // Backward compatibility with previous offline mock usage if any
+  questions?: Question[];
+  onAnswerChange?: (questionId: string, answer: string) => void;
+}
+
 export function StudentExamRoom({
-  questions = [],
-  initialSeconds = 42 * 60,
-  initialAnswers = {},
-  onSubmit,
-  onAnswerChange,
+  currentQuestion,
+  totalQuestions: propTotalQuestions,
+  initialSeconds = 45 * 60,
+  answers,
+  saveStatus = "idle",
+  saveError = null,
+  onSelectOption,
+  onTextAnswerChange,
+  onRetrySave,
   onNext,
   onPrevious,
-}: {
-  questions?: Question[];
-  initialSeconds?: number;
-  initialAnswers?: Record<string, string>;
-  onSubmit?: (answers: Record<string, string>) => void;
-  onAnswerChange?: (questionId: string, answer: string) => void;
-  onNext?: (newIndex: number) => void;
-  onPrevious?: (newIndex: number) => void;
-}) {
-  const [index, setIndex] = useState(0);
+  onSubmit,
+  onJumpToQuestion,
+  navigating = false,
+  submitting = false,
+  examTitle = "Online Examination",
+  subject = "Assessment",
+  onExpire,
+  voiceSlot,
+  // backward compatibility props
+  questions,
+  onAnswerChange,
+}: StudentExamRoomProps) {
   const [seconds, setSeconds] = useState(initialSeconds);
   const [largeText, setLargeText] = useState(false);
   const [contrast, setContrast] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, string>>(initialAnswers);
-  const [saving, setSaving] = useState(false);
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
 
+  // Sync initial seconds if it changes on reconnect
   useEffect(() => {
-    const timer = window.setInterval(() => setSeconds((value) => Math.max(0, value - 1)), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
+    setSeconds(initialSeconds);
+  }, [initialSeconds]);
 
+  // Countdown timer
   useEffect(() => {
-    if (saving) {
-      const timer = window.setTimeout(() => setSaving(false), 700);
-      return () => window.clearTimeout(timer);
+    if (seconds <= 0) {
+      onExpire?.();
+      return;
     }
-  }, [saving]);
 
-  const time = useMemo(
-    () =>
-      `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`,
-    [seconds]
-  );
+    const timer = window.setInterval(() => {
+      setSeconds((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          onExpire?.();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-  if (!questions || questions.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
-        <Card className="max-w-md w-full text-center p-8 border border-dashed">
-          <CardHeader>
-            <CardTitle className="text-xl font-bold">No Questions in Assessment</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              This examination does not have any questions configured yet. Please contact your educator.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+    return () => window.clearInterval(timer);
+  }, [seconds, onExpire]);
 
-  const question = questions[index];
+  // Keyboard navigation shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.altKey && (e.key === "n" || e.key === "N")) {
+        e.preventDefault();
+        if (!currentQuestion?.isLast && !navigating) {
+          onNext();
+        }
+      } else if (e.altKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        if (!currentQuestion?.isFirst && !navigating) {
+          onPrevious();
+        }
+      }
+    }
 
-  const setAnswer = (value: string) => {
-    if (!question) return;
-    setSaving(true);
-    setAnswers((current) => ({ ...current, [question.id]: value }));
-    onAnswerChange?.(question.id, value);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentQuestion, navigating, onNext, onPrevious]);
+
+  const formattedTime = useMemo(() => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }, [seconds]);
+
+  const totalQuestions = propTotalQuestions || currentQuestion?.totalQuestions || questions?.length || 1;
+  const currentIndex = currentQuestion?.currentIndex || 1;
+  const answeredCount = Object.keys(answers).length;
+  const unansweredCount = Math.max(0, totalQuestions - answeredCount);
+  const progressPercent = Math.min(100, Math.round((answeredCount / totalQuestions) * 100));
+
+  // Determine active question data (support both StudentQuestionResponse and legacy Question)
+  const activeQuestionText = currentQuestion?.text || (questions && questions[currentIndex - 1]?.text) || "Loading question...";
+  const activeQuestionPoints = currentQuestion?.points ?? (questions && questions[currentIndex - 1]?.points) ?? 1;
+  const activeQuestionType = currentQuestion?.type || (questions && questions[currentIndex - 1]?.type) || "MCQ";
+  const activeQuestionId = currentQuestion?.id || (questions && questions[currentIndex - 1]?.id) || "";
+  const activeOptions = currentQuestion?.options || (questions && questions[currentIndex - 1]?.options) || [];
+
+  const isFirst = currentQuestion ? currentQuestion.isFirst : currentIndex <= 1;
+  const isLast = currentQuestion ? currentQuestion.isLast : currentIndex >= totalQuestions;
+
+  const currentAnswerValue = answers[activeQuestionId] || "";
+
+  const handleOptionSelect = (optionId: string) => {
+    if (navigating || submitting) return;
+    onSelectOption(optionId);
+    if (onAnswerChange && activeQuestionId) {
+      onAnswerChange(activeQuestionId, optionId);
+    }
   };
+
+  const handleTextChange = (val: string) => {
+    if (onTextAnswerChange) {
+      onTextAnswerChange(val);
+    }
+    if (onAnswerChange && activeQuestionId) {
+      onAnswerChange(activeQuestionId, val);
+    }
+  };
+
   return (
     <div
-      className={`${largeText ? "text-lg" : ""} ${contrast ? "bg-foreground text-background" : "bg-background text-foreground"} min-h-screen`}
+      className={`${largeText ? "text-lg" : ""} ${contrast ? "bg-foreground text-background" : "bg-background text-foreground"} min-h-screen flex flex-col`}
     >
-      <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Biology · Midterm assessment</p>
-            <h1 className="text-xl font-semibold">Foundations of Biology</h1>
-          </div>
+      {/* Header */}
+      <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur shadow-xs">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <Badge variant={seconds < 300 ? "destructive" : "secondary"}>
-              <Clock3 data-icon="inline-start" />
-              {time} remaining
+            <div>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {subject}
+              </span>
+              <h1 className="text-lg font-bold sm:text-xl line-clamp-1">{examTitle}</h1>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Countdown Badge */}
+            <Badge
+              variant={seconds < 300 ? "destructive" : "secondary"}
+              className={`px-3 py-1.5 text-sm font-semibold tabular-nums gap-1.5 ${
+                seconds < 300 ? "animate-pulse" : ""
+              }`}
+              aria-label={`Time remaining: ${formattedTime}`}
+            >
+              <Clock3 className="size-4 shrink-0" />
+              <span>{formattedTime}</span>
             </Badge>
-            <AlertDialog>
-              <AlertDialogTrigger render={<Button />}>
-                <Send data-icon="inline-start" />
-                Submit exam
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Submit your exam?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    You have answered {Object.keys(answers).length} of {questions.length} questions.
-                    You cannot edit answers after submitting.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Keep working</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => onSubmit?.(answers)}>
-                    Submit answers
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+
+            {/* Submit Button Trigger */}
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setSubmitDialogOpen(true)}
+              className="gap-2 font-semibold shadow-xs"
+              data-testid="submit-exam-button"
+            >
+              <Send className="size-3.5 fill-current" />
+              <span>Submit Exam</span>
+            </Button>
           </div>
         </div>
       </header>
-      <main className="mx-auto grid max-w-5xl gap-6 px-4 py-6 md:grid-cols-[220px_1fr]">
+
+      {/* Main Workspace */}
+      <div className="mx-auto flex-1 w-full max-w-6xl grid gap-6 p-4 sm:p-6 md:grid-cols-[240px_1fr]">
+        {/* Left Sidebar / Question Navigator */}
         <aside className="flex flex-col gap-5">
-          <Card className="bg-background">
-            <CardHeader>
-              <CardTitle className="text-base">Accessibility</CardTitle>
+          {/* Accessibility Settings */}
+          <Card className="bg-background shadow-xs border">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Display Options
+              </CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
+            <CardContent className="flex flex-col gap-3.5 px-4 pb-4">
               <ToggleRow
-                label="Larger text"
+                label="Large text"
                 icon={Eye}
                 checked={largeText}
                 onCheckedChange={setLargeText}
@@ -156,123 +249,340 @@ export function StudentExamRoom({
               />
             </CardContent>
           </Card>
-          <nav
-            aria-label="Question navigator"
-            className="flex flex-wrap gap-2 md:grid md:grid-cols-4"
-          >
-            {questions.map((item, itemIndex) => (
-              <button
-                key={item.id}
-                aria-label={`Question ${item.questionNumber}${answers[item.id] ? ", answered" : ""}`}
-                aria-current={index === itemIndex ? "step" : undefined}
-                onClick={() => setIndex(itemIndex)}
-                className={`grid size-10 place-items-center rounded-full border text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${index === itemIndex ? "border-primary bg-primary text-primary-foreground" : answers[item.id] ? "border-primary/50 bg-primary/10" : "bg-background"}`}
+
+          {/* Question Grid Navigator */}
+          <Card className="bg-background shadow-xs border flex-1">
+            <CardHeader className="py-3 px-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Questions Navigator
+                </CardTitle>
+                <span className="text-xs font-semibold text-primary">
+                  {answeredCount}/{totalQuestions}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 space-y-4">
+              <nav
+                aria-label="Question navigation grid"
+                className="grid grid-cols-5 gap-2 sm:grid-cols-4"
               >
-                {itemIndex + 1}
-              </button>
-            ))}
-          </nav>
-        </aside>
-        <Card className="min-h-[480px] bg-background">
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Question {question.questionNumber} of {questions.length} · {question.points} points
-              </p>
-              <CardTitle className="mt-3 max-w-3xl text-2xl leading-relaxed md:text-3xl">
-                {question.text}
-              </CardTitle>
-            </div>
-            <span
-              className="flex items-center gap-2 text-sm text-muted-foreground"
-              role="status"
-              aria-live="polite"
-            >
-              {saving ? (
-                <>
-                  <Save data-icon="inline-start" />
-                  Saving
-                </>
-              ) : (
-                <>
-                  <Check data-icon="inline-start" />
-                  Saved
-                </>
-              )}
-            </span>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-8">
-            <div className="min-h-48">
-              {question.type === "MCQ" ? (
-                <RadioGroup
-                  value={answers[question.id] ?? ""}
-                  onValueChange={setAnswer}
-                  aria-label="Answer choices"
-                  className="flex flex-col gap-3"
-                >
-                  {question.options.map((option: QuestionOption) => (
-                    <label
-                      key={option.id}
-                      htmlFor={`answer-${option.id}`}
-                      className="flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-colors hover:bg-muted"
+                {Array.from({ length: totalQuestions }).map((_, qIdx) => {
+                  const qNum = qIdx + 1;
+                  const isCurrent = currentIndex === qNum;
+                  // If question ID is known for this index, check answers
+                  const isAnswered =
+                    currentQuestion && currentQuestion.questionNumber === qNum
+                      ? !!currentAnswerValue
+                      : false;
+
+                  return (
+                    <button
+                      key={qIdx}
+                      type="button"
+                      aria-label={`Question ${qNum}${isAnswered ? ", Answered" : ", Unanswered"}`}
+                      aria-current={isCurrent ? "step" : undefined}
+                      disabled={navigating || submitting}
+                      onClick={() => onJumpToQuestion?.(qIdx)}
+                      className={`grid size-9 place-items-center rounded-lg border text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                        isCurrent
+                          ? "border-primary bg-primary text-primary-foreground shadow-xs font-bold scale-105"
+                          : isAnswered
+                          ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
+                          : "bg-background hover:bg-muted text-muted-foreground hover:text-foreground"
+                      }`}
                     >
-                      <RadioGroupItem value={option.id} id={`answer-${option.id}`} />
-                      <span className="grid size-8 place-items-center rounded-full bg-muted font-semibold">
-                        {option.optionKey}
-                      </span>
-                      <span>{option.optionText}</span>
-                    </label>
-                  ))}
-                </RadioGroup>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <label htmlFor="written-answer" className="font-medium">
-                    {question.type === "VOICE" ? "Written or voice response" : "Your response"}
-                  </label>
-                  <Textarea
-                    id="written-answer"
-                    value={answers[question.id] ?? ""}
-                    onChange={(event) => setAnswer(event.target.value)}
-                    placeholder="Type your response here. Voice input can be connected through the platform API."
-                    className="min-h-44 text-base leading-7"
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Your response is saved automatically as you type.
-                  </p>
+                      {qNum}
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div className="border-t pt-3 space-y-1.5 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <span className="size-2.5 rounded-sm bg-primary" />
+                  <span>Current Question</span>
                 </div>
-              )}
+                <div className="flex items-center gap-2">
+                  <span className="size-2.5 rounded-sm bg-primary/20 border border-primary/40" />
+                  <span>Answered Question</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="size-2.5 rounded-sm bg-muted border" />
+                  <span>Unanswered</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </aside>
+
+        {/* Main Examination Question Area */}
+        <main className="flex flex-col gap-4">
+          {voiceSlot}
+          <Card className="min-h-[500px] flex flex-col justify-between bg-background shadow-xs border">
+            <div>
+              <CardHeader className="border-b pb-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="font-semibold text-xs">
+                      Question {currentIndex} of {totalQuestions}
+                    </Badge>
+                    <Badge variant="secondary" className="text-xs">
+                      {activeQuestionPoints} {activeQuestionPoints === 1 ? "point" : "points"}
+                    </Badge>
+                  </div>
+
+                  {/* Real-time Save Status Indicator */}
+                  <div
+                    className="flex items-center gap-1.5 text-xs font-medium"
+                    role="status"
+                    aria-live="polite"
+                    data-testid="answer-save-status"
+                  >
+                    {saveStatus === "saving" && (
+                      <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                        <Loader2 className="size-3.5 animate-spin" />
+                        Saving answer...
+                      </span>
+                    )}
+                    {saveStatus === "saved" && (
+                      <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                        <Check className="size-3.5 text-emerald-600 stroke-[3]" />
+                        Answer saved
+                      </span>
+                    )}
+                    {saveStatus === "failed" && (
+                      <span className="flex items-center gap-1.5 text-destructive font-semibold">
+                        <AlertCircle className="size-3.5" />
+                        Failed to save
+                        {onRetrySave && (
+                          <button
+                            type="button"
+                            onClick={onRetrySave}
+                            className="underline ml-1 hover:text-destructive/80 font-bold"
+                            data-testid="retry-save-button"
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </span>
+                    )}
+                    {saveStatus === "idle" && currentAnswerValue && (
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <Check className="size-3.5 text-muted-foreground" />
+                        Recorded
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Question Prompt */}
+                <CardTitle className="mt-4 text-xl sm:text-2xl font-bold leading-relaxed text-foreground">
+                  {activeQuestionText}
+                </CardTitle>
+              </CardHeader>
+
+              {/* Options & Response Input */}
+              <CardContent className="pt-6">
+                {/* Save Error Banner */}
+                {saveStatus === "failed" && (
+                  <div className="mb-6 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="size-4 shrink-0" />
+                      <span>{saveError || "Failed to persist answer. Your response is saved locally."}</span>
+                    </div>
+                    {onRetrySave && (
+                      <Button size="xs" variant="destructive" onClick={onRetrySave} className="gap-1 font-semibold" data-testid="retry-banner-button">
+                        <RotateCcw className="size-3" />
+                        Retry
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {activeQuestionType === "MCQ" ? (
+                  <RadioGroup
+                    value={currentAnswerValue}
+                    onValueChange={handleOptionSelect}
+                    aria-label="Answer choices"
+                    className="flex flex-col gap-3"
+                    disabled={navigating || submitting}
+                  >
+                    {activeOptions.map((opt: StudentOptionResponse | any) => {
+                      const isSelected = currentAnswerValue === opt.id;
+                      return (
+                        <label
+                          key={opt.id}
+                          htmlFor={`option-${opt.id}`}
+                          data-testid={`option-label-${opt.id}`}
+                          className={`flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-all focus-within:ring-2 focus-within:ring-ring ${
+                            isSelected
+                              ? "border-primary bg-primary/5 shadow-xs font-medium"
+                              : "border-border hover:bg-muted/50 hover:border-border/80"
+                          }`}
+                        >
+                          <RadioGroupItem
+                            value={opt.id}
+                            id={`option-${opt.id}`}
+                            className="size-4"
+                          />
+                          <span
+                            className={`grid size-7 place-items-center rounded-md text-xs font-bold ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {opt.optionKey}
+                          </span>
+                          <span className="flex-1 text-sm sm:text-base leading-snug">
+                            {opt.optionText}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </RadioGroup>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <label htmlFor="written-response" className="text-sm font-semibold text-foreground">
+                      Your Response
+                    </label>
+                    <Textarea
+                      id="written-response"
+                      value={currentAnswerValue}
+                      onChange={(e) => handleTextChange(e.target.value)}
+                      placeholder="Type your response here..."
+                      className="min-h-48 text-base leading-relaxed"
+                      disabled={navigating || submitting}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Responses are automatically recorded as you finish writing.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
             </div>
-            <div className="flex items-center justify-between border-t pt-5">
+
+            {/* Bottom Navigation Toolbar */}
+            <div className="border-t p-4 sm:px-6 flex items-center justify-between gap-4 bg-muted/20">
               <Button
                 variant="outline"
-                onClick={() => {
-                  const newIdx = Math.max(0, index - 1);
-                  setIndex(newIdx);
-                  onPrevious?.(newIdx);
-                }}
-                disabled={index === 0}
+                size="sm"
+                onClick={onPrevious}
+                disabled={isFirst || navigating || submitting}
+                className="gap-1.5 font-semibold"
+                data-testid="prev-question-button"
               >
-                <ChevronLeft data-icon="inline-start" />
-                Previous
+                <ChevronLeft className="size-4" />
+                <span>Previous</span>
               </Button>
-              <Button
-                onClick={() => {
-                  const newIdx = Math.min(questions.length - 1, index + 1);
-                  setIndex(newIdx);
-                  onNext?.(newIdx);
-                }}
-                disabled={index === questions.length - 1}
-              >
-                Next
-                <ChevronRight data-icon="inline-end" />
-              </Button>
+
+              {/* Progress Summary Center */}
+              <div className="hidden sm:flex items-center gap-3">
+                <div className="w-32 bg-muted rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-primary h-full transition-all duration-300"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground font-medium">
+                  {progressPercent}% answered
+                </span>
+              </div>
+
+              {isLast ? (
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => setSubmitDialogOpen(true)}
+                  disabled={navigating || submitting}
+                  className="gap-1.5 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
+                  data-testid="last-question-review-button"
+                >
+                  <span>Review & Submit</span>
+                  <Send className="size-3.5 fill-current" />
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={onNext}
+                  disabled={navigating || submitting}
+                  className="gap-1.5 font-semibold"
+                  data-testid="next-question-button"
+                >
+                  {navigating ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      <span>Loading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Next</span>
+                      <ChevronRight className="size-4" />
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
-          </CardContent>
-        </Card>
-      </main>
+          </Card>
+        </main>
+      </div>
+
+      {/* Submit Confirmation Dialog */}
+      <AlertDialog open={submitDialogOpen} onOpenChange={setSubmitDialogOpen}>
+        <AlertDialogContent className="max-w-md bg-background p-6">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-bold flex items-center gap-2">
+              <HelpCircle className="size-5 text-primary" />
+              Submit Exam Confirmation
+            </AlertDialogTitle>
+            <AlertDialogDescription className="pt-2 text-sm text-muted-foreground">
+              You have answered <strong className="text-foreground">{answeredCount}</strong> of{" "}
+              <strong className="text-foreground">{totalQuestions}</strong> questions.
+            </AlertDialogDescription>
+            {unansweredCount > 0 && (
+              <div className="mt-2 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2 text-left">
+                <AlertTriangle className="size-4 shrink-0 text-amber-600 mt-0.5" />
+                <span>
+                  Warning: You still have <strong data-testid="unanswered-count">{unansweredCount}</strong> unanswered question(s). You cannot return after submission.
+                </span>
+              </div>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground border-t pt-2 text-left">
+              Submissions are final. Your active timer will stop, and responses will be locked.
+            </p>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter className="mt-4 flex flex-col-reverse sm:flex-row gap-2">
+            <AlertDialogCancel disabled={submitting}>Keep Working</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault();
+                await onSubmit();
+              }}
+              disabled={submitting}
+              className="gap-2 bg-primary font-semibold"
+              data-testid="confirm-submit-dialog-button"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>Submitting...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="size-3.5 fill-current" />
+                  <span>Confirm & Submit</span>
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
 function ToggleRow({
   label,
   icon: Icon,
@@ -285,13 +595,14 @@ function ToggleRow({
   onCheckedChange: (value: boolean) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 text-sm">
-      <span className="flex items-center gap-2">
-        <Icon aria-hidden="true" />
+    <label className="flex items-center justify-between gap-3 text-xs font-medium cursor-pointer">
+      <span className="flex items-center gap-2 text-muted-foreground">
+        <Icon className="size-4 shrink-0" aria-hidden="true" />
         {label}
       </span>
       <Switch checked={checked} onCheckedChange={onCheckedChange} aria-label={label} />
     </label>
   );
 }
+
 export default StudentExamRoom;

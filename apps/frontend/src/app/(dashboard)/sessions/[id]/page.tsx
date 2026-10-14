@@ -1,154 +1,339 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useRef, useState, use, useCallback } from "react";
 import Link from "next/link";
-import { CheckCircle2, Home, Loader2 } from "lucide-react";
+import { CheckCircle2, Home, Loader2, AlertTriangle, ShieldAlert, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StudentExamRoom } from "@/components/student-exam-room";
+import { VoiceAssistant } from "@/components/voice/voice-assistant";
+import type { VoiceSessionState } from "@/services/voice/protocol";
 import { ProtectedRoute } from "@/components/auth/protected-route";
-import { sessionsApi, questionsApi } from "@/services/api";
-import type { Question } from "@/types/exam-types";
+import { sessionsApi, examsApi, ApiError } from "@/services/api";
+import type { Session, StudentQuestionResponse, SessionStatus } from "@/types/exam-types";
 
-export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
+export default function ActiveSessionRoomPage({
+  params,
+}: {
+  params: Promise<{ id: string }> | { id: string };
+}) {
+  const resolvedParams = "then" in params ? use(params) : params;
   const sessionId = resolvedParams.id;
 
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [initialSeconds, setInitialSeconds] = useState(45 * 60);
-  const [initialAnswers, setInitialAnswers] = useState<Record<string, string>>({});
+  const [session, setSession] = useState<Session | null>(null);
+  const [currentQuestion, setCurrentQuestion] = useState<StudentQuestionResponse | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
-  const [submitted, setSubmitted] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [navigating, setNavigating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [initialSeconds, setInitialSeconds] = useState(45 * 60);
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>("IN_PROGRESS");
   const [submittedAt, setSubmittedAt] = useState<string | null>(null);
 
-  useEffect(() => {
-    let ignore = false;
+  const [examTitle, setExamTitle] = useState("Candidate Assessment");
+  const [subject, setSubject] = useState("Subject");
 
-    async function loadSession() {
-      setLoading(true);
-      try {
-        const session = await sessionsApi.getSession(sessionId);
-        if (ignore) return;
+  // Load Session and Hydrate State from Authoritative Backend
+  const loadSession = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
 
-        if (session.remainingSeconds && session.remainingSeconds > 0) {
-          setInitialSeconds(Number(session.remainingSeconds));
-        } else if (session.durationMins) {
-          setInitialSeconds(session.durationMins * 60);
-        }
+    try {
+      const sess = await sessionsApi.getSession(sessionId);
+      setSession(sess);
+      setSessionStatus(sess.status);
 
-        if (session.status === "SUBMITTED") {
-          setSubmitted(true);
-          setSubmittedAt(session.submittedAt ? session.submittedAt.slice(11, 19) : "Completed");
-          setLoading(false);
-          return;
-        }
+      // Handle Terminal Submitted State
+      if (sess.status === "SUBMITTED") {
+        setSubmittedAt(sess.submittedAt ? sess.submittedAt.slice(11, 19) : "Completed");
+        setLoading(false);
+        return;
+      }
 
-        if (session.examId) {
-          const qList = await questionsApi.getQuestions(session.examId);
-          if (!ignore && qList && qList.length > 0) {
-            setQuestions(qList);
+      // Handle Terminal Expired State
+      if (sess.status === "EXPIRED") {
+        setLoading(false);
+        return;
+      }
+
+      // Sync Countdown Timer
+      if (sess.remainingSeconds !== undefined && sess.remainingSeconds !== null) {
+        setInitialSeconds(Math.max(0, sess.remainingSeconds));
+      } else if (sess.durationMins) {
+        setInitialSeconds(sess.durationMins * 60);
+      }
+
+      // Fetch Exam Info if available
+      if (sess.examId) {
+        examsApi.getExam(sess.examId).then((ex) => {
+          if (ex) {
+            setExamTitle(ex.title);
+            setSubject(ex.subject);
           }
-        }
+        }).catch(() => {});
+      }
 
-        // Restore previously submitted answers if candidate is reconnecting
-        const existingAnswers = await sessionsApi.getAnswers(sessionId).catch(() => []);
-        if (!ignore && existingAnswers && existingAnswers.length > 0) {
+      // Fetch Saved Answers
+      try {
+        const savedList = await sessionsApi.getAnswers(sessionId);
+        if (savedList && savedList.length > 0) {
           const ansMap: Record<string, string> = {};
-          for (const a of existingAnswers) {
+          for (const a of savedList) {
             ansMap[a.questionId] = a.selectedOptionId || a.textAnswer || "";
           }
-          setInitialAnswers(ansMap);
+          setAnswers(ansMap);
         }
-      } catch (err) {
-        if (!ignore) {
-          console.warn("Session API offline, using interactive accessible offline mock:", err);
-        }
-      } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
+      } catch {
+        // Non-fatal if no answers saved yet
       }
+
+      // Fetch Current Question
+      try {
+        const qResp = await sessionsApi.getCurrentQuestion(sessionId);
+        setCurrentQuestion(qResp);
+      } catch (err: unknown) {
+        console.warn("Could not fetch current question from endpoint:", err);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to load examination session";
+      setLoadError(msg);
+    } finally {
+      setLoading(false);
     }
-
-    loadSession();
-
-    return () => {
-      ignore = true;
-    };
   }, [sessionId]);
 
-  const handleNext = () => {
-    sessionsApi.nextQuestion(sessionId).catch(() => {});
-  };
+  useEffect(() => {
+    loadSession();
+  }, [loadSession]);
 
-  const handlePrevious = () => {
-    sessionsApi.previousQuestion(sessionId).catch(() => {});
-  };
+  // Save selected option
+  const handleSelectOption = async (optionId: string) => {
+    if (!currentQuestion) return;
+    const qId = currentQuestion.id;
 
-  const handleAnswerChange = (questionId: string, answer: string) => {
-    const isUUID = /^[0-9a-fA-F-]{36}$/.test(answer);
-    sessionsApi
-      .submitAnswer(sessionId, questionId, {
-        selectedOptionId: isUUID ? answer : undefined,
-        textAnswer: isUUID ? "" : answer,
-      })
-      .catch(() => {});
-  };
+    // Optimistic UI update
+    setAnswers((prev) => ({ ...prev, [qId]: optionId }));
+    setSaveStatus("saving");
+    setSaveError(null);
 
-  const handleSubmitExam = async (answers: Record<string, string>) => {
     try {
-      // Final submission flush of each answer to backend
-      for (const [qId, val] of Object.entries(answers)) {
-        const isUUID = /^[0-9a-fA-F-]{36}$/.test(val);
-        await sessionsApi
-          .submitAnswer(sessionId, qId, {
-            selectedOptionId: isUUID ? val : undefined,
-            textAnswer: isUUID ? "" : val,
-          })
-          .catch(() => {});
-      }
+      await sessionsApi.submitAnswer(sessionId, qId, {
+        selectedOptionId: optionId,
+        textAnswer: "",
+      });
+      setSaveStatus("saved");
+    } catch (err: unknown) {
+      setSaveStatus("failed");
+      const msg = err instanceof Error ? err.message : "Failed to save answer";
+      setSaveError(msg);
+    }
+  };
 
+  // Retry saving current answer
+  const handleRetrySave = () => {
+    if (!currentQuestion) return;
+    const val = answers[currentQuestion.id];
+    if (val) {
+      handleSelectOption(val);
+    }
+  };
+
+  // Navigate to Next Question
+  const handleNext = async () => {
+    if (navigating || submitting) return;
+    setNavigating(true);
+
+    try {
+      await sessionsApi.nextQuestion(sessionId);
+      const nextQ = await sessionsApi.getCurrentQuestion(sessionId);
+      setCurrentQuestion(nextQ);
+      setSaveStatus("idle");
+      setSaveError(null);
+    } catch (err: unknown) {
+      console.error("Failed to advance question:", err);
+    } finally {
+      setNavigating(false);
+    }
+  };
+
+  // Navigate to Previous Question
+  const handlePrevious = async () => {
+    if (navigating || submitting) return;
+    setNavigating(true);
+
+    try {
+      await sessionsApi.previousQuestion(sessionId);
+      const prevQ = await sessionsApi.getCurrentQuestion(sessionId);
+      setCurrentQuestion(prevQ);
+      setSaveStatus("idle");
+      setSaveError(null);
+    } catch (err: unknown) {
+      console.error("Failed to go to previous question:", err);
+    } finally {
+      setNavigating(false);
+    }
+  };
+
+  // Handle Final Exam Submission
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+
+    try {
       const res = await sessionsApi.submitSession(sessionId);
-      setSubmitted(true);
+      setSessionStatus("SUBMITTED");
       setSubmittedAt(
         res.submittedAt ? res.submittedAt.slice(11, 19) : new Date().toISOString().slice(11, 19)
       );
-    } catch {
-      // Local completion fallback
-      setSubmitted(true);
-      setSubmittedAt(new Date().toISOString().slice(11, 19));
+    } catch (err: unknown) {
+      // If error indicates already submitted (Conflict 409), refresh authoritative state
+      if (err instanceof ApiError && (err.isConflict() || err.status === 409)) {
+        try {
+          const sess = await sessionsApi.getSession(sessionId);
+          if (sess.status === "SUBMITTED") {
+            setSessionStatus("SUBMITTED");
+            setSubmittedAt(sess.submittedAt ? sess.submittedAt.slice(11, 19) : "Completed");
+            return;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      console.error("Submission failed:", err);
+      alert("Submission encountered a network issue. Please check your connection and retry.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  // Handle Session Expiration
+  const handleExpire = async () => {
+    try {
+      const sess = await sessionsApi.getSession(sessionId);
+      if (sess.status === "EXPIRED" || sess.status === "SUBMITTED") {
+        setSessionStatus(sess.status);
+      } else {
+        setSessionStatus("EXPIRED");
+      }
+    } catch {
+      setSessionStatus("EXPIRED");
+    }
+  };
+
+  // The question on screen, readable from callbacks without re-creating them.
+  const shownQuestionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    shownQuestionIdRef.current = currentQuestion?.id ?? null;
+  }, [currentQuestion]);
+
+  // Voice assistant: the backend reported the session's position (on connect,
+  // on reconnect, and after voice navigation). It is authoritative.
+  const handleVoiceSessionState = useCallback((state: VoiceSessionState) => {
+    if (state.remainingSeconds !== undefined) {
+      setInitialSeconds(Math.max(0, state.remainingSeconds));
+    }
+    const question = state.question;
+    if (question) {
+      if (shownQuestionIdRef.current !== question.id) {
+        setSaveStatus("idle");
+        setSaveError(null);
+      }
+      setCurrentQuestion(question);
+    }
+  }, []);
+
+  // Voice assistant: the backend confirmed an answer was persisted. The
+  // selection shown on screen is re-read from the HTTP API rather than assumed.
+  const handleVoiceAnswerSaved = useCallback(
+    async (questionId: string) => {
+      try {
+        const saved = await sessionsApi.getQuestionAnswer(sessionId, questionId);
+        setAnswers((prev) => ({
+          ...prev,
+          [questionId]: saved.selectedOptionId || saved.textAnswer || "",
+        }));
+        setSaveStatus("saved");
+        setSaveError(null);
+      } catch {
+        // The answer is saved on the server; only the on-screen copy is stale.
+      }
+    },
+    [sessionId]
+  );
+
+  // Loading State
   if (loading) {
     return (
       <ProtectedRoute allowedRoles={["STUDENT", "ADMIN", "PROCTOR"]}>
-        <div className="flex min-h-screen items-center justify-center">
-          <Loader2 className="size-8 animate-spin text-primary" />
+        <div className="flex min-h-screen items-center justify-center p-4 bg-background">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="size-8 animate-spin text-primary" />
+            <p className="text-sm font-medium text-muted-foreground">Connecting to active assessment room...</p>
+          </div>
         </div>
       </ProtectedRoute>
     );
   }
 
-  if (submitted) {
+  // Load Error State
+  if (loadError) {
     return (
       <ProtectedRoute allowedRoles={["STUDENT", "ADMIN", "PROCTOR"]}>
         <div className="flex min-h-screen items-center justify-center p-4 bg-background">
-          <Card className="w-full max-w-md text-center p-6 shadow-lg border border-border">
+          <Card className="w-full max-w-md p-6 border-destructive/20 text-center">
+            <CardHeader className="flex flex-col items-center">
+              <ShieldAlert className="size-12 text-destructive mb-2" />
+              <CardTitle className="text-xl font-bold">Failed to Load Session</CardTitle>
+              <CardDescription className="text-sm text-muted-foreground mt-2">
+                {loadError}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="mt-4 flex flex-col gap-2">
+              <Button onClick={loadSession} className="w-full gap-2 font-semibold">
+                <RotateCcw className="size-4" />
+                Retry Reconnection
+              </Button>
+              <Link href="/my-exams" className="w-full">
+                <Button variant="outline" className="w-full font-semibold">
+                  Return to My Assessments
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
+  // Terminal State: SUBMITTED
+  if (sessionStatus === "SUBMITTED") {
+    return (
+      <ProtectedRoute allowedRoles={["STUDENT", "ADMIN", "PROCTOR"]}>
+        <div className="flex min-h-screen items-center justify-center p-4 bg-background">
+          <Card className="w-full max-w-md text-center p-6 shadow-md border" data-testid="exam-submitted-card">
             <CardHeader className="flex flex-col items-center">
               <div className="size-16 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center mb-4">
                 <CheckCircle2 className="size-10 text-emerald-600 dark:text-emerald-400" />
               </div>
               <CardTitle className="text-2xl font-bold">Exam Submitted Successfully</CardTitle>
-              <CardDescription className="mt-2 text-muted-foreground" suppressHydrationWarning>
-                Your responses have been recorded and encrypted. Submitted at{" "}
-                {submittedAt || "just now"}.
+              <CardDescription className="mt-2 text-sm text-muted-foreground" suppressHydrationWarning>
+                Your answers have been permanently recorded. Submitted at{" "}
+                <strong className="text-foreground">{submittedAt || "just now"}</strong>.
               </CardDescription>
             </CardHeader>
             <CardContent className="mt-6 flex flex-col gap-3">
-              <Link href="/sessions" className="w-full">
-                <Button className="w-full font-semibold">
-                  <Home className="size-4 mr-2" />
+              <div className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+                Total questions answered: <strong>{Object.keys(answers).length}</strong>
+              </div>
+              <Link href="/my-exams" className="w-full">
+                <Button className="w-full font-semibold gap-2">
+                  <Home className="size-4" />
                   Return to Candidate Dashboard
                 </Button>
               </Link>
@@ -159,16 +344,65 @@ export default function ActiveSessionRoomPage({ params }: { params: Promise<{ id
     );
   }
 
+  // Terminal State: EXPIRED
+  if (sessionStatus === "EXPIRED") {
+    return (
+      <ProtectedRoute allowedRoles={["STUDENT", "ADMIN", "PROCTOR"]}>
+        <div className="flex min-h-screen items-center justify-center p-4 bg-background">
+          <Card className="w-full max-w-md text-center p-6 shadow-md border border-destructive/30" data-testid="exam-expired-card">
+            <CardHeader className="flex flex-col items-center">
+              <div className="size-16 rounded-full bg-amber-100 dark:bg-amber-950 flex items-center justify-center mb-4">
+                <AlertTriangle className="size-10 text-amber-600 dark:text-amber-400" />
+              </div>
+              <CardTitle className="text-2xl font-bold">Exam Time Expired</CardTitle>
+              <CardDescription className="mt-2 text-sm text-muted-foreground">
+                The allotted time for this examination has ended. All confirmed answers have been sealed.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="mt-6 flex flex-col gap-3">
+              <Link href="/my-exams" className="w-full">
+                <Button className="w-full font-semibold gap-2">
+                  <Home className="size-4" />
+                  Return to Candidate Dashboard
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
+  // Active State: IN_PROGRESS
   return (
     <ProtectedRoute allowedRoles={["STUDENT", "ADMIN", "PROCTOR"]}>
       <StudentExamRoom
-        questions={questions}
+        currentQuestion={currentQuestion}
+        totalQuestions={currentQuestion?.totalQuestions || 1}
         initialSeconds={initialSeconds}
-        initialAnswers={initialAnswers}
-        onSubmit={handleSubmitExam}
-        onAnswerChange={handleAnswerChange}
+        answers={answers}
+        saveStatus={saveStatus}
+        saveError={saveError}
+        onSelectOption={handleSelectOption}
+        onRetrySave={handleRetrySave}
         onNext={handleNext}
         onPrevious={handlePrevious}
+        onSubmit={handleSubmit}
+        navigating={navigating}
+        submitting={submitting}
+        examTitle={examTitle}
+        subject={subject}
+        onExpire={handleExpire}
+        voiceSlot={
+          <VoiceAssistant
+            sessionId={sessionId}
+            questionId={currentQuestion?.id ?? null}
+            disabled={navigating || submitting}
+            onSessionState={handleVoiceSessionState}
+            onAnswerSaved={handleVoiceAnswerSaved}
+            onSessionEnded={loadSession}
+          />
+        }
       />
     </ProtectedRoute>
   );

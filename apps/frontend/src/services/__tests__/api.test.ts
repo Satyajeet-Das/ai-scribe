@@ -333,6 +333,49 @@ describe("API Client & Token Management", () => {
       expect(answers).toHaveLength(2);
       expect(mockFetch.mock.calls[0][0]).toContain("/sessions/sess-1/answers");
     });
+
+    it("calls GET /sessions/:id/current-question for current question details", async () => {
+      const mockQ = {
+        id: "q-10",
+        examId: "exam-1",
+        questionNumber: 2,
+        text: "What is mitosis?",
+        type: "MCQ",
+        points: 5,
+        isFirst: false,
+        isLast: false,
+        totalQuestions: 10,
+        currentIndex: 2,
+        options: [{ id: "opt-1", optionKey: "A", optionText: "Cell division", displayOrder: 1 }],
+      };
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => mockQ,
+      });
+      globalThis.fetch = mockFetch;
+
+      const q = await sessionsApi.getCurrentQuestion("sess-1");
+      expect(q.id).toBe("q-10");
+      expect(q.options?.[0].optionText).toBe("Cell division");
+      expect(mockFetch.mock.calls[0][0]).toContain("/sessions/sess-1/current-question");
+    });
+
+    it("calls GET /sessions/:session_id/questions/:question_id/answer for individual saved answer", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ id: "ans-1", questionId: "q-10", selectedOptionId: "opt-1" }),
+      });
+      globalThis.fetch = mockFetch;
+
+      const ans = await sessionsApi.getQuestionAnswer("sess-1", "q-10");
+      expect(ans.id).toBe("ans-1");
+      expect(ans.selectedOptionId).toBe("opt-1");
+      expect(mockFetch.mock.calls[0][0]).toContain("/sessions/sess-1/questions/q-10/answer");
+    });
   });
 
   describe("studentsApi", () => {

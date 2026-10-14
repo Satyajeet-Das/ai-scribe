@@ -15,11 +15,16 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/my-exams",
 }));
 
-// Mock assignments API
+// Mock API
 vi.mock("@/services/api", () => ({
   assignmentsApi: {
     getMyAssignedExams: vi.fn(),
     getStudentAssignments: vi.fn(),
+  },
+  sessionsApi: {
+    getSessions: vi.fn().mockResolvedValue({ sessions: [], total: 0 }),
+    startSession: vi.fn(),
+    getSession: vi.fn(),
   },
   registerAuthFailureHandler: vi.fn(),
 }));
