@@ -82,3 +82,105 @@ func TestObservabilityConfig_Environment(t *testing.T) {
 	cfg.Environment = "production"
 	assert.True(t, cfg.IsProduction())
 }
+
+func TestDefaultVoiceConfig(t *testing.T) {
+	cfg := DefaultVoiceConfig()
+
+	assert.True(t, cfg.Enabled)
+	assert.Equal(t, VoiceProviderDisabled, cfg.STT.Provider, "no external provider is used without credentials")
+	assert.Equal(t, VoiceProviderDisabled, cfg.TTS.Provider)
+	assert.Equal(t, VoiceProviderRules, cfg.Intent.Provider)
+	assert.Equal(t, "v1", cfg.Intent.PromptVersion)
+	assert.Greater(t, cfg.MaxMessageBytes, int64(cfg.Audio.MaxChunkBytes))
+	assert.Less(t, cfg.PongTimeout, cfg.PingInterval)
+	assert.NoError(t, cfg.Validate())
+}
+
+func TestVoiceConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		modify  func(c *VoiceConfig)
+		wantErr bool
+	}{
+		{"defaults", func(c *VoiceConfig) {}, false},
+		{"deepgram stt without key", func(c *VoiceConfig) { c.STT.Provider = "deepgram" }, true},
+		{"deepgram stt with key", func(c *VoiceConfig) { c.STT.Provider = "Deepgram"; c.STT.APIKey = "k" }, false},
+		{"deepgram tts without key", func(c *VoiceConfig) { c.TTS.Provider = "deepgram" }, true},
+		{"anthropic intent without key", func(c *VoiceConfig) { c.Intent.Provider = "anthropic" }, true},
+		{"anthropic intent with key", func(c *VoiceConfig) { c.Intent.Provider = "anthropic"; c.Intent.APIKey = "k" }, false},
+		{"unknown stt provider", func(c *VoiceConfig) { c.STT.Provider = "whisper" }, true},
+		{"unknown tts provider", func(c *VoiceConfig) { c.TTS.Provider = "espeak" }, true},
+		{"unknown intent provider", func(c *VoiceConfig) { c.Intent.Provider = "gpt" }, true},
+		{"confidence out of range", func(c *VoiceConfig) { c.Intent.MinConfidence = 1.5 }, true},
+		{"chunk larger than message limit", func(c *VoiceConfig) { c.Audio.MaxChunkBytes = int(c.MaxMessageBytes) }, true},
+		{"stream limit below chunk limit", func(c *VoiceConfig) { c.Audio.MaxStreamBytes = 10 }, true},
+		{"pong timeout not below ping interval", func(c *VoiceConfig) { c.PongTimeout = c.PingInterval }, true},
+		{"disabled voice skips validation", func(c *VoiceConfig) { c.Enabled = false; c.STT.Provider = "deepgram" }, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultVoiceConfig()
+			tt.modify(&cfg)
+			cfg.ApplyDefaults()
+			err := cfg.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_VoiceFromEnvironment(t *testing.T) {
+	for k, v := range map[string]string{
+		"SCRIBE_PRIMARY.ENV":                 "test",
+		"SCRIBE_SERVER.PORT":                 "8080",
+		"SCRIBE_SERVER.READ_TIMEOUT":         "30",
+		"SCRIBE_SERVER.WRITE_TIMEOUT":        "30",
+		"SCRIBE_SERVER.IDLE_TIMEOUT":         "60",
+		"SCRIBE_SERVER.CORS_ALLOWED_ORIGINS": "http://localhost:3000",
+		"SCRIBE_DATABASE.HOST":               "localhost",
+		"SCRIBE_DATABASE.PORT":               "5432",
+		"SCRIBE_DATABASE.USER":               "postgres",
+		"SCRIBE_DATABASE.NAME":               "ai_scribe",
+		"SCRIBE_DATABASE.SSL_MODE":           "disable",
+		"SCRIBE_DATABASE.MAX_OPEN_CONNS":     "5",
+		"SCRIBE_DATABASE.MAX_IDLE_CONNS":     "5",
+		"SCRIBE_DATABASE.CONN_MAX_LIFETIME":  "300",
+		"SCRIBE_DATABASE.CONN_MAX_IDLE_TIME": "300",
+		"SCRIBE_REDIS.ADDRESS":               "localhost:6379",
+		"SCRIBE_AUTH.SECRET_KEY":             "secret",
+		"SCRIBE_VOICE.STT.PROVIDER":          "deepgram",
+		"SCRIBE_VOICE.STT.API_KEY":           "dg-key",
+		"SCRIBE_VOICE.STT.FINAL_TIMEOUT":     "3s",
+		"SCRIBE_VOICE.INTENT.MIN_CONFIDENCE": "0.9",
+		"SCRIBE_VOICE.MAX_CONNECTIONS":       "42",
+		"SCRIBE_VOICE.ALLOWED_ORIGINS":       "https://exam.example.com,https://admin.example.com",
+	} {
+		t.Setenv(k, v)
+	}
+
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Voice.Enabled, "voice is on unless SCRIBE_VOICE.ENABLED says otherwise")
+	assert.Equal(t, "deepgram", cfg.Voice.STT.Provider)
+	assert.Equal(t, "dg-key", cfg.Voice.STT.APIKey)
+	assert.Equal(t, 3*time.Second, cfg.Voice.STT.FinalTimeout)
+	assert.Equal(t, 0.9, cfg.Voice.Intent.MinConfidence)
+	assert.Equal(t, 42, cfg.Voice.MaxConnections)
+	assert.Equal(t, VoiceProviderDisabled, cfg.Voice.TTS.Provider)
+	assert.NotEmpty(t, cfg.Voice.AllowedOrigins)
+
+	t.Setenv("SCRIBE_VOICE.ENABLED", "false")
+	cfg, err = LoadConfig()
+	require.NoError(t, err)
+	assert.False(t, cfg.Voice.Enabled)
+
+	t.Setenv("SCRIBE_VOICE.ENABLED", "true")
+	t.Setenv("SCRIBE_VOICE.STT.API_KEY", "")
+	_, err = LoadConfig()
+	assert.Error(t, err, "a provider without credentials fails at startup, not at the first student")
+}

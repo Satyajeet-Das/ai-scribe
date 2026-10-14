@@ -19,6 +19,7 @@ type Config struct {
 	Auth          AuthConfig           `koanf:"auth" validate:"required"`
 	Redis         RedisConfig          `koanf:"redis" validate:"required"`
 	Integration   IntegrationConfig    `koanf:"integration"`
+	Voice         VoiceConfig          `koanf:"voice"`
 	Observability *ObservabilityConfig `koanf:"observability"`
 }
 
@@ -93,6 +94,16 @@ func LoadConfig() (*Config, error) {
 	if err := validate.Struct(mainConfig); err != nil {
 		logger.Error().Err(err).Msg("config validation failed")
 		return nil, fmt.Errorf("validating config: %w", err)
+	}
+
+	// The voice pipeline is on unless explicitly disabled.
+	if !k.Exists("voice.enabled") {
+		mainConfig.Voice.Enabled = true
+	}
+	mainConfig.Voice.ApplyDefaults()
+	if err := mainConfig.Voice.Validate(); err != nil {
+		logger.Error().Err(err).Msg("invalid voice config")
+		return nil, fmt.Errorf("validating voice config: %w", err)
 	}
 
 	if mainConfig.Observability == nil {

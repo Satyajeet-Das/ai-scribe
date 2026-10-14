@@ -29,6 +29,7 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/question"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
 	"github.com/Satyajeet-Das/ai-scribe/internal/user"
+	"github.com/Satyajeet-Das/ai-scribe/internal/voice"
 )
 
 const DefaultShutdownTimeout = 30 * time.Second
@@ -127,6 +128,35 @@ func main() {
 	answerService := answer.NewService(answerRepo, sessionService, questionService, &log)
 	answerHandler := answer.NewHandler(answerService)
 
+	// Voice pipeline: WebSocket transport, STT, intent classification, TTS.
+	// It reaches exam state only through the session and answer services.
+	voiceProviders, err := voice.BuildProviders(cfg.Voice)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize voice providers")
+	}
+	voiceOrigins := cfg.Voice.AllowedOrigins
+	if len(voiceOrigins) == 0 {
+		voiceOrigins = cfg.Server.CORSAllowedOrigins
+	}
+	voiceService := voice.NewService(voice.Deps{
+		Config:         cfg.Voice,
+		AllowedOrigins: voiceOrigins,
+		Auth:           authProvider,
+		Sessions:       sessionService,
+		Answers:        answerService,
+		STT:            voiceProviders.STT,
+		TTS:            voiceProviders.TTS,
+		Classifier:     voiceProviders.Classifier,
+		Metrics:        voice.NewMetrics(loggerService.GetApplication()),
+		Logger:         &log,
+	})
+	log.Info().
+		Bool("enabled", cfg.Voice.Enabled).
+		Str("stt", voiceProviders.STT.Name()).
+		Str("tts", voiceProviders.TTS.Name()).
+		Str("intent", voiceProviders.Classifier.Name()).
+		Msg("voice pipeline configured")
+
 	// -------------------------------------------------------------------------
 	// HTTP Platform Routing & Transport
 	// -------------------------------------------------------------------------
@@ -153,6 +183,7 @@ func main() {
 	assignmentHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	sessionHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	answerHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
+	voiceService.RegisterRoutes(v1)
 
 	// In development, auto-sync OpenAPI spec and watch for Go source changes
 	if cfg.Primary.Env != "production" {
@@ -191,6 +222,14 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), DefaultShutdownTimeout)
 	defer cancel()
+
+	// http.Server.Shutdown does not touch hijacked connections, so WebSockets
+	// are closed first, each with a close frame and a bounded wait.
+	voiceCtx, voiceCancel := context.WithTimeout(shutdownCtx, cfg.Voice.ShutdownGrace)
+	if err := voiceService.Shutdown(voiceCtx); err != nil {
+		log.Warn().Err(err).Msg("voice connections did not all close gracefully")
+	}
+	voiceCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatal().Err(err).Msg("server forced to shutdown")
