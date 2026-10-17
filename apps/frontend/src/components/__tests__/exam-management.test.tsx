@@ -97,6 +97,109 @@ describe("Exam Management Dashboard & Lifecycles", () => {
     });
   });
 
+  describe("opening the questions view from the card", () => {
+    it("opens the questions of the exam whose card title is clicked", () => {
+      const onOpenQuestions = vi.fn();
+      render(<ExamDashboard exams={mockExams} onOpenQuestions={onOpenQuestions} />);
+
+      fireEvent.click(screen.getByTestId("open-questions-exam-pub-2"));
+
+      expect(onOpenQuestions).toHaveBeenCalledTimes(1);
+      expect(onOpenQuestions).toHaveBeenCalledWith(expect.objectContaining({ id: "exam-pub-2" }));
+    });
+
+    it("works for an exam in every state, including a read-only archived one", () => {
+      const onOpenQuestions = vi.fn();
+      render(<ExamDashboard exams={mockExams} onOpenQuestions={onOpenQuestions} />);
+
+      for (const exam of mockExams) {
+        fireEvent.click(screen.getByTestId(`open-questions-${exam.id}`));
+      }
+      expect(onOpenQuestions.mock.calls.map(([e]) => e.id)).toEqual([
+        "exam-draft-1",
+        "exam-pub-2",
+        "exam-arch-3",
+      ]);
+    });
+
+    it("is a real button, named after the exam and saying what it does", () => {
+      render(<ExamDashboard exams={[mockExams[0]]} onOpenQuestions={vi.fn()} />);
+      const button = screen.getByRole("button", { name: "Midterm Biology, open questions" });
+      expect(button).toBe(screen.getByTestId("open-questions-exam-draft-1"));
+      expect(button.tagName).toBe("BUTTON");
+      expect(button).toHaveAttribute("type", "button");
+    });
+
+    it("can be used from the keyboard like any button", async () => {
+      const onOpenQuestions = vi.fn();
+      render(<ExamDashboard exams={[mockExams[0]]} onOpenQuestions={onOpenQuestions} />);
+
+      const button = screen.getByTestId("open-questions-exam-draft-1");
+      button.focus();
+      expect(button).toHaveFocus();
+      fireEvent.click(button); // Enter and Space on a button produce a click
+      expect(onOpenQuestions).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the existing Questions button", () => {
+      const onOpenQuestions = vi.fn();
+      render(<ExamDashboard exams={[mockExams[0]]} onOpenQuestions={onOpenQuestions} />);
+      fireEvent.click(screen.getByRole("button", { name: /^Questions/ }));
+      expect(onOpenQuestions).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["Edit", /Edit/],
+      ["Publish", /Publish/],
+      ["Delete", /Delete assessment/],
+    ])("does not open the questions when %s is used", (_name, label) => {
+      // Edit, Publish and Delete each open a dialog, so each gets a fresh card.
+      const onOpenQuestions = vi.fn();
+      render(<ExamDashboard exams={[mockExams[0]]} onOpenQuestions={onOpenQuestions} />);
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(onOpenQuestions).not.toHaveBeenCalled();
+    });
+
+    it("does not open the questions when Assign is used", () => {
+      const onOpenQuestions = vi.fn();
+      const onOpenAssignments = vi.fn();
+      render(
+        <ExamDashboard
+          exams={[mockExams[0]]}
+          onOpenQuestions={onOpenQuestions}
+          onOpenAssignments={onOpenAssignments}
+        />
+      );
+      fireEvent.click(screen.getByRole("button", { name: /Assign/ }));
+      expect(onOpenAssignments).toHaveBeenCalledTimes(1);
+      expect(onOpenQuestions).not.toHaveBeenCalled();
+    });
+
+    it("lays the click area over the whole card with the actions above it", () => {
+      render(<ExamDashboard exams={[mockExams[0]]} onOpenQuestions={vi.fn()} />);
+      const title = screen.getByTestId("open-questions-exam-draft-1");
+      const card = title.closest('[data-slot="card"]') ?? title.closest(".relative");
+
+      // jsdom does no layout, so pin the mechanism that makes the click area
+      // cover the card and keeps the actions clickable above it.
+      expect(card?.className).toMatch(/\brelative\b/);
+      expect(title.className).toMatch(/after:absolute/);
+      expect(title.className).toMatch(/after:inset-0/);
+      // The card clips what is outside it, so the focus ring has to be inside.
+      expect(title.className).toMatch(/focus-visible:after:ring-inset/);
+      const toolbar = screen.getByRole("button", { name: /Assign/ }).parentElement as HTMLElement;
+      expect(toolbar.className).toMatch(/\bz-10\b/);
+      expect(toolbar.className).toMatch(/pointer-events-none/);
+      expect(toolbar.className).toMatch(/\[&>\*\]:pointer-events-auto/);
+    });
+
+    it("shows a plain title, with nothing to click, when the page gives no way to open questions", () => {
+      render(<ExamDashboard exams={[mockExams[0]]} />);
+      expect(screen.getByText("Midterm Biology")).toBeInTheDocument();
+      expect(screen.queryByTestId("open-questions-exam-draft-1")).toBeNull();
+    });
+  });
+
   describe("Lifecycle actions on dashboard", () => {
     it("shows Edit, Publish, and Delete actions for DRAFT exams", () => {
       render(<ExamDashboard exams={[mockExams[0]]} />);

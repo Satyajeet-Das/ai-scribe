@@ -353,7 +353,11 @@ export function ExamDashboard({
             {paginatedExams.map((exam) => (
               <Card
                 key={exam.id}
-                className="transition-all hover:shadow-md border border-border flex flex-col justify-between"
+                // relative: the title button below stretches over the whole card,
+                // so clicking anywhere on it opens the questions view.
+                className={`relative transition-all hover:shadow-md border border-border flex flex-col justify-between ${
+                  onOpenQuestions ? "hover:border-primary/40" : ""
+                }`}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-3">
@@ -366,7 +370,27 @@ export function ExamDashboard({
                           {exam.durationMins} mins
                         </span>
                       </div>
-                      <CardTitle className="text-xl font-bold">{exam.title}</CardTitle>
+                      <CardTitle className="text-xl font-bold">
+                        {onOpenQuestions ? (
+                          // A real button, so the card is reachable by keyboard and
+                          // screen reader without a clickable div or nested controls.
+                          // The focus ring is drawn inside (ring-inset) because the card
+                          // clips anything outside its edges.
+                          // ::after stretches it over the card for mouse users; the
+                          // action buttons below sit above it and keep working.
+                          <button
+                            type="button"
+                            onClick={() => onOpenQuestions(exam)}
+                            data-testid={`open-questions-${exam.id}`}
+                            className="cursor-pointer rounded-sm text-left outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:ring-[3px] focus-visible:after:ring-inset focus-visible:after:ring-ring/50"
+                          >
+                            {exam.title}
+                            <span className="sr-only">, open questions</span>
+                          </button>
+                        ) : (
+                          exam.title
+                        )}
+                      </CardTitle>
                     </div>
                     <Badge variant="outline" className={statusStyles[exam.status]}>
                       {exam.status}
@@ -403,7 +427,9 @@ export function ExamDashboard({
                   </div>
 
                   {/* Contextual Action Toolbar based on Lifecycle Rules */}
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
+                  {/* Above the card-wide click area. The strip itself lets clicks through to
+                      it, so only the buttons capture clicks and the empty space opens the card. */}
+                  <div className="relative z-10 flex flex-wrap items-center gap-2 pt-2 border-t pointer-events-none [&>*]:pointer-events-auto">
                     {/* Navigation Actions */}
                     <Button variant="outline" size="sm" onClick={() => onOpenQuestions?.(exam)}>
                       Questions
