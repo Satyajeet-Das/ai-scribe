@@ -399,3 +399,54 @@ func (r *pgRepository) GetRecording(ctx context.Context, examID, studentID, reco
 	f.Removed = status != "STORED"
 	return &f, nil
 }
+
+// RowQuerier is the part of a pool or transaction that reading one row needs.
+type RowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// ResolveSession returns the attempt that the review shows for a student: the
+// submitted one if there is one, otherwise the most recent (see sessionLateral).
+// It returns nil, with no error, when the student is assigned but has not
+// started, and ErrStudentNotAssigned when they are not assigned to the exam.
+//
+// Other packages that act on "the student's paper" use this instead of their
+// own query, so they always act on the very attempt a teacher is looking at.
+func ResolveSession(ctx context.Context, db RowQuerier, examID, studentID uuid.UUID) (*SessionInfo, error) {
+	var (
+		sessionID              *uuid.UUID
+		status                 *string
+		startedAt, submittedAt *time.Time
+	)
+	err := db.QueryRow(ctx, `
+		SELECT s.id, s.status, s.started_at, s.submitted_at
+		FROM assignments a`+sessionLateral+`
+		WHERE a.exam_id = $1 AND a.student_id = $2 AND a.status = 'ASSIGNED'`,
+		examID, studentID,
+	).Scan(&sessionID, &status, &startedAt, &submittedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrStudentNotAssigned
+		}
+		return nil, err
+	}
+	if sessionID == nil || status == nil || startedAt == nil {
+		return nil, nil
+	}
+	return &SessionInfo{ID: *sessionID, Status: Status(*status), StartedAt: *startedAt, SubmittedAt: submittedAt}, nil
+}
+
+// LoadPaper reads an exam's questions, in question order, with their options
+// (including which is correct) and the answers the session gave. It is the
+// same query the review uses, so a paper is described identically everywhere.
+// The caller decides who may see the options' correctness.
+func LoadPaper(ctx context.Context, tx pgx.Tx, examID, sessionID uuid.UUID) ([]QuestionRecord, error) {
+	questions, err := loadQuestions(ctx, tx, examID)
+	if err != nil {
+		return nil, err
+	}
+	if err := attachAnswers(ctx, tx, sessionID, questions); err != nil {
+		return nil, err
+	}
+	return questions, nil
+}

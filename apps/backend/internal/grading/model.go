@@ -130,6 +130,9 @@ type Line struct {
 	// Version is the mark's version, 0 when the teacher has saved nothing.
 	Version  int
 	MarkedAt *time.Time
+	// FromSnapshot is true for a line read back from a finalised paper's
+	// snapshot. Such a line knows what was awarded, not what the answer was.
+	FromSnapshot bool
 	// ExceedsMax is true when the teacher's mark is higher than the question's
 	// maximum now (its points were lowered after marking). It does not count
 	// until the teacher saves a valid mark.
