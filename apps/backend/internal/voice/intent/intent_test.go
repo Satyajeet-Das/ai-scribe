@@ -114,6 +114,9 @@ func TestRules(t *testing.T) {
 		{"", mcq, Intent{Name: Unknown}},
 		{"...", mcq, Intent{Name: Unknown}},
 		{"my answer is photosynthesis makes sugar", essay, Intent{Name: DictateAnswer, Confidence: 1}},
+		{"Okay, my answer is photosynthesis", essay, Intent{Name: DictateAnswer, Confidence: 1}},
+		{"Um, so write down plants make sugar", essay, Intent{Name: DictateAnswer, Confidence: 1}},
+		{"my answer is", essay, Intent{Name: Unknown}},
 		{"photosynthesis makes sugar", essay, Intent{Name: Unknown}},
 		{"option B", essay, Intent{Name: Unknown}},
 	}
@@ -363,4 +366,43 @@ func TestNormalize(t *testing.T) {
 	assert.Equal(t, "whats my answer", Normalize("  What's   my ANSWER?! "))
 	assert.Equal(t, "", Normalize("?!..."))
 	assert.True(t, strings.HasPrefix(Normalize("Option-B"), "option b"))
+}
+
+func TestDictationBody(t *testing.T) {
+	cases := []struct {
+		say  string
+		body string
+		ok   bool
+	}{
+		{"my answer is plants make sugar", "plants make sugar", true},
+		{"My answer is: Plants make sugar.", "Plants make sugar.", true}, // the student's own words and punctuation
+		{"The answer is 42", "42", true},
+		{"write down the mitochondria is the powerhouse", "the mitochondria is the powerhouse", true},
+		{"write plants make sugar", "plants make sugar", true},
+		// A filler word or two may come first.
+		{"Okay, my answer is photosynthesis", "photosynthesis", true},
+		{"ok so my answer is photosynthesis", "photosynthesis", true},
+		{"Well... write down photosynthesis", "photosynthesis", true},
+		// But the phrase must still be how the sentence begins.
+		{"okay okay okay my answer is photosynthesis", "", false},
+		{"I think my answer is photosynthesis", "", false},
+		{"photosynthesis is my answer is it", "", false},
+		{"please write down photosynthesis", "", false},
+		// The phrase alone, or followed by nothing, is not an answer.
+		{"my answer is", "", false},
+		{"okay my answer is", "", false},
+		{"my answer is ...", "", false},
+		{"", "", false},
+		{"read the question", "", false},
+		// Command words after the phrase are the student's content.
+		{"my answer is read the question", "read the question", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.say, func(t *testing.T) {
+			body, ok := DictationBody(tc.say)
+			assert.Equal(t, tc.ok, ok)
+			assert.Equal(t, tc.body, body)
+			assert.Equal(t, tc.ok, HasDictationPrefix(tc.say))
+		})
+	}
 }

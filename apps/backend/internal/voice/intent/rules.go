@@ -47,8 +47,63 @@ var optionPrefixes = []string{
 	"select ", "choose ",
 }
 
-// dictationPrefixes mark the rest of the utterance as a free-text answer.
-var dictationPrefixes = []string{"my answer is ", "the answer is ", "write ", "write down "}
+// dictationLeads are the spoken phrases that mark the rest of the utterance as a
+// free-text answer, as lists of words. Longest first.
+var dictationLeads = [][]string{
+	{"my", "answer", "is"},
+	{"the", "answer", "is"},
+	{"write", "down"},
+	{"write"},
+}
+
+// dictationFillers may come before the phrase ("okay, my answer is ..."). At
+// most two are skipped, so the phrase still has to be how the sentence begins.
+var dictationFillers = map[string]bool{
+	"okay": true, "ok": true, "so": true, "well": true, "um": true, "uh": true, "alright": true,
+}
+
+// DictationBody finds an explicit spoken dictation phrase at the start of the
+// transcript ("my answer is ...", "write down ...", optionally after a filler
+// such as "okay") and returns what follows it, in the student's own words.
+//
+// It is the one way speech in command mode may become answer text. Nothing a
+// model says can stand in for it: a model may label an utterance as dictation,
+// but only these words, said by the student, make it one.
+func DictationBody(transcript string) (string, bool) {
+	fields := strings.Fields(transcript)
+	i := 0
+	for i < len(fields) && i < 2 && dictationFillers[Normalize(fields[i])] {
+		i++
+	}
+	for _, lead := range dictationLeads {
+		if i+len(lead) >= len(fields) {
+			continue // the phrase must be followed by something
+		}
+		matched := true
+		for k, word := range lead {
+			if Normalize(fields[i+k]) != word {
+				matched = false
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		body := strings.TrimSpace(strings.Join(fields[i+len(lead):], " "))
+		if Normalize(body) == "" {
+			return "", false
+		}
+		return body, true
+	}
+	return "", false
+}
+
+// HasDictationPrefix reports whether the transcript begins with an explicit
+// spoken dictation phrase followed by content. See DictationBody.
+func HasDictationPrefix(transcript string) bool {
+	_, ok := DictationBody(transcript)
+	return ok
+}
 
 func (Rules) Classify(_ context.Context, in Input) (Intent, error) {
 	text := Normalize(in.Transcript)
@@ -88,10 +143,8 @@ func (Rules) Classify(_ context.Context, in Input) (Intent, error) {
 		return Intent{Name: Unknown}, nil
 	}
 
-	for _, p := range dictationPrefixes {
-		if strings.HasPrefix(text, p) && len(text) > len(p) {
-			return Intent{Name: DictateAnswer, Confidence: 1}, nil
-		}
+	if _, ok := DictationBody(in.Transcript); ok {
+		return Intent{Name: DictateAnswer, Confidence: 1}, nil
 	}
 	return Intent{Name: Unknown}, nil
 }
