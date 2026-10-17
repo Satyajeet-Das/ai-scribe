@@ -177,7 +177,7 @@ ai-scribe/
 ### 1. Prerequisites
 - **Go 1.24+**
 - **Node.js 20+** (for frontend)
-- **Docker & Docker Compose** (for PostgreSQL 16 & Redis 7)
+- **Docker & Docker Compose** (for PostgreSQL 16 & Redis 7, and optionally MinIO for answer-audio storage)
 
 ### 2. Environment Configuration
 Copy `.env.example` to `.env`:
@@ -190,6 +190,22 @@ Start PostgreSQL, Redis, backend, and frontend:
 ```bash
 docker compose up -d
 ```
+
+To run the backend and frontend from source instead, start only the infrastructure
+(PostgreSQL, Redis and MinIO) with the dev compose file:
+```bash
+make docker-dev-up        # docker compose -f docker-compose.dev.yml up -d
+make docker-dev-down      # stop them; named volumes (your data) are kept
+```
+
+MinIO holds the audio of dictated answers and is only used if you turn recording on
+(`SCRIBE_RECORDING.ENABLED=true`, off by default because keeping students' audio is an
+institutional decision). Both compose files start it on `127.0.0.1:9000` (S3 API) and
+`127.0.0.1:9001` (console) with the development login `scribe-dev` / `scribe-dev-secret`. The
+settings to point the backend at it are in `apps/backend/.env.example`, and
+[docs/architecture/answer-audio.md](docs/architecture/answer-audio.md) explains what is kept, who can
+listen, and how retention works. Docker Hub no longer serves new pulls of `minio/minio`: use a copy
+you already have, or set `MINIO_IMAGE` to one from your own registry.
 
 ### 4. Run Locally from Source
 

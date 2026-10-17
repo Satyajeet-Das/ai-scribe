@@ -1,4 +1,4 @@
-.PHONY: help build-backend run-backend migrate-backend test-backend lint-backend fmt-backend dev-frontend build-frontend docker-up docker-down
+.PHONY: help build-backend run-backend migrate-backend test-backend lint-backend fmt-backend dev-frontend build-frontend docker-up docker-down docker-dev-up docker-dev-down
 
 help: ## Display available commands
 	@echo Available commands:
@@ -12,6 +12,8 @@ help: ## Display available commands
 	@echo   build-frontend  - Build Next.js frontend
 	@echo   docker-up       - Start local docker environment
 	@echo   docker-down     - Stop local docker environment
+	@echo   docker-dev-up   - Start only Postgres, Redis and MinIO, to run the app from source
+	@echo   docker-dev-down - Stop those, keeping your data
 
 
 build-backend: ## Build Go server binary
@@ -47,3 +49,9 @@ docker-up: ## Start local docker environment (Postgres, Redis, Backend, Frontend
 
 docker-down: ## Stop local docker environment
 	docker compose down
+
+docker-dev-up: ## Start only the infrastructure (Postgres, Redis, MinIO) to run the app from source
+	docker compose -f docker-compose.dev.yml up -d
+
+docker-dev-down: ## Stop the infrastructure; named volumes (your data) are kept
+	docker compose -f docker-compose.dev.yml down

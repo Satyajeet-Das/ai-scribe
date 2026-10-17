@@ -19,6 +19,33 @@ services:
     volumes:
       - redis_data:/data
 
+  # S3-compatible object storage for retained answer audio. Only needed if you
+  # turn recording on (SCRIBE_RECORDING.ENABLED=true); the backend runs fine
+  # without it. See apps/backend/.env.example for the matching settings.
+  #
+  # MinIO is AGPLv3 and runs here as a separate service. Docker Hub no longer
+  # serves new pulls of minio/minio, so use a copy you already have, or set
+  # MINIO_IMAGE to one from your own registry.
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    container_name: ai-scribe-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-scribe-dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-scribe-dev-secret}
+    ports:
+      # This machine only: the storage is for the backend, not the network.
+      - "127.0.0.1:9000:9000" # S3 API
+      - "127.0.0.1:9001:9001" # web console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
