@@ -11,6 +11,11 @@ vi.mock("@/services/response-review-api", () => ({
   responseReviewApi: {
     listStudents: vi.fn(),
     getStudentResponses: vi.fn(),
+    // Marking stays "loading" unless a test sets it up.
+    getMarking: vi.fn(() => new Promise(() => {})),
+    saveQuestionMarks: vi.fn(),
+    finalise: vi.fn(),
+    reopen: vi.fn(),
     getRecordingAudio: vi.fn(),
   },
 }));

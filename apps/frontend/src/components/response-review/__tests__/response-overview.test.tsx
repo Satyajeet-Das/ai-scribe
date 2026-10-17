@@ -8,7 +8,12 @@ import type { ReviewStudentList } from "@/types/response-review";
 import { deferred, list, row } from "./fixtures";
 
 vi.mock("@/services/response-review-api", () => ({
-  responseReviewApi: { listStudents: vi.fn(), getStudentResponses: vi.fn() },
+  responseReviewApi: { listStudents: vi.fn(), getStudentResponses: vi.fn(),
+    // Marking stays "loading" unless a test sets it up.
+    getMarking: vi.fn(() => new Promise(() => {})),
+    saveQuestionMarks: vi.fn(),
+    finalise: vi.fn(),
+    reopen: vi.fn() },
 }));
 
 const listStudents = vi.mocked(responseReviewApi.listStudents);

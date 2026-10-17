@@ -336,3 +336,5 @@ export function useStudentMarking(examId: string, studentId: string) {
     reopen,
   };
 }
+
+export type StudentMarking = ReturnType<typeof useStudentMarking>;

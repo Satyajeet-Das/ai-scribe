@@ -9,10 +9,17 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AnswerRecordings, SOURCE_LABEL } from "@/components/response-review/answer-recordings";
 import { ErrorPanel } from "@/components/response-review/error-panel";
+import {
+  MarkingPanel,
+  MarksSummary,
+  describeMark,
+} from "@/components/response-review/marking-panel";
 import { ReviewStatusBadge, formatDateTime } from "@/components/response-review/status-badge";
 import { useRemoteResource } from "@/hooks/use-remote-resource";
+import { formatMarks, useStudentMarking, type StudentMarking } from "@/hooks/use-student-marking";
 import { responseReviewApi } from "@/services/response-review-api";
 import { DESIGN_TOKENS } from "@/lib/constants";
+import type { MarkingQuestion } from "@/types/marking";
 import type { ReviewCounts, ReviewQuestion, ReviewStudentResponses } from "@/types/response-review";
 
 export function StudentResponseReview({
@@ -28,6 +35,11 @@ export function StudentResponseReview({
     [examId, studentId]
   );
   const { data, error, loading, refreshing, reload } = useRemoteResource(key, load);
+  const marking = useStudentMarking(examId, studentId);
+  const refresh = () => {
+    reload();
+    marking.reload();
+  };
 
   // The selected question belongs to one student; switching students (or exams)
   // therefore starts again at the first question. Refreshing keeps the place.
@@ -47,7 +59,7 @@ export function StudentResponseReview({
           <ArrowLeft className="size-4" aria-hidden="true" />
           All students
         </Link>
-        <Header data={data} loading={loading} refreshing={refreshing} onRefresh={reload} />
+        <Header data={data} loading={loading} refreshing={refreshing} onRefresh={refresh} />
       </div>
 
       {error ? (
@@ -71,6 +83,18 @@ export function StudentResponseReview({
             </div>
           )}
           {data.counts && <CountsBar counts={data.counts} />}
+          <MarksSummary marking={marking} />
+          {marking.error && !marking.sheet && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 p-4 text-sm"
+            >
+              <span>Marking could not be loaded. {marking.error.message}</span>
+              <Button variant="outline" size="sm" onClick={marking.reload}>
+                Try again
+              </Button>
+            </div>
+          )}
           <QuestionReview
             examId={examId}
             studentId={studentId}
@@ -78,6 +102,7 @@ export function StudentResponseReview({
             selectedId={selectedId}
             onSelect={select}
             stale={loading}
+            marking={marking}
           />
         </>
       )}
@@ -216,6 +241,7 @@ function QuestionReview({
   selectedId,
   onSelect,
   stale,
+  marking,
 }: {
   examId: string;
   studentId: string;
@@ -223,6 +249,7 @@ function QuestionReview({
   selectedId: string | undefined;
   onSelect: (id: string) => void;
   stale: boolean;
+  marking: StudentMarking;
 }) {
   if (questions.length === 0) {
     return (
@@ -237,6 +264,7 @@ function QuestionReview({
   const question = questions[index];
   const prev = questions[index - 1];
   const next = questions[index + 1];
+  const lineOf = (id: string) => marking.sheet?.questions.find((m) => m.questionId === id);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[16rem_1fr] lg:items-start">
@@ -247,13 +275,22 @@ function QuestionReview({
             {questions.map((q) => {
               const current = q.id === question.id;
               const answered = isAnswered(q);
+              const line = lineOf(q.id);
+              const unsaved = line ? marking.isDirty(line) : false;
+              const markNote = !line
+                ? ""
+                : unsaved
+                  ? ", unsaved changes"
+                  : line.effectiveMarks === null
+                    ? ", not marked yet"
+                    : `, marked ${describeMark(line)}`;
               return (
                 <li key={q.id}>
                   <button
                     type="button"
                     onClick={() => onSelect(q.id)}
                     aria-current={current ? "true" : undefined}
-                    aria-label={`Question ${q.questionNumber}, ${answered ? "answered" : "not answered"}`}
+                    aria-label={`Question ${q.questionNumber}, ${answered ? "answered" : "not answered"}${markNote}`}
                     className={[
                       "relative flex h-9 w-full items-center justify-center rounded-md border text-sm font-semibold tabular-nums",
                       "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
@@ -271,6 +308,19 @@ function QuestionReview({
                         aria-hidden="true"
                       />
                     )}
+                    {line && (
+                      <span
+                        aria-hidden="true"
+                        data-testid={`nav-mark-${q.questionNumber}`}
+                        className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded border bg-background px-1 text-[10px] font-medium leading-4 text-foreground tabular-nums"
+                      >
+                        {unsaved
+                          ? "*"
+                          : line.effectiveMarks === null
+                            ? "–"
+                            : formatMarks(line.effectiveMarks)}
+                      </span>
+                    )}
                   </button>
                 </li>
               );
@@ -280,6 +330,9 @@ function QuestionReview({
             <li>Check mark and solid border: answered</li>
             <li>Dashed border: not answered</li>
             <li>Filled: question being viewed</li>
+            {marking.sheet?.markingAllowed && (
+              <li>Small label: marks given, – not marked yet, * unsaved</li>
+            )}
           </ul>
         </Card>
       </nav>
@@ -295,6 +348,8 @@ function QuestionReview({
           total={questions.length}
           examId={examId}
           studentId={studentId}
+          marking={marking}
+          markingLine={lineOf(question.id)}
         />
         <div className="mt-4 flex items-center justify-between gap-3">
           <Button
@@ -335,11 +390,15 @@ function QuestionCard({
   total,
   examId,
   studentId,
+  marking,
+  markingLine,
 }: {
   question: ReviewQuestion;
   total: number;
   examId: string;
   studentId: string;
+  marking: StudentMarking;
+  markingLine: MarkingQuestion | undefined;
 }) {
   const answered = isAnswered(question);
   const saved = formatDateTime(question.answer.savedAt);
@@ -428,6 +487,14 @@ function QuestionCard({
       )}
 
       <AnswerRecordings question={question} examId={examId} studentId={studentId} />
+
+      {markingLine && marking.sheet?.markingAllowed && (
+        <MarkingPanel
+          question={markingLine}
+          marking={marking}
+          final={marking.sheet.paper.status === "FINAL"}
+        />
+      )}
     </Card>
   );
 }
