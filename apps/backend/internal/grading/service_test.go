@@ -33,6 +33,7 @@ type fakeReader struct {
 	audited   []audit.Event
 	auditErr  error
 	upsertErr error
+	events    []GradingEvent
 }
 
 func (f *fakeReader) count(name string) {
@@ -74,8 +75,9 @@ func (f fakeRepo) Write(_ context.Context, fn func(Writer) error) error {
 		savedMarks[k] = v
 	}
 	savedAudit := append([]audit.Event(nil), r.audited...)
+	savedEvents := append([]GradingEvent(nil), r.events...)
 	if err := fn(r); err != nil {
-		r.paper, r.marks, r.audited = savedPaper, savedMarks, savedAudit
+		r.paper, r.marks, r.audited, r.events = savedPaper, savedMarks, savedAudit, savedEvents
 		return err
 	}
 	return nil
@@ -139,6 +141,29 @@ func (f *fakeReader) Audit(_ context.Context, e audit.Event) error {
 		return f.auditErr
 	}
 	f.audited = append(f.audited, e)
+	return nil
+}
+
+func (f *fakeReader) SetFinal(_ context.Context, _, by uuid.UUID, snap Snapshot, total, max int) (int, error) {
+	f.count("SetFinal")
+	now := time.Now()
+	f.paper.Status, f.paper.FinalisedBy, f.paper.FinalisedAt = StatusFinal, &by, &now
+	f.paper.TotalHalf, f.paper.MaxHalf, f.paper.Snapshot = &total, &max, &snap
+	f.paper.Version++
+	return f.paper.Version, nil
+}
+
+func (f *fakeReader) SetDraft(context.Context, uuid.UUID) (int, error) {
+	f.count("SetDraft")
+	f.paper.Status, f.paper.FinalisedBy, f.paper.FinalisedAt = StatusDraft, nil, nil
+	f.paper.TotalHalf, f.paper.MaxHalf, f.paper.Snapshot = nil, nil, nil
+	f.paper.Version++
+	return f.paper.Version, nil
+}
+
+func (f *fakeReader) AddEvent(_ context.Context, e GradingEvent) error {
+	f.count("AddEvent")
+	f.events = append(f.events, e)
 	return nil
 }
 

@@ -97,6 +97,12 @@ type Service interface {
 	// SaveMark records the marks and comment for one answer of a paper that has
 	// ended and is still a draft.
 	SaveMark(ctx context.Context, examID, studentID, questionID uuid.UUID, req SaveMarkRequest, caller Caller, meta AccessMeta) (*SaveMarkResult, error)
+	// Finalise freezes a fully marked paper. Repeating it on a final paper
+	// changes nothing.
+	Finalise(ctx context.Context, examID, studentID uuid.UUID, req FinaliseRequest, caller Caller, meta AccessMeta) (*Marking, error)
+	// Reopen takes a final paper back to a draft, for a stated reason. Repeating
+	// it on a draft changes nothing.
+	Reopen(ctx context.Context, examID, studentID uuid.UUID, req ReopenRequest, caller Caller, meta AccessMeta) (*Marking, error)
 }
 
 type service struct {

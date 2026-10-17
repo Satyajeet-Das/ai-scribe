@@ -84,6 +84,34 @@ type Writer interface {
 	// Audit records an event in this transaction. If it fails, the transaction
 	// must not commit, and the service returns the error.
 	Audit(ctx context.Context, e audit.Event) error
+	// SetFinal marks the locked paper final with its frozen marks, and raises its
+	// version. It returns the new version.
+	SetFinal(ctx context.Context, sessionID, by uuid.UUID, snap Snapshot, totalHalf, maxHalf int) (int, error)
+	// SetDraft takes the locked paper back to a draft, clears what finalising
+	// stored, and raises its version. It returns the new version.
+	SetDraft(ctx context.Context, sessionID uuid.UUID) (int, error)
+	// AddEvent appends to the paper's finalise/reopen history.
+	AddEvent(ctx context.Context, e GradingEvent) error
+}
+
+// Kinds of GradingEvent.
+const (
+	EventFinalised = "FINALISED"
+	EventReopened  = "REOPENED"
+)
+
+// GradingEvent is one finalise or reopen, kept for good.
+type GradingEvent struct {
+	SessionID uuid.UUID
+	ExamID    uuid.UUID
+	Event     string
+	ActorID   uuid.UUID
+	ActorRole string
+	// Reason is required for a reopen.
+	Reason    *string
+	TotalHalf *int
+	MaxHalf   *int
+	Snapshot  *Snapshot
 }
 
 // QuestionPoints is a question's current worth.
@@ -298,6 +326,45 @@ func (w pgWriter) BumpPaper(ctx context.Context, sessionID uuid.UUID) (int, erro
 		UPDATE paper_gradings SET version = version + 1, updated_at = NOW()
 		WHERE session_id = $1 RETURNING version`, sessionID).Scan(&v)
 	return v, err
+}
+
+func (w pgWriter) SetFinal(ctx context.Context, sessionID, by uuid.UUID, snap Snapshot, totalHalf, maxHalf int) (int, error) {
+	raw, err := json.Marshal(snap)
+	if err != nil {
+		return 0, err
+	}
+	var v int
+	err = w.tx.QueryRow(ctx, `
+		UPDATE paper_gradings SET status = 'FINAL', finalised_by = $2, finalised_at = NOW(),
+			total_half = $3, max_half = $4, snapshot = $5, version = version + 1, updated_at = NOW()
+		WHERE session_id = $1 RETURNING version`,
+		sessionID, by, totalHalf, maxHalf, raw).Scan(&v)
+	return v, err
+}
+
+func (w pgWriter) SetDraft(ctx context.Context, sessionID uuid.UUID) (int, error) {
+	var v int
+	err := w.tx.QueryRow(ctx, `
+		UPDATE paper_gradings SET status = 'DRAFT', finalised_by = NULL, finalised_at = NULL,
+			total_half = NULL, max_half = NULL, snapshot = NULL, version = version + 1, updated_at = NOW()
+		WHERE session_id = $1 RETURNING version`, sessionID).Scan(&v)
+	return v, err
+}
+
+func (w pgWriter) AddEvent(ctx context.Context, e GradingEvent) error {
+	var raw []byte
+	if e.Snapshot != nil {
+		b, err := json.Marshal(e.Snapshot)
+		if err != nil {
+			return err
+		}
+		raw = b
+	}
+	_, err := w.tx.Exec(ctx, `
+		INSERT INTO paper_grading_events (session_id, exam_id, event, actor_id, actor_role, reason, total_half, max_half, snapshot)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		e.SessionID, e.ExamID, e.Event, e.ActorID, e.ActorRole, e.Reason, e.TotalHalf, e.MaxHalf, raw)
+	return err
 }
 
 func (w pgWriter) Audit(ctx context.Context, e audit.Event) error {
