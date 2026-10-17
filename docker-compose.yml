@@ -18,10 +18,24 @@ services:
       - SCRIBE_REDIS.ADDRESS=redis:6379
       - SCRIBE_AUTH.SECRET_KEY=sk_test_mock
       - SCRIBE_INTEGRATION.RESEND_API_KEY=mock_key
+      # Answer audio retention. OFF unless you turn it on: keeping audio of
+      # students is an institutional decision. To try it locally:
+      #   SCRIBE_RECORDING_ENABLED=true docker compose up
+      - SCRIBE_RECORDING.ENABLED=${SCRIBE_RECORDING_ENABLED:-false}
+      - SCRIBE_RECORDING.PROVIDER=s3
+      - SCRIBE_RECORDING.S3.ENDPOINT=minio:9000
+      - SCRIBE_RECORDING.S3.BUCKET=${SCRIBE_RECORDING_BUCKET:-answer-audio}
+      - SCRIBE_RECORDING.S3.ACCESS_KEY=${MINIO_ROOT_USER:-scribe-dev}
+      - SCRIBE_RECORDING.S3.SECRET_KEY=${MINIO_ROOT_PASSWORD:-scribe-dev-secret}
+      - SCRIBE_RECORDING.S3.USE_SSL=false
+      # Development only: lets the backend create the bucket on first start.
+      - SCRIBE_RECORDING.S3.CREATE_BUCKET=true
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - scribe-network
@@ -74,6 +88,32 @@ services:
     networks:
       - scribe-network
 
+  # S3-compatible object storage for retained answer audio (development).
+  # The image is MinIO, which is licensed under the AGPLv3; it runs here as a
+  # separate service and is not part of the application.
+  # Docker Hub no longer serves new pulls of minio/minio. Use a copy you already
+  # have, or point MINIO_IMAGE at your own registry.
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    container_name: ai_scribe_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-scribe-dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-scribe-dev-secret}
+    ports:
+      # Bound to this machine only: the storage is for the backend, not the network.
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scribe-network
+
 networks:
   scribe-network:
     driver: bridge
@@ -81,3 +121,4 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
