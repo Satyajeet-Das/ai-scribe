@@ -207,6 +207,10 @@ settings to point the backend at it are in `apps/backend/.env.example`, and
 listen, and how retention works. Docker Hub no longer serves new pulls of `minio/minio`: use a copy
 you already have, or set `MINIO_IMAGE` to one from your own registry.
 
+Teachers mark papers by hand from the response review page (marks in half-steps, feedback, then
+finalise). [docs/architecture/teacher-marking.md](docs/architecture/teacher-marking.md) explains the rules,
+concurrency and audit records.
+
 ### 4. Run Locally from Source
 
 #### Root Commands (via Root Makefile)

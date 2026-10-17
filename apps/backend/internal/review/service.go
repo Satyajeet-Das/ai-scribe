@@ -44,8 +44,9 @@ type Policy struct {
 	// has saved so far in a session that has not ended. They are read-only and
 	// flagged as not final.
 	AllowInProgress bool
-	// ExposeCorrectAnswers includes each option's is-correct flag. There is no
-	// grading workflow yet, so it is off unless explicitly enabled.
+	// ExposeCorrectAnswers includes each option's is-correct flag in this review.
+	// Marking has its own endpoint and gives the teacher the correct option there
+	// (internal/grading), so this stays off unless explicitly enabled.
 	ExposeCorrectAnswers bool
 }
 
