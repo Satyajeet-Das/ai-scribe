@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -16,6 +18,7 @@ import (
 	platformauth "github.com/Satyajeet-Das/ai-scribe/internal/platform/auth"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/speech"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/ws"
+	"github.com/Satyajeet-Das/ai-scribe/internal/recording"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
 	"github.com/Satyajeet-Das/ai-scribe/internal/voice/intent"
 )
@@ -90,7 +93,21 @@ type turn struct {
 	requestID string
 	streamID  uuid.UUID
 	isAudio   bool
-	startedAt time.Time
+	// mode is AudioModeCommand or AudioModeAnswer for audio turns.
+	mode string
+	// record is true when the audio of this turn is kept for retention. pcm and
+	// sampleRate belong to the read goroutine until audio.end, and to the turn
+	// goroutine after it.
+	record     bool
+	pcmMu      sync.Mutex
+	pcm        []byte
+	sampleRate int
+	// saved is the stored recording of this turn, once there is one.
+	saved *recording.Saved
+	// correction is the student's corrected wording sent with a confirm. It is
+	// set before the turn starts and only read by it.
+	correction *string
+	startedAt  time.Time
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
@@ -120,6 +137,24 @@ func (t *turn) streamLabel() string {
 		return ""
 	}
 	return t.streamID.String()
+}
+
+// addPCM keeps a copy of dictated audio. The caller has already checked the
+// stream against MaxStreamBytes, so the buffer cannot grow past that.
+func (t *turn) addPCM(b []byte) {
+	t.pcmMu.Lock()
+	t.pcm = append(t.pcm, b...)
+	t.pcmMu.Unlock()
+}
+
+// takePCM hands over the dictated audio and forgets it, so the memory is
+// released whichever way the turn ends.
+func (t *turn) takePCM() []byte {
+	t.pcmMu.Lock()
+	defer t.pcmMu.Unlock()
+	pcm := t.pcm
+	t.pcm = nil
+	return pcm
 }
 
 func (t *turn) setOutcome(o string) { t.outcome.CompareAndSwap(nil, o) }
@@ -254,7 +289,7 @@ func (c *conversation) endSession(reason string, code ws.StatusCode) {
 
 func (c *conversation) sendReady() {
 	cfg := c.svc.Config
-	caps := Capabilities{STT: c.svc.sttEnabled(), TTS: c.svc.ttsEnabled(), Intent: c.svc.Classifier.Name()}
+	caps := Capabilities{STT: c.svc.sttEnabled(), TTS: c.svc.ttsEnabled(), Recording: c.svc.recordingEnabled(), Intent: c.svc.Classifier.Name()}
 	if caps.TTS {
 		f := c.svc.TTS.Format()
 		caps.TTSOut = &f
@@ -624,6 +659,10 @@ func (c *conversation) handleAudioStart(env *Envelope) {
 		c.sendError(env.ID, CodeInvalidAudioFormat, "audio must be mono pcm_s16le at a supported sample rate", false, p.StreamID)
 		return
 	}
+	if !validAudioMode(p.Mode) {
+		c.sendError(env.ID, CodeInvalidAudioMode, "mode must be \"command\" or \"answer\"", false, p.StreamID)
+		return
+	}
 	if t := c.currentTurn(); t != nil && t.capturing {
 		c.sendError(env.ID, CodeStreamActive, "another audio stream is still open; end or cancel it first", false, p.StreamID)
 		return
@@ -643,6 +682,13 @@ func (c *conversation) handleAudioStart(env *Envelope) {
 	c.interrupt(errBargeIn)
 
 	t := c.startTurn(env.ID, true, streamID)
+	t.mode = p.Mode
+	if t.mode == "" {
+		t.mode = AudioModeCommand
+	}
+	// Only dictated answers are kept. Commands are never retained.
+	t.record = t.mode == AudioModeAnswer && c.svc.recordingEnabled()
+	t.sampleRate = p.SampleRate
 	t.capturing = true
 	t.chunks = make(chan []byte, c.svc.Config.Audio.BufferChunks)
 	t.captureTimer = time.AfterFunc(c.svc.Config.Audio.MaxStreamDuration, func() {
@@ -786,12 +832,33 @@ func (c *conversation) handleCommand(env *Envelope) {
 		c.violation(env.ID, CodeInvalidMessage, "confirmationId is invalid")
 		return
 	}
+	if p.Text != nil {
+		// A correction rides on a confirmation of a specific staged answer, and
+		// is bounded like any other free text.
+		switch {
+		case name != intent.Confirm || p.ConfirmationID == "":
+			c.sendError(env.ID, CodeUnsupportedIntent, "text is only valid when confirming a staged answer", false, "")
+			return
+		case !utf8.ValidString(*p.Text) || strings.ContainsRune(*p.Text, 0):
+			// PostgreSQL cannot store NUL characters or invalid UTF-8; refuse it
+			// here, with a reason, rather than fail later as a "save error".
+			c.sendError(env.ID, CodeInvalidMessage, "the corrected answer contains characters that cannot be saved", false, "")
+			return
+		case strings.TrimSpace(*p.Text) == "":
+			c.sendError(env.ID, CodeInvalidMessage, "an answer cannot be empty", false, "")
+			return
+		case utf8.RuneCountInString(*p.Text) > c.svc.Config.Intent.MaxTranscriptChars:
+			c.sendError(env.ID, CodeInvalidMessage, "the corrected answer is too long", false, "")
+			return
+		}
+	}
 	// The option key is checked against the current question inside the turn.
 	it := intent.Intent{Name: name, OptionKey: p.OptionKey, Confidence: 1}
 
 	c.speechEpoch.Add(1)
 	c.interrupt(errSuperseded)
 	t := c.startTurn(env.ID, false, uuid.Nil)
+	t.correction = p.Text
 	c.wg.Add(1)
 	go c.runCommandTurn(t, it, p.ConfirmationID)
 	c.ack(env.ID)
@@ -843,6 +910,9 @@ func (c *conversation) HandleBinary(_ context.Context, data []byte) {
 	}
 	t.nextSeq++
 	t.bytes.Add(int64(len(f.Audio)))
+	if t.record {
+		t.addPCM(f.Audio)
+	}
 
 	// The buffer between the socket and the recognizer is bounded. When it is
 	// full the read goroutine waits here, which stops reading the socket and
@@ -895,6 +965,7 @@ func (c *conversation) finishTurn(t *turn) {
 	if cancelled {
 		t.setOutcome("cancelled")
 	}
+	t.takePCM() // a turn that ends early (cancelled, failed, no speech) must not keep audio
 	if cancelled && !t.responded.Load() && !t.silent.Load() {
 		// The turn was abandoned before anything was said or done; tell the
 		// client so it never waits on a result that will not come.

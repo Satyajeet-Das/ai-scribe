@@ -6,11 +6,13 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/speech"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/ws"
+	"github.com/Satyajeet-Das/ai-scribe/internal/recording"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
 	"github.com/Satyajeet-Das/ai-scribe/internal/voice/intent"
 )
@@ -32,7 +34,9 @@ func (c *conversation) runAudioTurn(t *turn, format speech.AudioFormat) {
 		c.respond(t, reply{kind: kindClarify, code: CodeNoSpeech, text: msgNoSpeech})
 		return
 	}
-	if len(transcript) > c.svc.Config.Intent.MaxTranscriptChars {
+	// The limit is in characters, not bytes: a byte count would cut speech in
+	// Hindi or Arabic to a third of what the same limit allows in English.
+	if utf8.RuneCountInString(transcript) > c.svc.Config.Intent.MaxTranscriptChars {
 		c.respond(t, reply{kind: kindClarify, code: CodeNotUnderstood, text: msgTooLong})
 		return
 	}
@@ -41,6 +45,24 @@ func (c *conversation) runAudioTurn(t *turn, format speech.AudioFormat) {
 	if !ok {
 		return
 	}
+
+	// Answer mode: the student chose, with a control, to dictate. The words are
+	// content, not a request, so no classifier ever sees them and a phrase such
+	// as "read the question" is just text. act() still stages the transcript for
+	// explicit confirmation; nothing is saved here.
+	if t.mode == AudioModeAnswer {
+		c.keepRecording(t, format, transcript, q)
+		it := intent.Intent{Name: intent.DictateAnswer, Confidence: 1}
+		c.svc.Metrics.Inc(MetricIntents, string(it.Name))
+		c.log.Info().Str("event", "voice.answer_utterance").Str("request_id", t.requestID).
+			Str("stream_id", t.streamLabel()).Int("transcript_chars", len(transcript)).Msg("answer-mode utterance")
+		c.send(TypeIntent, t.requestID, IntentPayload{
+			StreamID: t.streamLabel(), Intent: string(it.Name), Confidence: 1, Classifier: "mode:answer",
+		})
+		c.respond(t, c.act(t, it, transcript, q, ""))
+		return
+	}
+
 	in := c.classifierInput(transcript, q)
 
 	ctx, cancel := context.WithTimeout(t.ctx, c.svc.Config.Intent.Timeout)
@@ -72,6 +94,20 @@ func (c *conversation) runAudioTurn(t *turn, format speech.AudioFormat) {
 		return
 	}
 
+	// In command mode a model may not decide that speech is answer content: only
+	// an explicit dictation phrase can, and the answer is what follows it. This is
+	// not a provider failure, just a request the student can make clearer.
+	if it.Name == intent.DictateAnswer {
+		if body, ok := intent.DictationBody(transcript); ok {
+			transcript = body
+		} else {
+			c.svc.Metrics.Inc(MetricIntents, "dictation_not_explicit")
+			c.log.Info().Str("event", "voice.dictation_not_explicit").Str("request_id", t.requestID).
+				Msg("speech was not an explicit dictation; the student is asked again")
+			it = intent.Intent{Name: intent.Unknown}
+		}
+	}
+
 	c.svc.Metrics.Inc(MetricIntents, string(it.Name))
 	c.log.Info().Str("event", "voice.intent").Str("intent", string(it.Name)).
 		Float64("confidence", it.Confidence).Str("classifier", c.svc.Classifier.Name()).
@@ -83,6 +119,50 @@ func (c *conversation) runAudioTurn(t *turn, format speech.AudioFormat) {
 	})
 
 	c.respond(t, c.act(t, it, transcript, q, ""))
+}
+
+// keepRecording retains the audio of a dictated answer together with its
+// transcript. It never decides anything about the answer: whatever happens
+// here, the transcript is staged for confirmation exactly as it would be
+// without recording, so a storage problem can cost the student the recording
+// but never the answer. The outcome is reported separately.
+func (c *conversation) keepRecording(t *turn, format speech.AudioFormat, transcript string, q *session.StudentQuestionResponse) {
+	// Audio of an utterance that was interrupted, or that cannot become an
+	// answer (a multiple-choice question), is not kept.
+	pcm := t.takePCM() // taken first, so it is released even when nothing is kept
+	if !t.record || len(pcm) == 0 || len(q.Options) > 0 || t.ctx.Err() != nil {
+		return
+	}
+	m := c.svc.Metrics
+	status := RecordingStatusPayload{StreamID: t.streamLabel()}
+
+	start := c.svc.now()
+	saved, err := c.svc.Recorder.Save(t.ctx, recording.SaveInput{
+		SessionID: c.sessionID, QuestionID: q.ID, StudentID: c.userID, StreamID: t.streamID,
+		SampleRate: format.SampleRate, ChunkCount: int(t.nextSeq), PCM: pcm,
+		Transcript: transcript, Provider: c.svc.STT.Name(), Language: c.svc.Config.STT.Language,
+	})
+	m.Observe(MetricProviderLatency, c.svc.now().Sub(start), "recording_save")
+
+	if err != nil {
+		if t.ctx.Err() != nil {
+			return
+		}
+		code := "recording_failed"
+		m.Inc(MetricFailures, code)
+		c.log.Error().Err(err).Str("event", "voice.recording_failed").Str("request_id", t.requestID).
+			Str("stream_id", t.streamLabel()).Msg("answer audio was not kept")
+		status.Status, status.Code = RecordingFailed, code
+		c.send(TypeRecordingStatus, t.requestID, status)
+		return
+	}
+
+	t.saved = saved
+	c.log.Info().Str("event", "voice.recording_saved").Str("request_id", t.requestID).
+		Str("stream_id", t.streamLabel()).Str("recording_id", saved.RecordingID.String()).
+		Int("duration_ms", saved.DurationMillis).Msg("answer audio kept")
+	status.Status, status.RecordingID, status.DurationMs = RecordingStored, saved.RecordingID.String(), saved.DurationMillis
+	c.send(TypeRecordingStatus, t.requestID, status)
 }
 
 // runCommandTurn handles a typed intent sent without speech. It skips

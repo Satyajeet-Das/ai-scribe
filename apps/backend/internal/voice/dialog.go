@@ -31,7 +31,7 @@ const (
 	msgTooLong           = "That was too long for me to process. Please say it in a shorter form."
 	msgIntentUnavailable = "Sorry, I couldn't process that just now. Nothing was changed. Please try again."
 	msgInvalidOption     = "That is not one of the options for this question."
-	msgNotUnderstood     = "Sorry, I didn't understand. You can say repeat, next, previous, read my answer, or how much time is left."
+	msgNotUnderstood     = "Sorry, I didn't understand. You can say repeat, next, previous, read my answer, or how much time is left. To give a written answer by voice, press Dictate answer, or say my answer is, followed by your answer."
 	msgNotUnderstoodMCQ  = "Sorry, I didn't understand. You can say an option, such as option A, or say repeat, next, previous, or read my answer."
 	msgConfirmPrompt     = "Please say yes to save your answer, or no to cancel."
 	msgNothingToConfirm  = "There is nothing waiting to be confirmed."
@@ -46,6 +46,7 @@ const (
 	msgSaveUnconfirmed   = "I could not confirm that your answer was saved. Say read my answer to check, or say yes to try again."
 	msgSaveFailed        = "Your answer could not be saved."
 	msgBusy              = "The exam system is busy. Nothing was changed. Please try again."
+	msgNoCorrection      = "Only a dictated answer can be corrected. Nothing was saved."
 )
 
 // reply is what the assistant says in response to a turn.
@@ -66,6 +67,10 @@ type pendingConfirmation struct {
 	optionKey   string
 	text        string
 	expiresAt   time.Time
+	// transcriptionID and recordingIDs are set when the dictated audio was kept.
+	// They are linked to the answer's revision only when it is confirmed.
+	transcriptionID *uuid.UUID
+	recordingIDs    []uuid.UUID
 }
 
 // failure is how an error from the exam services is presented to the client.
@@ -182,6 +187,10 @@ func (c *conversation) act(t *turn, it intent.Intent, transcript string, q *sess
 		if confirmationID != "" && confirmationID != p.id {
 			return reply{kind: kindInfo, code: CodeConfirmationUnknown, text: msgConfirmPrompt}
 		}
+		if t.correction != nil && p.optionID != nil {
+			// A chosen option has no text to correct. Keep it staged.
+			return reply{kind: kindClarify, code: CodeUnsupportedIntent, text: msgNoCorrection}
+		}
 		return c.commit(t, p)
 
 	case intent.Deny:
@@ -285,7 +294,12 @@ func (c *conversation) proposeText(t *turn, transcript string, q *session.Studen
 	if text == "" {
 		return reply{kind: kindClarify, code: CodeUnsupportedIntent, text: msgNotMCQ}
 	}
-	c.propose(t, &pendingConfirmation{questionID: q.ID, questionNum: q.CurrentIndex, text: text}, string(intent.DictateAnswer), "")
+	p := &pendingConfirmation{questionID: q.ID, questionNum: q.CurrentIndex, text: text}
+	if t.saved != nil {
+		trID, recID := t.saved.TranscriptionID, t.saved.RecordingID
+		p.transcriptionID, p.recordingIDs = &trID, []uuid.UUID{recID}
+	}
+	c.propose(t, p, string(intent.DictateAnswer), "")
 	return reply{
 		kind: kindConfirmation,
 		text: fmt.Sprintf("I heard: %s. Say yes to save this as your answer, or no to cancel.", text),
@@ -299,7 +313,21 @@ func (c *conversation) commit(t *turn, p *pendingConfirmation) reply {
 	ctx, cancel := c.actionContext(t)
 	defer cancel()
 
-	req := answer.SubmitAnswerRequest{SelectedOptionID: p.optionID, TextAnswer: p.text}
+	// What is saved is what the student confirmed. If they corrected the text,
+	// that is their wording; the recognizer's original stays in its transcript.
+	text, source, corrected := p.text, answer.SourceSTTConfirmed, false
+	if t.correction != nil && p.optionID == nil {
+		if edited := strings.TrimSpace(*t.correction); edited != p.text {
+			text, source, corrected = edited, answer.SourceStudentCorrection, true
+		}
+	}
+	req := answer.SubmitAnswerRequest{SelectedOptionID: p.optionID, TextAnswer: text}
+	// Say where the value came from, and tie a repeated confirm to one revision.
+	req.Revision = &answer.RevisionInput{Source: source, ConfirmationID: p.id,
+		TranscriptionID: p.transcriptionID, RecordingIDs: p.recordingIDs}
+	if p.optionID != nil {
+		req.Revision = &answer.RevisionInput{Source: answer.SourceOption, ConfirmationID: p.id}
+	}
 	start := c.svc.now()
 	ans, err := c.svc.Answers.SubmitAnswer(ctx, c.sessionID, p.questionID, req, c.userID)
 	c.svc.Metrics.Observe(MetricProviderLatency, c.svc.now().Sub(start), "answer_save")
@@ -336,7 +364,7 @@ func (c *conversation) commit(t *turn, p *pendingConfirmation) reply {
 	}
 
 	c.pending = nil
-	result.Status, result.Saved = StatusOK, true
+	result.Status, result.Saved, result.Corrected = StatusOK, true, corrected
 	result.AnswerID, result.SavedAt = &ans.ID, &ans.UpdatedAt
 	c.remember(p.id, result)
 	c.svc.Metrics.Inc(MetricActions, ActionAnswer, StatusOK)
@@ -347,6 +375,9 @@ func (c *conversation) commit(t *turn, p *pendingConfirmation) reply {
 
 	if p.optionKey != "" {
 		return reply{kind: kindSaved, text: fmt.Sprintf("Saved. Option %s is recorded for question %d.", p.optionKey, p.questionNum)}
+	}
+	if corrected {
+		return reply{kind: kindSaved, text: fmt.Sprintf("Saved. Your corrected answer is recorded for question %d.", p.questionNum)}
 	}
 	return reply{kind: kindSaved, text: fmt.Sprintf("Saved. Your answer is recorded for question %d.", p.questionNum)}
 }
@@ -473,16 +504,6 @@ func (c *conversation) timeRemaining(t *turn) reply {
 		return reply{kind: kindInfo, text: "This exam has no time limit."}
 	}
 	return reply{kind: kindInfo, text: "You have " + spokenDuration(*remaining) + " left."}
-}
-
-// readQuestion renders a question for speech, from the student-facing DTO.
-func readQuestion(q *session.StudentQuestionResponse) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Question %d of %d. %s", q.CurrentIndex, q.TotalQuestions, strings.TrimSpace(q.Text))
-	for _, o := range q.Options {
-		fmt.Fprintf(&b, " Option %s: %s.", o.OptionKey, strings.TrimRight(strings.TrimSpace(o.OptionText), "."))
-	}
-	return b.String()
 }
 
 func spokenDuration(seconds int64) string {

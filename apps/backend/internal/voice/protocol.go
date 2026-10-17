@@ -61,6 +61,9 @@ const (
 	TypeResponse       = "response"
 	TypeTTSStart       = "tts.start"
 	TypeTTSEnd         = "tts.end"
+	// TypeRecordingStatus reports whether a dictated answer's audio was
+	// retained. It is only sent when recording is enabled.
+	TypeRecordingStatus = "recording.status"
 )
 
 // Error codes carried in "error" messages and failed results.
@@ -74,6 +77,7 @@ const (
 	CodeForbidden          = "forbidden"
 
 	CodeInvalidAudioFormat  = "invalid_audio_format"
+	CodeInvalidAudioMode    = "invalid_audio_mode"
 	CodeStreamActive        = "stream_already_active"
 	CodeUnknownStream       = "unknown_stream"
 	CodeInvalidFrame        = "invalid_frame"
@@ -152,6 +156,27 @@ type AudioStartPayload struct {
 	Encoding   string `json:"encoding"`
 	SampleRate int    `json:"sampleRate"`
 	Channels   int    `json:"channels"`
+	// Mode says what the utterance is for. An omitted mode means "command", so
+	// a client that predates modes can never have its speech saved as an answer
+	// by a classifier's guess.
+	Mode string `json:"mode,omitempty"`
+}
+
+// Audio modes. The mode is chosen by the student's control (a button or key),
+// never inferred from what was said.
+const (
+	// AudioModeCommand utterances are matched against the closed command set.
+	// They can never become answer content, except behind an explicit spoken
+	// dictation phrase such as "my answer is".
+	AudioModeCommand = "command"
+	// AudioModeAnswer utterances are not classified at all: the transcript is
+	// staged verbatim as a free-text answer, awaiting confirmation. Command
+	// words in it are literal content.
+	AudioModeAnswer = "answer"
+)
+
+func validAudioMode(mode string) bool {
+	return mode == "" || mode == AudioModeCommand || mode == AudioModeAnswer
 }
 
 type AudioEndPayload struct {
@@ -176,6 +201,10 @@ type CommandPayload struct {
 	Intent         string `json:"intent"`
 	OptionKey      string `json:"optionKey,omitempty"`
 	ConfirmationID string `json:"confirmationId,omitempty"`
+	// Text is the student's corrected wording of a dictated answer. It is only
+	// valid with intent "confirm" and a confirmationId, and only for a staged
+	// free-text answer. It is the student's own typing, never model output.
+	Text *string `json:"text,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -202,10 +231,13 @@ type Limits struct {
 }
 
 type Capabilities struct {
-	STT    bool                `json:"stt"`
-	TTS    bool                `json:"tts"`
-	TTSOut *speech.AudioFormat `json:"ttsFormat,omitempty"`
-	Intent string              `json:"intentClassifier"`
+	STT bool `json:"stt"`
+	TTS bool `json:"tts"`
+	// Recording is true when dictated answers are retained as audio. The client
+	// must tell the student so before they dictate.
+	Recording bool                `json:"recording"`
+	TTSOut    *speech.AudioFormat `json:"ttsFormat,omitempty"`
+	Intent    string              `json:"intentClassifier"`
 }
 
 type ReadyPayload struct {
@@ -265,6 +297,9 @@ type ActionResultPayload struct {
 	Code           string     `json:"code,omitempty"`
 	Retryable      bool       `json:"retryable,omitempty"`
 	Saved          bool       `json:"saved"`
+	// Corrected is true when the student changed the recognized text before
+	// confirming, so the saved answer is not what the recognizer heard.
+	Corrected bool `json:"corrected,omitempty"`
 	Duplicate      bool       `json:"duplicate,omitempty"`
 	ConfirmationID string     `json:"confirmationId,omitempty"`
 	QuestionID     *uuid.UUID `json:"questionId,omitempty"`
@@ -294,6 +329,23 @@ type ResponsePayload struct {
 	Text       string `json:"text"`
 	// Audio is true when a tts.start for this response will follow.
 	Audio bool `json:"audio"`
+}
+
+// Recording statuses.
+const (
+	RecordingStored = "stored"
+	RecordingFailed = "failed"
+)
+
+// RecordingStatusPayload reports the outcome of keeping a dictated answer's
+// audio. It says nothing about the answer itself: an answer is saved only when
+// action.result says so, whatever happened to the audio.
+type RecordingStatusPayload struct {
+	StreamID    string `json:"streamId"`
+	Status      string `json:"status"`
+	RecordingID string `json:"recordingId,omitempty"`
+	DurationMs  int    `json:"durationMs,omitempty"`
+	Code        string `json:"code,omitempty"`
 }
 
 type TTSStartPayload struct {

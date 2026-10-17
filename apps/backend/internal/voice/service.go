@@ -20,6 +20,7 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/http/middleware"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/speech"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/ws"
+	"github.com/Satyajeet-Das/ai-scribe/internal/recording"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
 	"github.com/Satyajeet-Das/ai-scribe/internal/voice/intent"
 )
@@ -39,6 +40,12 @@ type AnswerService interface {
 	GetAnswer(ctx context.Context, sessionID, questionID uuid.UUID, callerID uuid.UUID) (*answer.Answer, error)
 }
 
+// Recorder keeps the audio of dictated answers. It is optional: when nil, no
+// audio is retained.
+type Recorder interface {
+	Save(ctx context.Context, in recording.SaveInput) (*recording.Saved, error)
+}
+
 // Deps are the collaborators of the voice module. All are interfaces (or
 // plain data), so every provider can be replaced or mocked.
 type Deps struct {
@@ -50,8 +57,10 @@ type Deps struct {
 	STT            speech.STTProvider
 	TTS            speech.TTSProvider
 	Classifier     intent.Classifier
-	Metrics        *Metrics
-	Logger         *zerolog.Logger
+	// Recorder, when set, retains the audio of answer-mode utterances.
+	Recorder Recorder
+	Metrics  *Metrics
+	Logger   *zerolog.Logger
 }
 
 // Service owns every voice connection of this process.
@@ -135,8 +144,9 @@ func (s *Service) Shutdown(ctx context.Context) error {
 // ActiveConnections reports the number of live voice connections.
 func (s *Service) ActiveConnections() int { return s.registry.Count() }
 
-func (s *Service) ttsEnabled() bool { return s.TTS.Name() != "disabled" }
-func (s *Service) sttEnabled() bool { return s.STT.Name() != "disabled" }
+func (s *Service) ttsEnabled() bool       { return s.TTS.Name() != "disabled" }
+func (s *Service) recordingEnabled() bool { return s.Recorder != nil }
+func (s *Service) sttEnabled() bool       { return s.STT.Name() != "disabled" }
 
 // Connect authenticates and authorizes the upgrade, then serves the
 // connection until it ends.

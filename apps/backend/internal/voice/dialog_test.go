@@ -3,9 +3,11 @@ package voice
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -315,18 +317,20 @@ func TestAnswer_SaveCompletesEvenIfStudentInterrupts(t *testing.T) {
 	}
 }
 
+// toEssay moves a fresh connection to the third (free-text) question.
+func toEssay(t *testing.T, h *harness, c *client) uuid.UUID {
+	t.Helper()
+	command(t, c, CommandPayload{Intent: "next_question"})
+	command(t, c, CommandPayload{Intent: "next_question"})
+	return h.exam.currentQuestionID()
+}
+
 func TestDictation_UsesStudentWordsVerbatim(t *testing.T) {
 	h := newHarness(t, withoutTTS())
 	c, _ := h.connect()
-	command(t, c, CommandPayload{Intent: "next_question"})
-	command(t, c, CommandPayload{Intent: "next_question"})
-	qid := h.exam.currentQuestionID()
+	qid := toEssay(t, h, c)
 
-	// The model labels the utterance; whatever else it might return is ignored.
-	h.cls.set(func(context.Context, intent.Input) (intent.Intent, error) {
-		return intent.Intent{Name: intent.DictateAnswer, Confidence: 0.95}, nil
-	})
-	h.say(c, "Plants turn light into chemical energy")
+	h.sayAs(c, AudioModeAnswer, "Plants turn light into chemical energy")
 	confirm := decode[ConfirmRequestPayload](t, c.until(TypeConfirmRequest))
 	assert.Equal(t, "dictate_answer", confirm.Action)
 	assert.Equal(t, "Plants turn light into chemical energy", confirm.Text)
@@ -344,14 +348,160 @@ func TestDictation_UsesStudentWordsVerbatim(t *testing.T) {
 	assert.Contains(t, resp.Text, "Plants turn light into chemical energy")
 }
 
-func TestDictation_NotAcceptedForMultipleChoice(t *testing.T) {
+func TestAnswerMode_CommandWordsAreLiteralContent(t *testing.T) {
 	h := newHarness(t, withoutTTS())
+	c, _ := h.connect()
+	qid := toEssay(t, h, c)
+
+	h.sayAs(c, AudioModeAnswer, "Read the question")
+	confirm := decode[ConfirmRequestPayload](t, c.until(TypeConfirmRequest))
+	assert.Equal(t, "Read the question", confirm.Text, "dictated words are kept as typed by the recognizer")
+	h.cls.mu.Lock()
+	classified := len(h.cls.inputs)
+	h.cls.mu.Unlock()
+	assert.Zero(t, classified, "answer-mode speech is never shown to a classifier")
+	_, saved := h.exam.saved(qid)
+	assert.False(t, saved, "still unconfirmed")
+}
+
+func TestCommandMode_ReadTheQuestionNeverBecomesAnAnswer(t *testing.T) {
+	for _, mode := range []string{"", AudioModeCommand} {
+		t.Run("mode="+mode, func(t *testing.T) {
+			h := newHarness(t, withoutTTS())
+			c, _ := h.connect()
+			qid := toEssay(t, h, c)
+			from := len(c.seen)
+
+			h.sayAs(c, mode, "read the question")
+			resp := decode[ResponsePayload](t, c.until(TypeResponse))
+			assert.Equal(t, kindQuestion, resp.Kind)
+			assert.NotContains(t, c.types(from), TypeConfirmRequest)
+			_, saved := h.exam.saved(qid)
+			assert.False(t, saved)
+			assert.Zero(t, h.exam.count("SubmitAnswer"))
+		})
+	}
+}
+
+func TestCommandMode_ModelCannotTurnSpeechIntoAnAnswer(t *testing.T) {
+	h := newHarness(t, withoutTTS())
+	// A classifier that labels everything as dictation, as a confused or
+	// manipulated model might.
+	h.cls.set(func(context.Context, intent.Input) (intent.Intent, error) {
+		return intent.Intent{Name: intent.DictateAnswer, Confidence: 0.99}, nil
+	})
+	c, _ := h.connect()
+	qid := toEssay(t, h, c)
+	from := len(c.seen)
+
+	h.sayAs(c, AudioModeCommand, "please could you read the question for me")
+	resp := decode[ResponsePayload](t, c.until(TypeResponse))
+	assert.Equal(t, CodeNotUnderstood, resp.Code, "ambiguous speech is asked about, not guessed")
+	assert.NotContains(t, c.types(from), TypeConfirmRequest)
+	_, saved := h.exam.saved(qid)
+	assert.False(t, saved)
+}
+
+func TestCommandMode_ExplicitDictationPhraseStillWorks(t *testing.T) {
+	h := newHarness(t, withoutTTS())
+	c, _ := h.connect()
+	toEssay(t, h, c)
+
+	h.sayAs(c, AudioModeCommand, "my answer is plants make sugar")
+	confirm := decode[ConfirmRequestPayload](t, c.until(TypeConfirmRequest))
+	assert.Equal(t, "dictate_answer", confirm.Action)
+	assert.Equal(t, "plants make sugar", confirm.Text, "the phrase that introduced the answer is not part of it")
+}
+
+func TestCommandMode_AFillerBeforeTheDictationPhraseIsFine(t *testing.T) {
+	h := newHarness(t, withoutTTS())
+	// The model agrees it is dictation; the phrase decides, and what follows it
+	// is the answer (not the phrase itself).
 	h.cls.set(func(context.Context, intent.Input) (intent.Intent, error) {
 		return intent.Intent{Name: intent.DictateAnswer, Confidence: 0.95}, nil
 	})
 	c, _ := h.connect()
+	qid := toEssay(t, h, c)
 
-	h.say(c, "I think it is probably Paris")
+	h.sayAs(c, AudioModeCommand, "Okay, my answer is photosynthesis turns light into sugar")
+	confirm := decode[ConfirmRequestPayload](t, c.until(TypeConfirmRequest))
+	assert.Equal(t, "photosynthesis turns light into sugar", confirm.Text, "the framing words are not part of the answer")
+	_, saved := h.exam.saved(qid)
+	assert.False(t, saved)
+}
+
+func TestCommandMode_AVagueRequestIsAskedAboutNotCountedAsAProviderFailure(t *testing.T) {
+	h := newHarness(t, withoutTTS())
+	h.cls.set(func(context.Context, intent.Input) (intent.Intent, error) {
+		return intent.Intent{Name: intent.DictateAnswer, Confidence: 0.99}, nil
+	})
+	c, _ := h.connect()
+	toEssay(t, h, c)
+	from := len(c.seen)
+
+	h.sayAs(c, AudioModeCommand, "I would write something about plants")
+	resp := decode[ResponsePayload](t, c.until(TypeResponse))
+	assert.Equal(t, CodeNotUnderstood, resp.Code)
+	assert.Contains(t, resp.Text, "Dictate answer", "the student is told how to give a written answer by voice")
+	assert.NotContains(t, c.types(from), TypeConfirmRequest)
+	assert.Zero(t, h.svc.Metrics.Value(MetricProviderErrors, "intent", "dictation_in_command_mode"))
+	assert.Zero(t, h.svc.Metrics.Value(MetricProviderErrors, "intent", "error"), "no provider failed")
+	assert.Equal(t, int64(1), h.svc.Metrics.Value(MetricIntents, "dictation_not_explicit"))
+}
+
+func TestLengthLimitsCountCharactersNotBytes(t *testing.T) {
+	hindi := strings.Repeat("न", 1500) // 1500 characters, 4500 bytes: within a 2000-character limit
+
+	t.Run("a long dictation in another script is accepted", func(t *testing.T) {
+		h := newHarness(t, withoutTTS())
+		c, _ := h.connect()
+		toEssay(t, h, c)
+		h.sayAs(c, AudioModeAnswer, hindi)
+		confirm := decode[ConfirmRequestPayload](t, c.until(TypeConfirmRequest))
+		assert.Equal(t, hindi, confirm.Text)
+	})
+	t.Run("a correction in another script is accepted", func(t *testing.T) {
+		h := newHarness(t, withoutTTS())
+		c, _ := h.connect()
+		qid := toEssay(t, h, c)
+		staged := dictateAndStage(t, h, c, "short")
+		result := confirmWith(t, c, staged, &hindi)
+		assert.True(t, result.Saved)
+		ans, _ := h.exam.saved(qid)
+		assert.Equal(t, hindi, ans.TextAnswer)
+	})
+	t.Run("too many characters is still too long", func(t *testing.T) {
+		h := newHarness(t, withoutTTS())
+		c, _ := h.connect()
+		toEssay(t, h, c)
+		staged := dictateAndStage(t, h, c, "short")
+		tooLong := strings.Repeat("न", h.svc.Config.Intent.MaxTranscriptChars+1)
+		c.send(TypeCommand, CommandPayload{Intent: "confirm", ConfirmationID: staged.ConfirmationID, Text: &tooLong})
+		assert.Equal(t, CodeInvalidMessage, c.untilError().Code)
+		assert.Zero(t, h.exam.count("SubmitAnswer"))
+	})
+	t.Run("a dictation over the limit is turned away", func(t *testing.T) {
+		h := newHarness(t, withoutTTS())
+		c, _ := h.connect()
+		toEssay(t, h, c)
+		h.sayAs(c, AudioModeAnswer, strings.Repeat("न", h.svc.Config.Intent.MaxTranscriptChars+1))
+		resp := decode[ResponsePayload](t, c.until(TypeResponse))
+		assert.Equal(t, msgTooLong, resp.Text)
+	})
+}
+
+func TestAudioMode_InvalidModeIsRejected(t *testing.T) {
+	h := newHarness(t, withoutTTS())
+	c, _ := h.connect()
+	h.sayAs(c, "dictation", "hello")
+	assert.Equal(t, CodeInvalidAudioMode, c.untilError().Code)
+}
+
+func TestDictation_NotAcceptedForMultipleChoice(t *testing.T) {
+	h := newHarness(t, withoutTTS())
+	c, _ := h.connect()
+
+	h.sayAs(c, AudioModeAnswer, "I think it is probably Paris")
 	resp := decode[ResponsePayload](t, c.until(TypeResponse))
 	assert.Equal(t, CodeUnsupportedIntent, resp.Code)
 	assert.Zero(t, h.exam.count("SubmitAnswer"))

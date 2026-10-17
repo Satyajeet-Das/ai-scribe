@@ -69,6 +69,7 @@ type fakeExam struct {
 	questions    []session.StudentQuestionResponse
 	index        int
 	answers      map[uuid.UUID]answer.Answer
+	revisions    []*answer.RevisionInput
 
 	// errs injects an error for a method name.
 	errs map[string]error
@@ -97,6 +98,13 @@ func (f *fakeExam) count(method string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls[method]
+}
+
+// revisionsOf returns the provenance sent with each SubmitAnswer call.
+func (f *fakeExam) revisionsOf() []*answer.RevisionInput {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*answer.RevisionInput(nil), f.revisions...)
 }
 
 func (f *fakeExam) saved(questionID uuid.UUID) (answer.Answer, bool) {
@@ -225,6 +233,7 @@ func (f *fakeExam) SubmitAnswer(ctx context.Context, sessionID, questionID uuid.
 	if err := f.statusErr(); err != nil {
 		return nil, err
 	}
+	f.revisions = append(f.revisions, req.Revision)
 	a, ok := f.answers[questionID]
 	if !ok {
 		a = answer.Answer{Base: model.Base{BaseWithId: model.BaseWithId{ID: uuid.New()}}, SessionID: sessionID, QuestionID: questionID}
@@ -288,6 +297,7 @@ type harness struct {
 	stt    *speechtest.STT
 	tts    *speechtest.TTS
 	cls    *fakeClassifier
+	rec    *fakeRecorder
 
 	student   uuid.UUID
 	sessionID uuid.UUID
@@ -326,6 +336,11 @@ type harnessOption func(cfg *config.VoiceConfig, h *harness)
 
 func withConfig(fn func(cfg *config.VoiceConfig)) harnessOption {
 	return func(cfg *config.VoiceConfig, _ *harness) { fn(cfg) }
+}
+
+// withRecorder turns on retention of dictated answers, with a fake store.
+func withRecorder() harnessOption {
+	return func(_ *config.VoiceConfig, h *harness) { h.rec = &fakeRecorder{} }
 }
 
 func withoutTTS() harnessOption {
@@ -399,6 +414,9 @@ func newHarness(t *testing.T, opts ...harnessOption) *harness {
 	}
 	if h.tts != nil {
 		deps.TTS = h.tts
+	}
+	if h.rec != nil {
+		deps.Recorder = h.rec
 	}
 	h.svc = NewService(deps)
 	h.svc.onConversation = func(c *conversation) {
@@ -626,8 +644,14 @@ func decode[T any](t *testing.T, env Envelope) T {
 // speak sends one complete utterance: start, n chunks, end.
 func (c *client) speak(chunks int) (uuid.UUID, string) {
 	c.t.Helper()
+	return c.speakMode(chunks, "")
+}
+
+// speakMode is speak with an explicit audio mode ("" leaves it unset).
+func (c *client) speakMode(chunks int, mode string) (uuid.UUID, string) {
+	c.t.Helper()
 	stream := uuid.New()
-	id := c.send(TypeAudioStart, AudioStartPayload{StreamID: stream.String(), Encoding: "pcm_s16le", SampleRate: 16000, Channels: 1})
+	id := c.send(TypeAudioStart, AudioStartPayload{StreamID: stream.String(), Encoding: "pcm_s16le", SampleRate: 16000, Channels: 1, Mode: mode})
 	for i := 0; i < chunks; i++ {
 		c.chunk(stream, uint32(i), 640)
 	}
@@ -641,6 +665,13 @@ func (h *harness) say(c *client, transcript string) (uuid.UUID, string) {
 	h.t.Helper()
 	h.stt.Set(func(s *speechtest.STT) { s.Finals = []string{transcript} })
 	return c.speak(2)
+}
+
+// sayAs is say with an explicit audio mode.
+func (h *harness) sayAs(c *client, mode, transcript string) (uuid.UUID, string) {
+	h.t.Helper()
+	h.stt.Set(func(s *speechtest.STT) { s.Finals = []string{transcript} })
+	return c.speakMode(2, mode)
 }
 
 func eventually(t *testing.T, cond func() bool, msg string) {
