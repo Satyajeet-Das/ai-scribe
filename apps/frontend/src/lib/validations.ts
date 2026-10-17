@@ -155,3 +155,25 @@ export const AssignCandidateSchema = z.object({
 });
 
 export type AssignCandidateFormData = z.infer<typeof AssignCandidateSchema>;
+
+/** Largest mark accepted in the field; the server enforces each question's own maximum. */
+const MARKS_PATTERN = /^\d{1,6}(\.[05])?$/;
+
+export type ParsedMarks = { ok: true; value: number | null } | { ok: false; message: string };
+
+/**
+ * Reads what a teacher typed in a marks field. Empty means "no mark" (null).
+ * Only whole numbers and halves are accepted, from 0 up to `max`: the same rule
+ * the server applies, so a typo is explained before anything is sent.
+ */
+export function parseMarksInput(raw: string, max: number): ParsedMarks {
+  const text = raw.trim();
+  if (text === "") return { ok: true, value: null };
+  if (text.startsWith("-")) return { ok: false, message: "Marks cannot be negative." };
+  if (!MARKS_PATTERN.test(text)) {
+    return { ok: false, message: "Enter a whole number or a half mark, such as 7 or 7.5." };
+  }
+  const value = Number(text);
+  if (value > max) return { ok: false, message: `Marks cannot be more than ${max}.` };
+  return { ok: true, value };
+}

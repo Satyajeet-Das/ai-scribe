@@ -126,10 +126,58 @@ describe("responseReviewApi", () => {
     });
 
     it("reports a temporary failure as 503", async () => {
-      fetchMock.mockResolvedValue(jsonResponse({ code: "AUDIO_UNAVAILABLE", message: "later" }, 503));
+      fetchMock.mockResolvedValue(
+        jsonResponse({ code: "AUDIO_UNAVAILABLE", message: "later" }, 503)
+      );
       await expect(responseReviewApi.getRecordingAudio("e", "s", "r")).rejects.toMatchObject({
         status: 503,
       });
+    });
+  });
+
+  describe("marking", () => {
+    it("reads the marking sheet without caching", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ questions: [] }));
+      await responseReviewApi.getMarking("exam 1", "s/1");
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(String(url)).toMatch(/\/exams\/exam%201\/responses\/s%2F1\/marking$/);
+      expect(init.cache).toBe("no-store");
+    });
+
+    it("saves a question's marks with the version and attempt it was based on", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ question: {}, paper: {} }));
+      const body = { sessionId: "sess-1", marks: 7.5, comment: null, expectedVersion: 2 };
+      await responseReviewApi.saveQuestionMarks("e", "s", "q/1", body);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(String(url)).toMatch(/\/marking\/questions\/q%2F1$/);
+      expect(init.method).toBe("PUT");
+      expect(JSON.parse(init.body)).toEqual(body);
+      expect(init.cache).toBe("no-store");
+    });
+
+    it("finalises and reopens with POST", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ questions: [] }));
+      await responseReviewApi.finalise("e", "s", { sessionId: "x", expectedPaperVersion: 4 });
+      await responseReviewApi.reopen("e", "s", { sessionId: "x", reason: "appeal" });
+      const [finalUrl, finalInit] = fetchMock.mock.calls[0];
+      const [reopenUrl, reopenInit] = fetchMock.mock.calls[1];
+      expect(String(finalUrl)).toMatch(/\/marking\/finalise$/);
+      expect(finalInit.method).toBe("POST");
+      expect(JSON.parse(finalInit.body)).toEqual({ sessionId: "x", expectedPaperVersion: 4 });
+      expect(String(reopenUrl)).toMatch(/\/marking\/reopen$/);
+      expect(reopenInit.method).toBe("POST");
+    });
+
+    it("surfaces a conflict with the server's code", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ code: "STALE_VERSION", message: "changed" }, 409));
+      await expect(
+        responseReviewApi.saveQuestionMarks("e", "s", "q", {
+          sessionId: "x",
+          marks: 1,
+          comment: null,
+          expectedVersion: 0,
+        })
+      ).rejects.toMatchObject({ status: 409, code: "STALE_VERSION" });
     });
   });
 });

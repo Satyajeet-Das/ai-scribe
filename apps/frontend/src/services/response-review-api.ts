@@ -1,12 +1,17 @@
 import { apiFetch } from "@/services/api";
+import type { MarkingSheet, SaveMarksRequest, SaveMarksResponse } from "@/types/marking";
 import type {
   ReviewListParams,
   ReviewStudentList,
   ReviewStudentResponses,
 } from "@/types/response-review";
 
+function markingPath(examId: string, studentId: string): string {
+  return `/exams/${encodeURIComponent(examId)}/responses/${encodeURIComponent(studentId)}/marking`;
+}
+
 /**
- * Read-only client for teacher response review. Both calls accept an
+ * Client for teacher response review and marking. Reads accept an
  * AbortSignal so a superseded request can be cancelled, and ask the browser
  * not to cache: these responses contain student answers.
  */
@@ -40,6 +45,47 @@ export const responseReviewApi = {
       `/exams/${encodeURIComponent(examId)}/responses/${encodeURIComponent(studentId)}`,
       { signal, cache: "no-store" }
     );
+  },
+
+  getMarking(examId: string, studentId: string, signal?: AbortSignal): Promise<MarkingSheet> {
+    return apiFetch<MarkingSheet>(markingPath(examId, studentId), { signal, cache: "no-store" });
+  },
+
+  /** Replaces the mark and comment for one answer. */
+  saveQuestionMarks(
+    examId: string,
+    studentId: string,
+    questionId: string,
+    body: SaveMarksRequest
+  ): Promise<SaveMarksResponse> {
+    return apiFetch<SaveMarksResponse>(
+      `${markingPath(examId, studentId)}/questions/${encodeURIComponent(questionId)}`,
+      { method: "PUT", body: JSON.stringify(body), cache: "no-store" }
+    );
+  },
+
+  finalise(
+    examId: string,
+    studentId: string,
+    body: { sessionId: string; expectedPaperVersion: number }
+  ): Promise<MarkingSheet> {
+    return apiFetch<MarkingSheet>(`${markingPath(examId, studentId)}/finalise`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+  },
+
+  reopen(
+    examId: string,
+    studentId: string,
+    body: { sessionId: string; reason: string }
+  ): Promise<MarkingSheet> {
+    return apiFetch<MarkingSheet>(`${markingPath(examId, studentId)}/reopen`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
   },
 
   /**
