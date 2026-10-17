@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PaperActions } from "@/components/response-review/paper-actions";
 import {
   MAX_COMMENT_LENGTH,
   draftProblems,
@@ -250,43 +251,43 @@ export function MarksSummary({ marking }: { marking: StudentMarking }) {
   const { paper } = sheet;
   const final = paper.status === "FINAL";
   return (
-    <dl
-      className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border bg-card p-4"
-      aria-label="Paper marks"
-    >
-      <div>
-        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Marks
-        </dt>
-        <dd className="text-2xl font-bold tabular-nums" data-testid="paper-total">
-          {formatMarks(paper.totalMarks)}
-          <span className="text-base font-normal text-muted-foreground">
-            {" "}
-            / {formatMarks(paper.maxMarks)}
-          </span>
-        </dd>
-      </div>
-      <div>
-        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Marked
-        </dt>
-        <dd className="text-lg font-semibold tabular-nums">
-          {paper.markedCount} of {paper.totalQuestions}
-        </dd>
-      </div>
-      <div>
-        <dt className="sr-only">Status</dt>
-        <dd>
-          {final ? (
-            <Badge variant="default" className="gap-1">
-              <Check aria-hidden="true" />
-              Final
-            </Badge>
-          ) : (
-            <Badge variant="secondary">Draft</Badge>
-          )}
-        </dd>
-      </div>
-    </dl>
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border bg-card p-4">
+      <dl className="flex flex-wrap items-center gap-x-6 gap-y-2" aria-label="Paper marks">
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Marks
+          </dt>
+          <dd className="text-2xl font-bold tabular-nums" data-testid="paper-total">
+            {formatMarks(paper.totalMarks)}
+            <span className="text-base font-normal text-muted-foreground">
+              {" "}
+              / {formatMarks(paper.maxMarks)}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Marked
+          </dt>
+          <dd className="text-lg font-semibold tabular-nums">
+            {paper.markedCount} of {paper.totalQuestions}
+          </dd>
+        </div>
+        <div>
+          <dt className="sr-only">Status</dt>
+          <dd>
+            {final ? (
+              <Badge variant="default" className="gap-1">
+                <Check aria-hidden="true" />
+                Final
+              </Badge>
+            ) : (
+              <Badge variant="secondary">Draft</Badge>
+            )}
+          </dd>
+        </div>
+      </dl>
+      <PaperActions marking={marking} />
+    </div>
   );
 }
