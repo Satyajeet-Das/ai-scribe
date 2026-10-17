@@ -31,6 +31,7 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/redis"
 	"github.com/Satyajeet-Das/ai-scribe/internal/question"
 	"github.com/Satyajeet-Das/ai-scribe/internal/recording"
+	"github.com/Satyajeet-Das/ai-scribe/internal/grading"
 	"github.com/Satyajeet-Das/ai-scribe/internal/review"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
 	"github.com/Satyajeet-Das/ai-scribe/internal/user"
@@ -135,6 +136,10 @@ func main() {
 	// Teacher response review: read-only, owner/admin only.
 	reviewService := review.NewService(review.NewRepository(db.Pool), examService, review.DefaultPolicy(), &log)
 	reviewHandler := review.NewHandler(reviewService)
+
+	// Teacher marking of those papers: the only place marks are written.
+	gradingService := grading.NewService(grading.NewRepository(db.Pool), examService, &log)
+	gradingHandler := grading.NewHandler(gradingService)
 
 	// Where retained answer audio lives. Nil when there is none to read or write.
 	audioStore := openAudioStore(context.Background(), cfg.Recording, &log)
@@ -253,6 +258,7 @@ func main() {
 	sessionHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	answerHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	reviewHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
+	gradingHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
 	voiceService.RegisterRoutes(v1)
 
 	// In development, auto-sync OpenAPI spec and watch for Go source changes

@@ -13,6 +13,7 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/http/handler"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/openapi"
 	"github.com/Satyajeet-Das/ai-scribe/internal/question"
+	"github.com/Satyajeet-Das/ai-scribe/internal/grading"
 	"github.com/Satyajeet-Das/ai-scribe/internal/review"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
 	"github.com/Satyajeet-Das/ai-scribe/internal/user"
@@ -58,6 +59,9 @@ func main() {
 	// it is documented (a nil service only registers the routes).
 	reviewH := review.NewHandler(nil).WithPlayback(review.EnablePlayback(nil, nil, nil))
 	reviewH.RegisterRoutes(v1, noopMiddleware, noopMiddleware)
+
+	gradingH := grading.NewHandler(nil)
+	gradingH.RegisterRoutes(v1, noopMiddleware, noopMiddleware)
 
 	targetFile := "static/openapi.json"
 	if _, err := os.Stat("static"); os.IsNotExist(err) {
