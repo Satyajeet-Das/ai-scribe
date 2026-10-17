@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Check,
   ChevronLeft,
@@ -31,6 +31,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  hasNoModifiers,
+  isInsideLayer,
+  isPlainShortcutEvent,
+  isSurfaceTarget,
+  isTextEntryTarget,
+} from "@/lib/keyboard";
 import type { StudentQuestionResponse, StudentOptionResponse, Question } from "@/types/exam-types";
 
 export interface StudentExamRoomProps {
@@ -38,7 +45,8 @@ export interface StudentExamRoomProps {
   totalQuestions?: number;
   initialSeconds?: number;
   answers: Record<string, string>;
-  saveStatus?: "idle" | "saving" | "saved" | "failed";
+  /** "unsaved" means typed text the server has not confirmed yet. */
+  saveStatus?: "idle" | "unsaved" | "saving" | "saved" | "failed";
   saveError?: string | null;
   onSelectOption: (optionId: string) => void;
   onTextAnswerChange?: (text: string) => void;
@@ -54,6 +62,8 @@ export interface StudentExamRoomProps {
   onExpire?: () => void;
   /** Optional voice assistant, rendered above the question. */
   voiceSlot?: ReactNode;
+  /** Why the last attempt to change question was refused, if it was. */
+  navigationNotice?: string | null;
 
   // Backward compatibility with previous offline mock usage if any
   questions?: Question[];
@@ -80,6 +90,7 @@ export function StudentExamRoom({
   subject = "Assessment",
   onExpire,
   voiceSlot,
+  navigationNotice = null,
   // backward compatibility props
   questions,
   onAnswerChange,
@@ -88,6 +99,9 @@ export function StudentExamRoom({
   const [largeText, setLargeText] = useState(false);
   const [contrast, setContrast] = useState(false);
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
+  const [boundaryNote, setBoundaryNote] = useState<{ seq: number; text: string } | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const shownQuestionRef = useRef<string | null>(null);
 
   // Sync initial seconds if it changes on reconnect
   useEffect(() => {
@@ -115,12 +129,33 @@ export function StudentExamRoom({
     return () => window.clearInterval(timer);
   }, [seconds, onExpire]);
 
-  // Keyboard navigation shortcuts
+  // Keyboard navigation shortcuts.
+  //  - Alt+N / Alt+P work unless the student is typing or a dialog is open.
+  //  - Left / Right arrows work only when focus is on the page itself. On any
+  //    control they keep their own meaning: moving a text cursor, or moving
+  //    between the options of a multiple-choice question.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      if (!isPlainShortcutEvent(e) || submitDialogOpen) return;
+
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        if (!hasNoModifiers(e) || !isSurfaceTarget(e.target)) return;
+        e.preventDefault();
+        if (navigating || submitting) return;
+        const forward = e.key === "ArrowRight";
+        if (forward ? currentQuestion?.isLast : currentQuestion?.isFirst) {
+          setBoundaryNote((prev) => ({
+            seq: (prev?.seq ?? 0) + 1,
+            text: forward ? "This is the last question." : "This is the first question.",
+          }));
+          return;
+        }
+        if (forward) onNext();
+        else onPrevious();
         return;
       }
+
+      if (isTextEntryTarget(e.target) || isInsideLayer(e.target)) return;
       if (e.altKey && (e.key === "n" || e.key === "N")) {
         e.preventDefault();
         if (!currentQuestion?.isLast && !navigating) {
@@ -136,7 +171,7 @@ export function StudentExamRoom({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [currentQuestion, navigating, onNext, onPrevious]);
+  }, [currentQuestion, navigating, submitting, submitDialogOpen, onNext, onPrevious]);
 
   const formattedTime = useMemo(() => {
     const m = Math.floor(seconds / 60);
@@ -161,6 +196,17 @@ export function StudentExamRoom({
   const isLast = currentQuestion ? currentQuestion.isLast : currentIndex >= totalQuestions;
 
   const currentAnswerValue = answers[activeQuestionId] || "";
+
+  // When the question changes, move focus to its heading so a screen reader
+  // reads the new question and the arrow keys work straight away. Not on the
+  // first load, which would pull focus away from the page's own start.
+  useEffect(() => {
+    if (!activeQuestionId) return;
+    if (shownQuestionRef.current !== null && shownQuestionRef.current !== activeQuestionId) {
+      headingRef.current?.focus();
+    }
+    shownQuestionRef.current = activeQuestionId;
+  }, [activeQuestionId]);
 
   const handleOptionSelect = (optionId: string) => {
     if (navigating || submitting) return;
@@ -276,21 +322,39 @@ export function StudentExamRoom({
                       ? !!currentAnswerValue
                       : false;
 
+                  const tileClass = `grid size-9 place-items-center rounded-lg border text-xs font-semibold transition-all ${
+                    isCurrent
+                      ? "border-primary bg-primary text-primary-foreground shadow-xs font-bold scale-105"
+                      : isAnswered
+                      ? "border-primary/50 bg-primary/10 text-primary"
+                      : "bg-background text-muted-foreground"
+                  }`;
+                  const label = `Question ${qNum}${isAnswered ? ", Answered" : ", Unanswered"}`;
+
+                  // Without a way to jump, a tile is a status marker, not a
+                  // button that appears to work and does nothing.
+                  if (!onJumpToQuestion) {
+                    return (
+                      <span
+                        key={qIdx}
+                        role="img"
+                        aria-label={label}
+                        aria-current={isCurrent ? "step" : undefined}
+                        className={tileClass}
+                      >
+                        {qNum}
+                      </span>
+                    );
+                  }
                   return (
                     <button
                       key={qIdx}
                       type="button"
-                      aria-label={`Question ${qNum}${isAnswered ? ", Answered" : ", Unanswered"}`}
+                      aria-label={label}
                       aria-current={isCurrent ? "step" : undefined}
                       disabled={navigating || submitting}
-                      onClick={() => onJumpToQuestion?.(qIdx)}
-                      className={`grid size-9 place-items-center rounded-lg border text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                        isCurrent
-                          ? "border-primary bg-primary text-primary-foreground shadow-xs font-bold scale-105"
-                          : isAnswered
-                          ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
-                          : "bg-background hover:bg-muted text-muted-foreground hover:text-foreground"
-                      }`}
+                      onClick={() => onJumpToQuestion(qIdx)}
+                      className={`${tileClass} hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                     >
                       {qNum}
                     </button>
@@ -319,6 +383,19 @@ export function StudentExamRoom({
         {/* Main Examination Question Area */}
         <main className="flex flex-col gap-4">
           {voiceSlot}
+          {navigationNotice && (
+            <div
+              role="alert"
+              data-testid="navigation-notice"
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200 flex items-start gap-2"
+            >
+              <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{navigationNotice}</span>
+            </div>
+          )}
+          <div className="sr-only" role="status" aria-live="polite" data-testid="boundary-status">
+            {boundaryNote && <span key={boundaryNote.seq}>{boundaryNote.text}</span>}
+          </div>
           <Card className="min-h-[500px] flex flex-col justify-between bg-background shadow-xs border">
             <div>
               <CardHeader className="border-b pb-4">
@@ -343,6 +420,12 @@ export function StudentExamRoom({
                       <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
                         <Loader2 className="size-3.5 animate-spin" />
                         Saving answer...
+                      </span>
+                    )}
+                    {saveStatus === "unsaved" && (
+                      <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                        <AlertCircle className="size-3.5" />
+                        Not saved yet
                       </span>
                     )}
                     {saveStatus === "saved" && (
@@ -377,9 +460,16 @@ export function StudentExamRoom({
                 </div>
 
                 {/* Question Prompt */}
-                <CardTitle className="mt-4 text-xl sm:text-2xl font-bold leading-relaxed text-foreground">
+                <h2
+                  ref={headingRef}
+                  tabIndex={-1}
+                  className="mt-4 text-xl sm:text-2xl font-bold leading-relaxed text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                >
+                  <span className="sr-only">
+                    Question {currentIndex} of {totalQuestions}.{" "}
+                  </span>
                   {activeQuestionText}
-                </CardTitle>
+                </h2>
               </CardHeader>
 
               {/* Options & Response Input */}
@@ -456,7 +546,8 @@ export function StudentExamRoom({
                       disabled={navigating || submitting}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Responses are automatically recorded as you finish writing.
+                      Your response is saved a moment after you stop typing. The status above shows
+                      when it has been saved.
                     </p>
                   </div>
                 )}

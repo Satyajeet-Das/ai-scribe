@@ -269,4 +269,152 @@ describe("Sprint 6: StudentExamRoom Component", () => {
     fireEvent.keyDown(window, { key: "p", altKey: true });
     expect(onPrevious).toHaveBeenCalledTimes(1);
   });
+
+  it("ignores navigation shortcuts that repeat, or come from fields and dialogs", () => {
+    const onNext = vi.fn();
+    const middleQuestion: StudentQuestionResponse = {
+      ...mockQuestion1,
+      questionNumber: 2,
+      currentIndex: 2,
+      isFirst: false,
+      isLast: false,
+    };
+    render(
+      <>
+        <div role="dialog" aria-label="Some dialog">
+          <button type="button">Inside dialog</button>
+        </div>
+        <div contentEditable suppressContentEditableWarning data-testid="editable">
+          notes
+        </div>
+        <StudentExamRoom
+          currentQuestion={middleQuestion}
+          answers={{}}
+          onSelectOption={vi.fn()}
+          onNext={onNext}
+          onPrevious={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </>
+    );
+
+    fireEvent.keyDown(window, { key: "n", altKey: true, repeat: true });
+    fireEvent.keyDown(screen.getByText("Inside dialog"), { key: "n", altKey: true });
+    fireEvent.keyDown(screen.getByTestId("editable"), { key: "n", altKey: true });
+    expect(onNext).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "n", altKey: true });
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  describe("arrow-key navigation", () => {
+    const middle: StudentQuestionResponse = {
+      ...mockQuestion1,
+      questionNumber: 2,
+      currentIndex: 2,
+      isFirst: false,
+      isLast: false,
+    };
+    const renderRoom = (q: StudentQuestionResponse, extra: object = {}) => {
+      const onNext = vi.fn();
+      const onPrevious = vi.fn();
+      render(
+        <StudentExamRoom
+          currentQuestion={q}
+          answers={{}}
+          onSelectOption={vi.fn()}
+          onNext={onNext}
+          onPrevious={onPrevious}
+          onSubmit={vi.fn()}
+          {...extra}
+        />
+      );
+      return { onNext, onPrevious };
+    };
+
+    it("moves between questions with Right and Left when focus is on the page", () => {
+      const { onNext, onPrevious } = renderRoom(middle);
+      fireEvent.keyDown(document.body, { key: "ArrowRight" });
+      expect(onNext).toHaveBeenCalledTimes(1);
+      fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+      expect(onPrevious).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves the arrows to the options of a multiple-choice question", () => {
+      const { onNext, onPrevious } = renderRoom(middle);
+      const radio = screen.getAllByRole("radio")[0];
+      fireEvent.keyDown(radio, { key: "ArrowRight" });
+      fireEvent.keyDown(radio, { key: "ArrowLeft" });
+      expect(onNext).not.toHaveBeenCalled();
+      expect(onPrevious).not.toHaveBeenCalled();
+    });
+
+    it("leaves the arrows to a text cursor and to buttons", () => {
+      const { onNext, onPrevious } = renderRoom({
+        ...mockQuestion3,
+        type: "ESSAY",
+        options: [],
+        isFirst: false,
+        isLast: false,
+      });
+      fireEvent.keyDown(screen.getByLabelText("Your Response"), { key: "ArrowRight" });
+      fireEvent.keyDown(screen.getByTestId("prev-question-button"), { key: "ArrowLeft" });
+      expect(onNext).not.toHaveBeenCalled();
+      expect(onPrevious).not.toHaveBeenCalled();
+    });
+
+    it("ignores held keys and modified arrows", () => {
+      const { onNext } = renderRoom(middle);
+      fireEvent.keyDown(document.body, { key: "ArrowRight", repeat: true });
+      fireEvent.keyDown(document.body, { key: "ArrowRight", altKey: true });
+      fireEvent.keyDown(document.body, { key: "ArrowRight", shiftKey: true });
+      expect(onNext).not.toHaveBeenCalled();
+    });
+
+    it("announces the first and last question instead of moving", () => {
+      const first = renderRoom({ ...mockQuestion1, isFirst: true, isLast: false });
+      fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+      expect(first.onPrevious).not.toHaveBeenCalled();
+      expect(screen.getByTestId("boundary-status")).toHaveTextContent("This is the first question.");
+    });
+
+    it("does nothing while a question is loading", () => {
+      const { onNext } = renderRoom(middle, { navigating: true });
+      fireEvent.keyDown(document.body, { key: "ArrowRight" });
+      expect(onNext).not.toHaveBeenCalled();
+    });
+
+    it("shows why a move was refused", () => {
+      renderRoom(middle, { navigationNotice: "Stop your recording first." });
+      expect(screen.getByRole("alert")).toHaveTextContent("Stop your recording first.");
+    });
+
+    it("moves focus to the new question's heading, and not on first load", () => {
+      const view = render(
+        <StudentExamRoom
+          currentQuestion={middle}
+          answers={{}}
+          onSelectOption={vi.fn()}
+          onNext={vi.fn()}
+          onPrevious={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      );
+      const heading = () => screen.getByRole("heading", { level: 2 });
+      expect(heading()).not.toHaveFocus();
+
+      view.rerender(
+        <StudentExamRoom
+          currentQuestion={{ ...middle, id: "other-question", currentIndex: 3, questionNumber: 3 }}
+          answers={{}}
+          onSelectOption={vi.fn()}
+          onNext={vi.fn()}
+          onPrevious={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      );
+      expect(heading()).toHaveFocus();
+      expect(heading()).toHaveTextContent("Question 3 of");
+    });
+  });
 });

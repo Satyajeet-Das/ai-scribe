@@ -6,11 +6,14 @@ import { CheckCircle2, Home, Loader2, AlertTriangle, ShieldAlert, RotateCcw } fr
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StudentExamRoom } from "@/components/student-exam-room";
-import { VoiceAssistant } from "@/components/voice/voice-assistant";
+import { VoiceAssistant, type VoiceActivity } from "@/components/voice/voice-assistant";
 import type { VoiceSessionState } from "@/services/voice/protocol";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { sessionsApi, examsApi, ApiError } from "@/services/api";
 import type { Session, StudentQuestionResponse, SessionStatus } from "@/types/exam-types";
+
+/** How long after the last keystroke a typed answer is saved. */
+const TEXT_SAVE_DELAY_MS = 800;
 
 export default function ActiveSessionRoomPage({
   params,
@@ -23,7 +26,9 @@ export default function ActiveSessionRoomPage({
   const [session, setSession] = useState<Session | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<StudentQuestionResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved" | "failed">(
+    "idle"
+  );
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -111,6 +116,133 @@ export default function ActiveSessionRoomPage({
     loadSession();
   }, [loadSession]);
 
+  // The question on screen, readable from callbacks without re-creating them.
+  const shownQuestionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    shownQuestionIdRef.current = currentQuestion?.id ?? null;
+  }, [currentQuestion]);
+
+  // What the voice assistant is in the middle of. Changing question during any
+  // of these would silently throw work away, so navigation waits for the
+  // student to finish or cancel it.
+  const voiceActivityRef = useRef<VoiceActivity>({
+    recording: false,
+    processing: false,
+    awaitingConfirmation: false,
+  });
+  const [navigationNotice, setNavigationNotice] = useState<string | null>(null);
+
+  const navigationBlocker = (): string | null => {
+    const a = voiceActivityRef.current;
+    if (a.recording) {
+      return "A recording is in progress. Stop it with Enter, or choose Discard recording, before changing question.";
+    }
+    if (a.processing) {
+      return "Your last recording is still being processed. Please wait a moment before changing question.";
+    }
+    if (a.awaitingConfirmation) {
+      return "You have an answer waiting for confirmation. Choose Yes, save answer or No, cancel before changing question.";
+    }
+    return null;
+  };
+
+  const handleVoiceActivity = useCallback((activity: VoiceActivity) => {
+    voiceActivityRef.current = activity;
+    if (!activity.recording && !activity.processing && !activity.awaitingConfirmation) {
+      setNavigationNotice(null);
+    }
+  }, []);
+
+  // Typed answers. Text the server has not confirmed is kept here, tagged with
+  // the question it belongs to, until a save succeeds. Saves run one at a time
+  // so an older request can never overwrite newer text.
+  const pendingTextRef = useRef<{ questionId: string; text: string } | null>(null);
+  const textTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveChainRef = useRef<Promise<boolean>>(Promise.resolve(true));
+
+  /**
+   * Saves any unconfirmed typed text. Resolves true when nothing is left
+   * unsaved, and false when a save failed (the text is kept for a retry).
+   */
+  const flushText = useCallback((): Promise<boolean> => {
+    if (textTimerRef.current !== null) {
+      clearTimeout(textTimerRef.current);
+      textTimerRef.current = null;
+    }
+    const run = async (): Promise<boolean> => {
+      const pending = pendingTextRef.current;
+      if (!pending) return true;
+      const isShown = () => pending.questionId === shownQuestionIdRef.current;
+
+      if (pending.text.trim() === "") {
+        // The server rejects an empty answer, so a saved answer cannot be
+        // cleared. Say so rather than showing a state that is not true.
+        pendingTextRef.current = null;
+        if (isShown()) {
+          setSaveStatus("failed");
+          setSaveError(
+            "An answer that was already saved cannot be cleared. Type a new answer to replace it."
+          );
+        }
+        return true;
+      }
+
+      pendingTextRef.current = null;
+      if (isShown()) {
+        setSaveStatus("saving");
+        setSaveError(null);
+      }
+      try {
+        await sessionsApi.submitAnswer(sessionId, pending.questionId, {
+          textAnswer: pending.text,
+        });
+      } catch (err: unknown) {
+        // Keep the text for a retry unless the student has typed something newer.
+        if (!pendingTextRef.current) pendingTextRef.current = pending;
+        if (isShown()) {
+          setSaveStatus("failed");
+          setSaveError(err instanceof Error ? err.message : "Failed to save answer");
+        }
+        return false;
+      }
+      if (isShown()) setSaveStatus(pendingTextRef.current ? "unsaved" : "saved");
+      return pendingTextRef.current === null;
+    };
+    const next = saveChainRef.current.then(run);
+    saveChainRef.current = next;
+    return next;
+  }, [sessionId]);
+
+  const handleTextAnswerChange = (text: string) => {
+    if (!currentQuestion) return;
+    const questionId = currentQuestion.id;
+    setAnswers((prev) => ({ ...prev, [questionId]: text }));
+    pendingTextRef.current = { questionId, text };
+    setSaveStatus("unsaved");
+    setSaveError(null);
+    if (textTimerRef.current !== null) clearTimeout(textTimerRef.current);
+    textTimerRef.current = setTimeout(() => void flushText(), TEXT_SAVE_DELAY_MS);
+  };
+
+  // Leaving the page with an answer the server has not confirmed would lose it.
+  useEffect(() => {
+    if (saveStatus !== "unsaved" && saveStatus !== "saving" && saveStatus !== "failed") return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [saveStatus]);
+
+  // Do not leave a timer behind when the page goes away.
+  useEffect(
+    () => () => {
+      if (textTimerRef.current !== null) clearTimeout(textTimerRef.current);
+    },
+    []
+  );
+
   // Save selected option
   const handleSelectOption = async (optionId: string) => {
     if (!currentQuestion) return;
@@ -137,8 +269,12 @@ export default function ActiveSessionRoomPage({
   // Retry saving current answer
   const handleRetrySave = () => {
     if (!currentQuestion) return;
+    if (pendingTextRef.current?.questionId === currentQuestion.id) {
+      void flushText();
+      return;
+    }
     const val = answers[currentQuestion.id];
-    if (val) {
+    if (val && currentQuestion.type === "MCQ") {
       handleSelectOption(val);
     }
   };
@@ -146,6 +282,14 @@ export default function ActiveSessionRoomPage({
   // Navigate to Next Question
   const handleNext = async () => {
     if (navigating || submitting) return;
+    const blocker = navigationBlocker();
+    if (blocker) {
+      setNavigationNotice(blocker);
+      return;
+    }
+    setNavigationNotice(null);
+    // Never move away from an answer the server has not confirmed.
+    if (!(await flushText())) return;
     setNavigating(true);
 
     try {
@@ -164,6 +308,13 @@ export default function ActiveSessionRoomPage({
   // Navigate to Previous Question
   const handlePrevious = async () => {
     if (navigating || submitting) return;
+    const blocker = navigationBlocker();
+    if (blocker) {
+      setNavigationNotice(blocker);
+      return;
+    }
+    setNavigationNotice(null);
+    if (!(await flushText())) return;
     setNavigating(true);
 
     try {
@@ -182,6 +333,8 @@ export default function ActiveSessionRoomPage({
   // Handle Final Exam Submission
   const handleSubmit = async () => {
     if (submitting) return;
+    // Submitting seals the exam, so every typed answer must be saved first.
+    if (!(await flushText())) return;
     setSubmitting(true);
 
     try {
@@ -226,12 +379,6 @@ export default function ActiveSessionRoomPage({
     }
   };
 
-  // The question on screen, readable from callbacks without re-creating them.
-  const shownQuestionIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    shownQuestionIdRef.current = currentQuestion?.id ?? null;
-  }, [currentQuestion]);
-
   // Voice assistant: the backend reported the session's position (on connect,
   // on reconnect, and after voice navigation). It is authoritative.
   const handleVoiceSessionState = useCallback((state: VoiceSessionState) => {
@@ -241,12 +388,15 @@ export default function ActiveSessionRoomPage({
     const question = state.question;
     if (question) {
       if (shownQuestionIdRef.current !== question.id) {
+        // The page moved without going through handleNext, so make sure typed
+        // text for the question being left is saved.
+        void flushText();
         setSaveStatus("idle");
         setSaveError(null);
       }
       setCurrentQuestion(question);
     }
-  }, []);
+  }, [flushText]);
 
   // Voice assistant: the backend confirmed an answer was persisted. The
   // selection shown on screen is re-read from the HTTP API rather than assumed.
@@ -384,6 +534,7 @@ export default function ActiveSessionRoomPage({
         saveStatus={saveStatus}
         saveError={saveError}
         onSelectOption={handleSelectOption}
+        onTextAnswerChange={handleTextAnswerChange}
         onRetrySave={handleRetrySave}
         onNext={handleNext}
         onPrevious={handlePrevious}
@@ -393,11 +544,14 @@ export default function ActiveSessionRoomPage({
         examTitle={examTitle}
         subject={subject}
         onExpire={handleExpire}
+        navigationNotice={navigationNotice}
         voiceSlot={
           <VoiceAssistant
             sessionId={sessionId}
             questionId={currentQuestion?.id ?? null}
             disabled={navigating || submitting}
+            allowVoiceAnswer={currentQuestion ? currentQuestion.type !== "MCQ" : false}
+            onActivityChange={handleVoiceActivity}
             onSessionState={handleVoiceSessionState}
             onAnswerSaved={handleVoiceAnswerSaved}
             onSessionEnded={loadSession}
