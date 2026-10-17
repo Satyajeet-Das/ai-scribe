@@ -20,6 +20,7 @@ type Config struct {
 	Redis         RedisConfig          `koanf:"redis" validate:"required"`
 	Integration   IntegrationConfig    `koanf:"integration"`
 	Voice         VoiceConfig          `koanf:"voice"`
+	Recording     RecordingConfig      `koanf:"recording"`
 	Observability *ObservabilityConfig `koanf:"observability"`
 }
 
@@ -104,6 +105,16 @@ func LoadConfig() (*Config, error) {
 	if err := mainConfig.Voice.Validate(); err != nil {
 		logger.Error().Err(err).Msg("invalid voice config")
 		return nil, fmt.Errorf("validating voice config: %w", err)
+	}
+
+	mainConfig.Recording.ApplyDefaults()
+	if err := mainConfig.Recording.Validate(); err != nil {
+		logger.Error().Err(err).Msg("invalid recording config")
+		return nil, fmt.Errorf("validating recording config: %w", err)
+	}
+	if err := mainConfig.Recording.ValidateForEnvironment(mainConfig.Primary.Env); err != nil {
+		logger.Error().Err(err).Msg("invalid recording config for this environment")
+		return nil, fmt.Errorf("validating recording config: %w", err)
 	}
 
 	if mainConfig.Observability == nil {
