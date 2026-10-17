@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Shield,
   Users,
+  ClipboardList,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -334,6 +335,16 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
                             Archive
                           </Button>
                         </>
+                      )}
+
+                      {(exam.status === "PUBLISHED" || exam.status === "ARCHIVED") && (
+                        <Link
+                          href={`/exams/${exam.id}/responses`}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        >
+                          <ClipboardList className="size-4" aria-hidden="true" />
+                          Review Responses
+                        </Link>
                       )}
 
                       {exam.status === "ARCHIVED" && (

@@ -148,6 +148,8 @@ export interface ApiFetchOptions extends RequestInit {
   timeoutMs?: number;
   skipAuth?: boolean;
   skipRefresh?: boolean;
+  /** "blob" returns the body of a successful response as a Blob (for audio). Errors are still parsed as usual. */
+  responseType?: "blob";
 }
 
 // -----------------------------------------------------------------------------
@@ -261,6 +263,10 @@ export async function apiFetch<T>(endpoint: string, options: ApiFetchOptions = {
 
   if (response.status === 204) {
     return {} as T;
+  }
+
+  if (options.responseType === "blob" && response.ok) {
+    return (await response.blob()) as T;
   }
 
   let data: unknown;
