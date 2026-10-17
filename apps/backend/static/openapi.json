@@ -2491,6 +2491,159 @@
         ]
       }
     },
+    "/api/v1/exams/{exam_id}/responses": {
+      "get": {
+        "description": "Automatically generated operation for GET /api/v1/exams/{exam_id}/responses",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "GET /api/v1/exams/{exam_id}/responses",
+        "tags": [
+          "Exams"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/responses/{student_id}": {
+      "get": {
+        "description": "Automatically generated operation for GET /api/v1/exams/{exam_id}/responses/{student_id}",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "GET /api/v1/exams/{exam_id}/responses/{student_id}",
+        "tags": [
+          "Exams"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/responses/{student_id}/recordings/{recording_id}/audio": {
+      "get": {
+        "description": "Automatically generated operation for GET /api/v1/exams/{exam_id}/responses/{student_id}/recordings/{recording_id}/audio",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recording_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "GET /api/v1/exams/{exam_id}/responses/{student_id}/recordings/{recording_id}/audio",
+        "tags": [
+          "Exams"
+        ]
+      }
+    },
     "/api/v1/exams/{id}": {
       "delete": {
         "description": "Soft-deletes an exam. Only exams without active student sessions or assignments can be deleted; active exams must be archived.",
