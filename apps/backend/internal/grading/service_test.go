@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Satyajeet-Das/ai-scribe/internal/audit"
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
 	"github.com/Satyajeet-Das/ai-scribe/internal/model"
 	platformauth "github.com/Satyajeet-Das/ai-scribe/internal/platform/auth"
@@ -25,9 +26,19 @@ type fakeReader struct {
 	marks      map[uuid.UUID]MarkRow
 	questions  []QuestionInput
 	calls      map[string]int
+
+	// For writes. order is every operation in the order it happened.
+	order     []string
+	points    map[uuid.UUID]int
+	audited   []audit.Event
+	auditErr  error
+	upsertErr error
 }
 
-func (f *fakeReader) count(name string) { f.calls[name]++ }
+func (f *fakeReader) count(name string) {
+	f.calls[name]++
+	f.order = append(f.order, name)
+}
 
 func (f *fakeReader) Session(context.Context, uuid.UUID, uuid.UUID) (*review.SessionInfo, error) {
 	f.count("Session")
@@ -52,6 +63,84 @@ func (f *fakeReader) Questions(context.Context, uuid.UUID, uuid.UUID) ([]Questio
 type fakeRepo struct{ r *fakeReader }
 
 func (f fakeRepo) Read(_ context.Context, fn func(Reader) error) error { return fn(f.r) }
+
+// Write runs fn and, like a database transaction, undoes everything it changed
+// if fn fails.
+func (f fakeRepo) Write(_ context.Context, fn func(Writer) error) error {
+	r := f.r
+	savedPaper := copyPaper(r.paper)
+	savedMarks := make(map[uuid.UUID]MarkRow, len(r.marks))
+	for k, v := range r.marks {
+		savedMarks[k] = v
+	}
+	savedAudit := append([]audit.Event(nil), r.audited...)
+	if err := fn(r); err != nil {
+		r.paper, r.marks, r.audited = savedPaper, savedMarks, savedAudit
+		return err
+	}
+	return nil
+}
+
+func copyPaper(p *PaperRow) *PaperRow {
+	if p == nil {
+		return nil
+	}
+	c := *p
+	return &c
+}
+
+func (f *fakeReader) LockPaper(_ context.Context, _, sessionID uuid.UUID) (*PaperRow, error) {
+	f.count("LockPaper")
+	if f.paper == nil {
+		f.paper = &PaperRow{SessionID: sessionID, Status: StatusDraft}
+	}
+	return copyPaper(f.paper), nil
+}
+
+func (f *fakeReader) Question(_ context.Context, _, questionID uuid.UUID) (*QuestionPoints, error) {
+	f.count("Question")
+	if pts, ok := f.points[questionID]; ok {
+		return &QuestionPoints{ID: questionID, Points: pts}, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeReader) Mark(_ context.Context, _, questionID uuid.UUID) (*MarkRow, error) {
+	f.count("Mark")
+	if m, ok := f.marks[questionID]; ok {
+		return &m, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeReader) UpsertMark(_ context.Context, _, questionID uuid.UUID, in MarkWrite) (MarkRow, error) {
+	f.count("UpsertMark")
+	if f.upsertErr != nil {
+		return MarkRow{}, f.upsertErr
+	}
+	if f.marks[questionID].Version != in.ExpectedVersion {
+		return MarkRow{}, ErrStaleVersion
+	}
+	m := MarkRow{QuestionID: questionID, MarksHalf: in.MarksHalf, MaxHalf: in.MaxHalf, Comment: in.Comment,
+		Version: f.marks[questionID].Version + 1, MarkedAt: time.Now()}
+	f.marks[questionID] = m
+	return m, nil
+}
+
+func (f *fakeReader) BumpPaper(context.Context, uuid.UUID) (int, error) {
+	f.count("BumpPaper")
+	f.paper.Version++
+	return f.paper.Version, nil
+}
+
+func (f *fakeReader) Audit(_ context.Context, e audit.Event) error {
+	f.count("Audit")
+	if f.auditErr != nil {
+		return f.auditErr
+	}
+	f.audited = append(f.audited, e)
+	return nil
+}
 
 type fakeExams struct {
 	owner uuid.UUID
@@ -90,7 +179,7 @@ func newFixture() *fixture {
 	ex := &exam.Exam{Title: "Physics", Subject: "Science", DurationMins: 60, Status: exam.StatusPublished}
 	ex.Base = model.Base{BaseWithId: model.BaseWithId{ID: examID}}
 	ex.CreatedBy = teacher.ID
-	reader := &fakeReader{session: submitted(), calls: map[string]int{}, marks: map[uuid.UUID]MarkRow{}}
+	reader := &fakeReader{session: submitted(), calls: map[string]int{}, marks: map[uuid.UUID]MarkRow{}, points: map[uuid.UUID]int{}}
 	return &fixture{
 		svc:       NewService(fakeRepo{reader}, &fakeExams{owner: teacher.ID, exam: ex}, nil),
 		reader:    reader,

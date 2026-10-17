@@ -178,3 +178,17 @@ func sortedNumbers(n []int) []int {
 	sort.Ints(out)
 	return out
 }
+
+// ValidationError is a problem with one field of a request, in words fit to show
+// a teacher. It matches ErrInvalidRequest with errors.Is.
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string { return e.Field + ": " + e.Message }
+
+func (e *ValidationError) Is(target error) bool { return target == ErrInvalidRequest }
+
+// MaxCommentRunes is the longest feedback comment, in characters.
+const MaxCommentRunes = 2000

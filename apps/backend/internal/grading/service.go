@@ -3,11 +3,14 @@ package grading
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/Satyajeet-Das/ai-scribe/internal/audit"
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
 	platformauth "github.com/Satyajeet-Das/ai-scribe/internal/platform/auth"
 	"github.com/Satyajeet-Das/ai-scribe/internal/review"
@@ -63,9 +66,37 @@ type Marking struct {
 	Lines          []Line
 }
 
+// AccessMeta describes the request, for the audit record only.
+type AccessMeta struct {
+	RequestID string
+	IP        string
+}
+
+// SaveMarkRequest is the complete state a teacher wants for one answer: this is
+// a replacement, not a patch. A nil MarksHalf clears the teacher's mark (the
+// automatic one, if any, applies again); a nil Comment clears the comment.
+type SaveMarkRequest struct {
+	// SessionID is the attempt the teacher was looking at.
+	SessionID uuid.UUID
+	MarksHalf *int
+	Comment   *string
+	// ExpectedVersion is the mark's version when the teacher read it: 0 if
+	// nothing had been saved for the answer.
+	ExpectedVersion int
+}
+
+// SaveMarkResult is the answer's new state and the paper's.
+type SaveMarkResult struct {
+	Line  Line
+	Paper PaperSummary
+}
+
 // Service lets teachers mark papers.
 type Service interface {
 	GetMarking(ctx context.Context, examID, studentID uuid.UUID, caller Caller) (*Marking, error)
+	// SaveMark records the marks and comment for one answer of a paper that has
+	// ended and is still a draft.
+	SaveMark(ctx context.Context, examID, studentID, questionID uuid.UUID, req SaveMarkRequest, caller Caller, meta AccessMeta) (*SaveMarkResult, error)
 }
 
 type service struct {
@@ -208,4 +239,176 @@ func linesFromSnapshot(s Snapshot) []Line {
 		})
 	}
 	return out
+}
+
+// normalizeComment trims a comment and turns an empty one into nil. It refuses a
+// comment the database could not store.
+func normalizeComment(c *string) (*string, error) {
+	if c == nil {
+		return nil, nil
+	}
+	text := strings.TrimSpace(*c)
+	switch {
+	case !utf8.ValidString(text) || strings.ContainsRune(text, 0):
+		return nil, &ValidationError{Field: "comment", Message: "the comment contains characters that cannot be saved"}
+	case utf8.RuneCountInString(text) > MaxCommentRunes:
+		return nil, &ValidationError{Field: "comment", Message: "the comment is too long"}
+	case text == "":
+		return nil, nil
+	}
+	return &text, nil
+}
+
+func sameInt(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func sameString(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func (s *service) SaveMark(ctx context.Context, examID, studentID, questionID uuid.UUID, req SaveMarkRequest, caller Caller, meta AccessMeta) (*SaveMarkResult, error) {
+	if err := s.authorize(ctx, examID, caller); err != nil {
+		return nil, err
+	}
+	comment, err := normalizeComment(req.Comment)
+	if err != nil {
+		return nil, err
+	}
+	if req.ExpectedVersion < 0 {
+		return nil, &ValidationError{Field: "expectedVersion", Message: "must not be negative"}
+	}
+
+	var result *SaveMarkResult
+	err = s.repo.Write(ctx, func(w Writer) error {
+		sess, err := w.Session(ctx, examID, studentID)
+		if err != nil {
+			return err
+		}
+		if sess == nil {
+			return ErrSessionNotEnded
+		}
+		if sess.ID != req.SessionID {
+			return ErrSessionChanged
+		}
+		if sess.Status == review.StatusInProgress {
+			return ErrSessionNotEnded
+		}
+
+		// Everything that changes this paper takes this lock first. From here on
+		// no other save, finalise or reopen of it can run, so what is checked
+		// below is still true when it is written.
+		paper, err := w.LockPaper(ctx, examID, sess.ID)
+		if err != nil {
+			return err
+		}
+		if paper.Status == StatusFinal {
+			return ErrPaperFinalised
+		}
+
+		q, err := w.Question(ctx, examID, questionID)
+		if err != nil {
+			return err
+		}
+		if q == nil {
+			return ErrExamNotFound
+		}
+		maxHalf := q.Points * 2
+		if req.MarksHalf != nil {
+			if err := ValidateHalfMarks(*req.MarksHalf, maxHalf); err != nil {
+				return &ValidationError{Field: "marks", Message: validationText(err)}
+			}
+		}
+
+		existing, err := w.Mark(ctx, sess.ID, questionID)
+		if err != nil {
+			return err
+		}
+		currentVersion := 0
+		var prevMarks *int
+		var prevComment *string
+		if existing != nil {
+			currentVersion, prevMarks, prevComment = existing.Version, existing.MarksHalf, existing.Comment
+		}
+
+		// Asking for what is already there changes nothing, so a retry after a
+		// lost reply is safe, even though the version it carries is now old.
+		unchanged := sameInt(prevMarks, req.MarksHalf) && sameString(prevComment, comment)
+		if !unchanged {
+			if req.ExpectedVersion != currentVersion {
+				return ErrStaleVersion
+			}
+			written, err := w.UpsertMark(ctx, sess.ID, questionID, MarkWrite{
+				MarksHalf: req.MarksHalf, MaxHalf: maxHalf, Comment: comment, MarkedBy: caller.ID,
+				ExpectedVersion: req.ExpectedVersion,
+			})
+			if err != nil {
+				return err
+			}
+			paperVersion, err := w.BumpPaper(ctx, sess.ID)
+			if err != nil {
+				return err
+			}
+			if err := w.Audit(ctx, audit.Event{
+				ActorID: caller.ID, ActorRole: string(caller.Role),
+				Action: audit.ActionMarkSave, ResourceType: audit.ResourceAnswerMark,
+				ResourceID: questionID, SessionID: sess.ID, Outcome: audit.OutcomeOK,
+				RequestID: meta.RequestID, IP: meta.IP,
+				// Ids, marks and counts only: never the comment, never the answer.
+				Metadata: map[string]any{
+					"exam_id": examID.String(), "student_id": studentID.String(),
+					"marks_half": req.MarksHalf, "previous_marks_half": prevMarks, "max_half": maxHalf,
+					"cleared":         prevMarks != nil && req.MarksHalf == nil,
+					"comment_changed": !sameString(prevComment, comment),
+					"version":         written.Version, "paper_version": paperVersion,
+				},
+			}); err != nil {
+				s.auditFailed(examID, questionID, err)
+				return ErrAuditUnavailable
+			}
+		}
+
+		marking, err := readMarking(ctx, w, examID, studentID)
+		if err != nil {
+			return err
+		}
+		for _, l := range marking.Lines {
+			if l.QuestionID == questionID {
+				result = &SaveMarkResult{Line: l, Paper: marking.Paper}
+				return nil
+			}
+		}
+		return ErrExamNotFound
+	})
+	if err != nil {
+		if errors.Is(err, review.ErrStudentNotAssigned) {
+			return nil, ErrExamNotFound
+		}
+		return nil, err
+	}
+	return result, nil
+}
+
+// validationText is the human part of a marks error.
+func validationText(err error) string {
+	msg := err.Error()
+	if _, after, found := strings.Cut(msg, ": "); found {
+		return after
+	}
+	return msg
+}
+
+func (s *service) auditFailed(examID, questionID uuid.UUID, err error) {
+	if s.logger == nil {
+		return
+	}
+	s.logger.Error().Err(err).Str("event", "grading.audit_failed").
+		Str("exam_id", examID.String()).Str("question_id", questionID.String()).
+		Msg("mark not saved: the change could not be recorded")
 }
