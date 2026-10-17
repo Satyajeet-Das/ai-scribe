@@ -12,6 +12,10 @@ var validate = validator.New()
 type SubmitAnswerRequest struct {
 	SelectedOptionID *uuid.UUID `json:"selectedOptionId,omitempty"`
 	TextAnswer       string     `json:"textAnswer"`
+
+	// Revision is filled in by trusted server code (the voice module). It is
+	// not part of the JSON contract, so a client cannot claim a source.
+	Revision *RevisionInput `json:"-"`
 }
 
 func (r *SubmitAnswerRequest) Validate() error {

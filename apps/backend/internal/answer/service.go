@@ -88,6 +88,7 @@ func (s *answerService) SubmitAnswer(ctx context.Context, sessionID, questionID 
 		QuestionID:       questionID,
 		SelectedOptionID: req.SelectedOptionID,
 		TextAnswer:       req.TextAnswer,
+		Revision:         req.Revision,
 	}
 
 	if err := s.repo.Upsert(ctx, ans); err != nil {
