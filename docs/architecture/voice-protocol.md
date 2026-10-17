@@ -142,6 +142,32 @@ Classifier output is validated against this set and against the current question
 keys. Anything invalid, `unknown`, or below `SCRIBE_VOICE.INTENT.MIN_CONFIDENCE` produces a
 clarification response and no action. Submitting the exam is deliberately not a voice intent.
 
+## Intent classification providers
+
+`SCRIBE_VOICE.INTENT.PROVIDER` selects who interprets speech that is not an exact command:
+`rules` (default, offline), `anthropic`, `groq` or `ollama`. With any model provider the exact
+commands ("next question", "yes", "option B") are matched locally first and **never leave the
+server**; only other speech is sent. The model returns only an intent from the closed set above,
+and the backend validates it (and the option key against the current question) before acting.
+
+**Groq.** Set `PROVIDER=groq` and `API_KEY=gsk_...` in your private environment. `MODEL` defaults to
+`llama-3.3-70b-versatile` (any Groq chat model works, for example `llama-3.1-8b-instant` for lower
+latency or `openai/gpt-oss-20b`) and `BASE_URL` to `https://api.groq.com/openai/v1`. Leave
+both unset unless overriding: the server refuses to start if `MODEL` is a Claude model or `BASE_URL`
+is the Ollama address, which are the values an earlier example file set for other providers.
+
+- **What is sent:** the transcript, the question type, the option keys and texts as the student
+  sees them, and whether an answer is awaiting confirmation. Never answer keys, grading data or
+  anything about the student. Transcripts of speech the rules cannot place do go to Groq, so cover it in
+  the same notice and data-processing terms as the speech recogniser.
+- **How:** JSON object mode (supported by every Groq model) at temperature 0, with the schema stated
+  in the prompt. The reply is then validated strictly like every other provider's: an unknown
+  intent, extra fields, a missing field, an out-of-range confidence, an option the question does
+  not have, or a reply cut off by the length limit is refused.
+- **Failures** never change exam state: a rate limit, a bad key, a timeout or an outage gives the
+  student "intent unavailable" and exact commands keep working. The key and the transcript never
+  appear in errors or logs.
+
 ## Answer flow
 
 ```

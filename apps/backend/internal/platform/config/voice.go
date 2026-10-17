@@ -12,6 +12,14 @@ const (
 	VoiceProviderRules     = "rules"
 	VoiceProviderAnthropic = "anthropic"
 	VoiceProviderOllama    = "ollama"
+	VoiceProviderGroq      = "groq"
+)
+
+// Defaults for the groq intent provider. The model is a Groq production model;
+// change it with SCRIBE_VOICE.INTENT.MODEL.
+const (
+	DefaultGroqBaseURL = "https://api.groq.com/openai/v1"
+	DefaultGroqModel   = "llama-3.3-70b-versatile"
 )
 
 // VoiceConfig configures the real-time voice pipeline (WebSocket transport,
@@ -87,7 +95,8 @@ type VoiceIntentConfig struct {
 	Provider string `koanf:"provider"`
 	APIKey   string `koanf:"api_key"`
 	Model    string `koanf:"model"`
-	// BaseURL is the Ollama server; used only by the ollama provider.
+	// BaseURL is the Ollama server, or the Groq API endpoint; used only by those
+	// providers.
 	BaseURL string `koanf:"base_url"`
 	// PromptVersion selects one of the prompts embedded in the binary.
 	PromptVersion string `koanf:"prompt_version"`
@@ -146,10 +155,14 @@ func (v *VoiceConfig) ApplyDefaults() {
 
 	setStr(&v.Intent.Provider, VoiceProviderRules)
 	v.Intent.Provider = strings.ToLower(strings.TrimSpace(v.Intent.Provider))
-	if v.Intent.Provider == VoiceProviderOllama {
+	switch v.Intent.Provider {
+	case VoiceProviderOllama:
 		setStr(&v.Intent.BaseURL, "http://localhost:11434")
 		setStr(&v.Intent.Model, "llama3.2")
-	} else {
+	case VoiceProviderGroq:
+		setStr(&v.Intent.BaseURL, DefaultGroqBaseURL)
+		setStr(&v.Intent.Model, DefaultGroqModel)
+	default:
 		setStr(&v.Intent.Model, "claude-opus-5-5")
 	}
 	setStr(&v.Intent.PromptVersion, "v1")
@@ -200,8 +213,22 @@ func (v *VoiceConfig) Validate() error {
 		if v.Intent.APIKey == "" {
 			return fmt.Errorf("voice.intent.api_key is required when voice.intent.provider is %q", v.Intent.Provider)
 		}
+	case VoiceProviderGroq:
+		if v.Intent.APIKey == "" {
+			return fmt.Errorf("voice.intent.api_key is required when voice.intent.provider is %q", v.Intent.Provider)
+		}
+		// The example environment file used to set another provider's model and
+		// address. Switching the provider without clearing them would send the
+		// requests to the wrong place with a model Groq does not have, and fail
+		// with a status code that does not say why.
+		if strings.HasPrefix(strings.ToLower(v.Intent.Model), "claude") {
+			return fmt.Errorf("voice.intent.model %q is not a Groq model: unset it to use %s", v.Intent.Model, DefaultGroqModel)
+		}
+		if strings.TrimRight(v.Intent.BaseURL, "/") == "http://localhost:11434" {
+			return fmt.Errorf("voice.intent.base_url %q is the Ollama address: unset it to use Groq at %s", v.Intent.BaseURL, DefaultGroqBaseURL)
+		}
 	default:
-		return fmt.Errorf("invalid voice.intent.provider %q (must be one of: rules, anthropic, ollama)", v.Intent.Provider)
+		return fmt.Errorf("invalid voice.intent.provider %q (must be one of: rules, anthropic, ollama, groq)", v.Intent.Provider)
 	}
 
 	if v.Intent.MinConfidence < 0 || v.Intent.MinConfidence > 1 {

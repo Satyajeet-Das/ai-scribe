@@ -92,6 +92,29 @@ func BuildProviders(cfg config.VoiceConfig) (Providers, error) {
 				MaxConcurrent: cfg.Intent.MaxConcurrent,
 			}),
 		}
+	case config.VoiceProviderGroq:
+		prompt, err := intent.LoadPrompt(cfg.Intent.PromptVersion, cfg.Intent.PromptFile)
+		if err != nil {
+			return p, err
+		}
+		version := cfg.Intent.PromptVersion
+		if cfg.Intent.PromptFile != "" {
+			version = "file"
+		}
+		// As with the other models: exact commands are matched locally and never
+		// leave the server; only what the fixed vocabulary cannot place is sent.
+		p.Classifier = intent.Chain{
+			First: intent.Rules{},
+			Second: intent.NewGroq(intent.GroqConfig{
+				APIKey:        cfg.Intent.APIKey,
+				Model:         cfg.Intent.Model,
+				BaseURL:       cfg.Intent.BaseURL,
+				Prompt:        prompt,
+				PromptVersion: version,
+				Timeout:       cfg.Intent.Timeout,
+				MaxConcurrent: cfg.Intent.MaxConcurrent,
+			}),
+		}
 	case config.VoiceProviderRules, "":
 		p.Classifier = intent.Rules{}
 	default:

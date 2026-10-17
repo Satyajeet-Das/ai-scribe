@@ -108,6 +108,12 @@ func TestVoiceConfig_Validate(t *testing.T) {
 		{"deepgram tts without key", func(c *VoiceConfig) { c.TTS.Provider = "deepgram" }, true},
 		{"anthropic intent without key", func(c *VoiceConfig) { c.Intent.Provider = "anthropic" }, true},
 		{"anthropic intent with key", func(c *VoiceConfig) { c.Intent.Provider = "anthropic"; c.Intent.APIKey = "k" }, false},
+		{"groq intent without key", func(c *VoiceConfig) { c.Intent.Provider = "groq" }, true},
+		{"groq intent with key", func(c *VoiceConfig) {
+			c.Intent.Provider = "groq"
+			c.Intent.APIKey = "k"
+			c.Intent.Model = DefaultGroqModel
+		}, false},
 		{"unknown stt provider", func(c *VoiceConfig) { c.STT.Provider = "whisper" }, true},
 		{"unknown tts provider", func(c *VoiceConfig) { c.TTS.Provider = "espeak" }, true},
 		{"unknown intent provider", func(c *VoiceConfig) { c.Intent.Provider = "gpt" }, true},
@@ -183,4 +189,77 @@ func TestLoadConfig_VoiceFromEnvironment(t *testing.T) {
 	t.Setenv("SCRIBE_VOICE.STT.API_KEY", "")
 	_, err = LoadConfig()
 	assert.Error(t, err, "a provider without credentials fails at startup, not at the first student")
+}
+
+func TestVoiceConfig_GroqDefaults(t *testing.T) {
+	t.Run("a Groq provider gets Groq's endpoint and a Groq model, not another provider's", func(t *testing.T) {
+		v := VoiceConfig{Enabled: true}
+		v.Intent.Provider = "Groq" // case does not matter
+		v.ApplyDefaults()
+
+		assert.Equal(t, VoiceProviderGroq, v.Intent.Provider)
+		assert.Equal(t, "https://api.groq.com/openai/v1", v.Intent.BaseURL)
+		assert.Equal(t, "llama-3.3-70b-versatile", v.Intent.Model)
+		assert.NotContains(t, v.Intent.Model, "claude")
+	})
+	t.Run("what the operator sets is kept", func(t *testing.T) {
+		v := VoiceConfig{Enabled: true}
+		v.Intent.Provider = "groq"
+		v.Intent.Model = "openai/gpt-oss-20b"
+		v.Intent.BaseURL = "https://proxy.example/openai/v1"
+		v.ApplyDefaults()
+		assert.Equal(t, "openai/gpt-oss-20b", v.Intent.Model)
+		assert.Equal(t, "https://proxy.example/openai/v1", v.Intent.BaseURL)
+	})
+	t.Run("other providers are unaffected", func(t *testing.T) {
+		a := VoiceConfig{Enabled: true}
+		a.Intent.Provider = "anthropic"
+		a.ApplyDefaults()
+		assert.Equal(t, "claude-opus-5-5", a.Intent.Model)
+		assert.Empty(t, a.Intent.BaseURL)
+
+		o := VoiceConfig{Enabled: true}
+		o.Intent.Provider = "ollama"
+		o.ApplyDefaults()
+		assert.Equal(t, "llama3.2", o.Intent.Model)
+		assert.Equal(t, "http://localhost:11434", o.Intent.BaseURL)
+	})
+	t.Run("the key is required, and the error says which provider", func(t *testing.T) {
+		v := VoiceConfig{Enabled: true}
+		v.Intent.Provider = "groq"
+		v.ApplyDefaults()
+		err := v.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "api_key")
+		assert.Contains(t, err.Error(), "groq")
+	})
+	t.Run("another provider's leftover model or address is refused with a reason", func(t *testing.T) {
+		stale := func(mutate func(*VoiceConfig)) error {
+			v := VoiceConfig{Enabled: true}
+			v.Intent.Provider = "groq"
+			v.Intent.APIKey = "k"
+			v.ApplyDefaults()
+			mutate(&v)
+			return v.Validate()
+		}
+		err := stale(func(v *VoiceConfig) { v.Intent.Model = "claude-opus-5-5" })
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a Groq model")
+		assert.Contains(t, err.Error(), "llama-3.3-70b-versatile", "it says what to use instead")
+
+		err = stale(func(v *VoiceConfig) { v.Intent.BaseURL = "http://localhost:11434/" })
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Ollama")
+
+		assert.NoError(t, stale(func(v *VoiceConfig) {}), "the defaults are fine")
+		assert.NoError(t, stale(func(v *VoiceConfig) { v.Intent.Model = "openai/gpt-oss-20b" }))
+		assert.NoError(t, stale(func(v *VoiceConfig) { v.Intent.BaseURL = "https://proxy.example/openai/v1" }))
+	})
+	t.Run("the list of valid providers mentions groq", func(t *testing.T) {
+		v := DefaultVoiceConfig()
+		v.Intent.Provider = "nonsense"
+		err := v.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "groq")
+	})
 }
