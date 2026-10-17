@@ -42,6 +42,13 @@ export const COMMAND_INTENTS = [
 ] as const;
 export type CommandIntent = (typeof COMMAND_INTENTS)[number];
 
+/**
+ * What an utterance is for. It is chosen by the control the student used, never
+ * inferred from what was said: "command" speech can never become answer text,
+ * and "answer" speech is never interpreted as a command.
+ */
+export type AudioMode = "command" | "answer";
+
 // ---------------------------------------------------------------------------
 // Client → server payloads
 // ---------------------------------------------------------------------------
@@ -50,11 +57,23 @@ export interface ClientPayloads {
   ping: undefined;
   "session.sync": undefined;
   "auth.refresh": { token: string };
-  "audio.start": { streamId: string; encoding: string; sampleRate: number; channels: number };
+  "audio.start": {
+    streamId: string;
+    encoding: string;
+    sampleRate: number;
+    channels: number;
+    mode: AudioMode;
+  };
   "audio.end": { streamId: string; chunks?: number };
   "audio.cancel": { streamId: string };
   "tts.cancel": { responseId?: string };
-  command: { intent: CommandIntent; optionKey?: string; confirmationId?: string };
+  command: {
+    intent: CommandIntent;
+    optionKey?: string;
+    confirmationId?: string;
+    /** The student's corrected wording; only with "confirm" of a dictated answer. */
+    text?: string;
+  };
 }
 export type ClientMessageType = keyof ClientPayloads;
 
@@ -118,6 +137,8 @@ const serverSchemas = {
     capabilities: z.object({
       stt: z.boolean(),
       tts: z.boolean(),
+      /** True when dictated answers are kept as audio. Absent on older servers. */
+      recording: z.boolean().optional(),
       ttsFormat: audioFormatSchema.optional(),
       intentClassifier: z.string(),
     }),
@@ -158,6 +179,8 @@ const serverSchemas = {
     code: z.string().optional(),
     retryable: z.boolean().optional(),
     saved: z.boolean(),
+    /** The student changed the recognized text before confirming. */
+    corrected: z.boolean().optional(),
     duplicate: z.boolean().optional(),
     confirmationId: z.string().optional(),
     questionId: z.string().optional(),
@@ -173,6 +196,14 @@ const serverSchemas = {
     code: z.string().optional(),
     text: z.string(),
     audio: z.boolean(),
+  }),
+  /** Whether the audio of a dictated answer was kept. Says nothing about the answer. */
+  "recording.status": z.object({
+    streamId: z.string(),
+    status: z.string(),
+    recordingId: z.string().optional(),
+    durationMs: z.number().optional(),
+    code: z.string().optional(),
   }),
   "tts.start": z.object({ responseId: z.string(), format: audioFormatSchema }),
   "tts.end": z.object({

@@ -15,6 +15,7 @@ import type {
 } from "./protocol";
 import type { ConnectionStatus, FatalReason } from "./voice-socket";
 import type { PlaybackState } from "./pcm-player";
+import type { AudioMode } from "./protocol";
 
 export type MicState =
   | "idle"
@@ -42,6 +43,9 @@ export interface AnswerStatus {
   retryable?: boolean;
 }
 
+/** Whether the audio of the last dictated answer was kept. Independent of the answer. */
+export type RecordingPhase = "none" | "stored" | "failed";
+
 export interface Notice {
   /** Increases with every notice so identical text is still re-announced. */
   seq: number;
@@ -63,6 +67,8 @@ export interface VoiceState {
   /** The request whose transcript and response are currently accepted. */
   activeRequestId: string | null;
   activeStreamId: string | null;
+  /** What the recording in progress is for. Only meaningful while recording. */
+  captureMode: AudioMode | null;
 
   partialTranscript: string;
   finalTranscript: string;
@@ -71,6 +77,7 @@ export interface VoiceState {
   /** An answer the backend has staged and is waiting for a yes or no on. Not saved. */
   pending: ConfirmRequestPayload | null;
   answer: AnswerStatus;
+  recording: RecordingPhase;
 
   response: ResponsePayload | null;
   speech: PlaybackState;
@@ -89,11 +96,13 @@ export const initialVoiceState: VoiceState = {
   busy: "idle",
   activeRequestId: null,
   activeStreamId: null,
+  captureMode: null,
   partialTranscript: "",
   finalTranscript: "",
   intent: null,
   pending: null,
   answer: { phase: "idle" },
+  recording: "none",
   response: null,
   speech: "idle",
   notice: null,
@@ -116,6 +125,7 @@ export type VoiceAction =
       kind: "audio" | "command";
       streamId?: string;
       intent?: string;
+      mode?: AudioMode;
     }
   | { type: "capture_ended" }
   | { type: "capture_aborted"; notice?: string }
@@ -191,7 +201,7 @@ function applyActionResult(state: VoiceState, result: ActionResultPayload): Voic
         ...state,
         pending: null,
         answer: { ...base, phase: "saved" },
-        notice: notify(state, "info", "Answer saved."),
+        notice: notify(state, "info", result.corrected ? "Corrected answer saved." : "Answer saved."),
       };
     case "cancelled":
       return {
@@ -235,6 +245,7 @@ function applyServer(state: VoiceState, message: ServerMessage): VoiceState {
         activeStreamId: null,
         partialTranscript: "",
         pending: null,
+        recording: "none",
         answer: state.answer.phase === "saved" ? state.answer : { phase: "idle" },
         notice: notify(
           state,
@@ -310,6 +321,20 @@ function applyServer(state: VoiceState, message: ServerMessage): VoiceState {
       }
       return next;
     }
+
+    case "recording.status":
+      // Only the utterance in progress; a late report for an earlier one is stale.
+      if (!forActive && message.payload.streamId !== state.activeStreamId) return state;
+      if (message.payload.status === "stored") return { ...state, recording: "stored" };
+      return {
+        ...state,
+        recording: "failed",
+        notice: notify(
+          state,
+          "error",
+          "The audio of your answer could not be kept. Your answer text is not affected."
+        ),
+      };
 
     case "tts.end":
       if (
@@ -409,6 +434,8 @@ export function voiceReducer(state: VoiceState, action: VoiceAction): VoiceState
         ...state,
         activeRequestId: action.id,
         activeStreamId: action.streamId ?? null,
+        captureMode: action.kind === "audio" ? (action.mode ?? "command") : null,
+        recording: action.kind === "audio" ? "none" : state.recording,
         busy: action.kind === "audio" ? "listening" : "processing",
         partialTranscript: "",
         finalTranscript: "",

@@ -13,6 +13,7 @@ import { PcmPlayer } from "@/services/voice/pcm-player";
 import {
   PCM_ENCODING,
   newUuid,
+  type AudioMode,
   type CommandIntent,
   type ServerMessage,
   type VoiceSessionState,
@@ -66,6 +67,12 @@ export interface UseVoiceSessionOptions {
   onAnswerSaved?(questionId: string): void;
   /** The session is over, or access to it was lost. */
   onSessionEnded?(): void;
+  /**
+   * Read each newly shown question aloud when the page moves to it. It happens
+   * once per move, and never on the first question, a reconnection or a
+   * re-render.
+   */
+  autoReadQuestions?: boolean;
   deps?: Partial<VoiceDeps>;
 }
 
@@ -77,17 +84,27 @@ export interface VoiceController {
   enable(): void;
   disable(): void;
   reconnect(): void;
-  /** Starts recording. Triggers the microphone permission prompt the first time. */
-  startSpeaking(): Promise<void>;
+  /**
+   * Starts recording. Triggers the microphone permission prompt the first time.
+   * "command" (the default) listens for a spoken request; "answer" dictates an
+   * answer, whose words are never treated as commands.
+   */
+  startSpeaking(mode?: AudioMode): Promise<void>;
   /** Stops recording and sends the utterance for recognition. */
   finishSpeaking(): void;
   /** Stops recording and discards the utterance. */
   cancelSpeaking(): void;
   sendCommand(intent: CommandIntent, optionKey?: string): void;
-  confirm(): void;
+  /**
+   * Confirms the staged answer. For a dictated answer, `text` is the student's
+   * corrected wording; omit it to save what was heard.
+   */
+  confirm(text?: string): void;
   deny(): void;
   stopSpeech(): void;
   replaySpeech(): void;
+  /** Shows and announces a message to the student. */
+  announce(text: string, tone?: "info" | "error"): void;
 }
 
 async function probeSession(sessionId: string): Promise<ProbeResult> {
@@ -149,6 +166,8 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
   const acceptedResponseRef = useRef<string | null>(null);
   /** The question the backend last reported over this connection. */
   const voiceQuestionRef = useRef<string | null>(null);
+  /** The question that should be read as soon as it is possible to do so. */
+  const autoReadPendingRef = useRef<string | null>(null);
 
   const deps = useMemo<VoiceDeps>(() => ({ ...defaultDeps, ...options.deps }), [options.deps]);
 
@@ -381,7 +400,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
     [deps, finishSpeaking, stopCapture]
   );
 
-  const startSpeaking = useCallback(async () => {
+  const startSpeaking = useCallback(async (mode: AudioMode = "command") => {
     const { state: current, options: opts } = latest.current;
     const socket = socketRef.current;
     if (!socket || !socket.isConnected() || opts.disabled) return;
@@ -446,6 +465,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
       encoding: PCM_ENCODING,
       sampleRate: mic.getSampleRate(),
       channels: 1,
+      mode,
     });
     if (requestId === null) {
       mic.stop(false);
@@ -456,7 +476,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
     activeRequestRef.current = requestId;
     acceptedResponseRef.current = null;
     dispatch({ type: "mic", state: "recording" });
-    dispatch({ type: "request_started", id: requestId, kind: "audio", streamId });
+    dispatch({ type: "request_started", id: requestId, kind: "audio", streamId, mode });
   }, [deps, handleChunk, silence]);
 
   const cancelSpeaking = useCallback(() => {
@@ -464,7 +484,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
   }, [stopCapture]);
 
   const sendCommand = useCallback(
-    (intent: CommandIntent, optionKey?: string, confirmationId?: string) => {
+    (intent: CommandIntent, optionKey?: string, confirmationId?: string, text?: string) => {
       const socket = socketRef.current;
       if (!socket || latest.current.options.disabled) return;
       // A command supersedes whatever is in progress, here and on the server.
@@ -475,6 +495,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
         intent,
         ...(optionKey ? { optionKey } : {}),
         ...(confirmationId ? { confirmationId } : {}),
+        ...(text !== undefined ? { text } : {}),
       });
       if (requestId === null) {
         dispatch({ type: "notice", tone: "error", text: "The voice assistant is not connected." });
@@ -493,10 +514,14 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
   const pending =
     pendingRaw && (questionId === null || pendingRaw.questionId === questionId) ? pendingRaw : null;
 
-  const confirm = useCallback(() => {
-    const p = latest.current.state.pending;
-    if (p) sendCommand("confirm", undefined, p.confirmationId);
-  }, [sendCommand]);
+  const confirm = useCallback(
+    (text?: string) => {
+      const p = latest.current.state.pending;
+      // A correction only means something for a dictated answer.
+      if (p) sendCommand("confirm", undefined, p.confirmationId, p.optionKey ? undefined : text);
+    },
+    [sendCommand]
+  );
 
   const deny = useCallback(() => {
     const p = latest.current.state.pending;
@@ -511,6 +536,10 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
 
   const replaySpeech = useCallback(() => {
     void playerRef.current?.replay();
+  }, []);
+
+  const announce = useCallback((text: string, tone: "info" | "error" = "info") => {
+    dispatch({ type: "notice", tone, text });
   }, []);
 
   // -------------------------------------------------------------------------
@@ -541,12 +570,35 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
   useEffect(() => {
     if (questionId === null || questionId === voiceQuestionRef.current) return;
     voiceQuestionRef.current = questionId;
+    if (latest.current.options.autoReadQuestions) autoReadPendingRef.current = questionId;
     if (playerRef.current && playerRef.current.getState() !== "idle") {
       const responseId = acceptedResponseRef.current ?? undefined;
       silence();
       socketRef.current?.send("tts.cancel", responseId ? { responseId } : {});
     }
   }, [questionId, silence]);
+
+  // Auto-read. The request is held until reading is possible (the page has
+  // finished navigating, the connection is up and speech is available) and is
+  // dropped if the connection is lost or the student starts speaking first, so
+  // a reconnection or a late recovery never reads a question out of the blue.
+  const connection = state.connection;
+  const ttsAvailable = state.capabilities?.tts === true;
+  useEffect(() => {
+    const wanted = autoReadPendingRef.current;
+    if (!wanted) return;
+    if (wanted !== questionId || !options.autoReadQuestions || connection !== "connected") {
+      autoReadPendingRef.current = null;
+      return;
+    }
+    if (captureRef.current || startingRef.current) {
+      autoReadPendingRef.current = null;
+      return;
+    }
+    if (disabled || !ttsAvailable) return;
+    autoReadPendingRef.current = null;
+    sendCommand("repeat_question");
+  }, [questionId, disabled, connection, ttsAvailable, options.autoReadQuestions, sendCommand]);
 
   // A staged answer expires on the backend; stop offering it at the same moment.
   const pendingId = pendingRaw?.confirmationId;
@@ -578,5 +630,6 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
     deny,
     stopSpeech,
     replaySpeech,
+    announce,
   };
 }

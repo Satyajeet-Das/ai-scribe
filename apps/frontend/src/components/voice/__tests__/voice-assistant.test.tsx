@@ -57,11 +57,17 @@ interface Setup {
     onAnswerSaved: ReturnType<typeof vi.fn>;
     onSessionEnded: ReturnType<typeof vi.fn>;
   };
-  rerender(overrides: { questionId?: string | null; disabled?: boolean }): void;
+  rerender(overrides: Options): void;
   unmount(): void;
 }
 
-function setup(initial: { questionId?: string | null; disabled?: boolean } = {}): Setup {
+interface Options {
+  questionId?: string | null;
+  disabled?: boolean;
+  allowVoiceAnswer?: boolean;
+}
+
+function setup(initial: Options = {}): Setup {
   const mic = new FakeMic();
   const clock = { now: 1_000_000 };
   const deps: Partial<VoiceDeps> = {
@@ -81,11 +87,12 @@ function setup(initial: { questionId?: string | null; disabled?: boolean } = {})
     now: () => clock.now,
   };
   const props = { onSessionState: vi.fn(), onAnswerSaved: vi.fn(), onSessionEnded: vi.fn() };
-  const element = (o: { questionId?: string | null; disabled?: boolean }) => (
+  const element = (o: Options) => (
     <VoiceAssistant
       sessionId="session-1"
       questionId={o.questionId === undefined ? QUESTION_1.id : o.questionId}
       disabled={o.disabled}
+      allowVoiceAnswer={o.allowVoiceAnswer}
       deps={deps}
       {...props}
     />
@@ -212,6 +219,407 @@ describe("VoiceAssistant", () => {
     });
   });
 
+  describe("command and answer modes", () => {
+    it("offers dictation only for written-answer questions", async () => {
+      setup({ allowVoiceAnswer: false });
+      await enable();
+      expect(screen.queryByTestId("voice-dictate-button")).toBeNull();
+    });
+
+    it("sends mode 'answer' only from the dictate control, and says so", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+
+      fireEvent.click(screen.getByTestId("voice-dictate-button"));
+      await flush();
+      const start = ws().ofType("audio.start").at(-1)!;
+      expect(start.payload!.mode).toBe("answer");
+      expect(screen.getByTestId("voice-activity")).toHaveTextContent("Listening to your answer");
+    });
+
+    it("sends mode 'command' from the ordinary speak control and the Alt+M shortcut", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+
+      await startRecording();
+      expect(ws().ofType("audio.start").at(-1)!.payload!.mode).toBe("command");
+      expect(screen.getByTestId("voice-activity")).toHaveTextContent("Listening for a command");
+    });
+
+    it("Alt+D dictates and Alt+M never does", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+
+      fireEvent.keyDown(window, { key: "d", altKey: true });
+      await flush();
+      expect(ws().ofType("audio.start").at(-1)!.payload!.mode).toBe("answer");
+    });
+
+    it("ignores Alt+D when the question takes no written answer", async () => {
+      setup({ allowVoiceAnswer: false });
+      await enable();
+
+      fireEvent.keyDown(window, { key: "d", altKey: true });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+    });
+  });
+
+  describe("reading each new question aloud", () => {
+    beforeEach(() => window.localStorage.clear());
+    const repeats = () => ws().ofType("command").filter((m) => m.payload!.intent === "repeat_question");
+
+    it("reads the question once when the page moves to it", async () => {
+      const s = setup();
+      await enable();
+      expect(repeats()).toHaveLength(0); // not on connect: the first question is not read unasked
+
+      s.rerender({ questionId: QUESTION_2.id });
+      await flush();
+      expect(repeats()).toHaveLength(1);
+
+      // A re-render with the same question must not read it again.
+      s.rerender({ questionId: QUESTION_2.id });
+      s.rerender({ questionId: QUESTION_2.id, allowVoiceAnswer: true });
+      await flush();
+      expect(repeats()).toHaveLength(1);
+    });
+
+    it("does not read a question the backend already read during voice navigation", async () => {
+      const s = setup();
+      await enable();
+
+      act(() => ws().serverSend("session.state", { status: "IN_PROGRESS", question: QUESTION_2 }));
+      s.rerender({ questionId: QUESTION_2.id });
+      await flush();
+      expect(repeats()).toHaveLength(0);
+    });
+
+    it("waits until the page has finished navigating, then reads once", async () => {
+      const s = setup();
+      await enable();
+
+      s.rerender({ questionId: QUESTION_2.id, disabled: true });
+      await flush();
+      expect(repeats()).toHaveLength(0);
+
+      s.rerender({ questionId: QUESTION_2.id, disabled: false });
+      await flush();
+      expect(repeats()).toHaveLength(1);
+    });
+
+    it("stays silent when the student has switched it off, and remembers the choice", async () => {
+      const s = setup();
+      await enable();
+      fireEvent.click(screen.getByTestId("voice-auto-read"));
+      expect(window.localStorage.getItem("scribe.autoReadQuestions")).toBe("off");
+
+      s.rerender({ questionId: QUESTION_2.id });
+      await flush();
+      expect(repeats()).toHaveLength(0);
+    });
+
+    it("does not read over a student who is already recording", async () => {
+      const s = setup();
+      await enable();
+      await startRecording();
+
+      s.rerender({ questionId: QUESTION_2.id });
+      await flush();
+      expect(repeats()).toHaveLength(0);
+    });
+  });
+
+  describe("correcting a dictated answer before saving it", () => {
+    const stagedText = {
+      confirmationId: "conf-text",
+      action: "dictate_answer",
+      questionId: QUESTION_1.id,
+      text: "plants make shugar",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const stage = async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      act(() => ws().serverSend("confirm.request", stagedText));
+    };
+    const draft = () => screen.getByTestId("voice-answer-draft") as HTMLTextAreaElement;
+    const lastCommand = () => ws().ofType("command").at(-1)!;
+
+    it("shows what was heard in a labelled box the student can edit", async () => {
+      await stage();
+      expect(draft()).toHaveValue("plants make shugar");
+      expect(screen.getByLabelText(/correct it here if it is wrong/i)).toBe(draft());
+      expect(screen.getByTestId("voice-confirm-yes")).toHaveTextContent("Yes, save answer");
+    });
+
+    it("saves what was heard when the student changes nothing", async () => {
+      await stage();
+      fireEvent.click(screen.getByTestId("voice-confirm-yes"));
+
+      expect(lastCommand().payload).toEqual({ intent: "confirm", confirmationId: "conf-text" });
+    });
+
+    it("sends the student's wording, with the confirmation it corrects", async () => {
+      await stage();
+      fireEvent.change(draft(), { target: { value: "plants make sugar" } });
+      expect(screen.getByText(/you have changed the text/i)).toBeInTheDocument();
+
+      const save = screen.getByTestId("voice-confirm-yes");
+      expect(save).toHaveTextContent("Save my corrected answer");
+      fireEvent.click(save);
+      expect(lastCommand().payload).toEqual({
+        intent: "confirm",
+        confirmationId: "conf-text",
+        text: "plants make sugar",
+      });
+    });
+
+    it("treats a change back to the original as no change", async () => {
+      await stage();
+      fireEvent.change(draft(), { target: { value: "something else" } });
+      fireEvent.change(draft(), { target: { value: "  plants make shugar " } });
+      fireEvent.click(screen.getByTestId("voice-confirm-yes"));
+      expect(lastCommand().payload).not.toHaveProperty("text");
+    });
+
+    it("will not save an empty answer", async () => {
+      await stage();
+      fireEvent.change(draft(), { target: { value: "   " } });
+
+      expect(screen.getByTestId("voice-answer-empty")).toHaveTextContent(/cannot be empty/i);
+      expect(draft()).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByTestId("voice-confirm-yes")).toBeDisabled();
+      expect(ws().ofType("command")).toHaveLength(0);
+    });
+
+    it("offers no editor for a chosen option", async () => {
+      setup();
+      await enable();
+      act(() => ws().serverSend("confirm.request", stagedAnswer));
+      expect(screen.queryByTestId("voice-answer-draft")).toBeNull();
+      expect(screen.getByTestId("voice-confirmation")).toHaveTextContent("Option B");
+
+      fireEvent.click(screen.getByTestId("voice-confirm-yes"));
+      expect(lastCommand().payload).not.toHaveProperty("text");
+    });
+
+    it("keeps typing in the box from starting a recording", async () => {
+      await stage();
+      fireEvent.keyDown(draft(), { key: "Enter" });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+    });
+
+    it("keeps the student's edit while a save is being retried", async () => {
+      await stage();
+      fireEvent.change(draft(), { target: { value: "plants make sugar" } });
+      fireEvent.click(screen.getByTestId("voice-confirm-yes"));
+      // The save could not be confirmed; the same answer is still staged.
+      act(() =>
+        ws().serverSend("action.result", {
+          action: "answer",
+          status: "failed",
+          saved: false,
+          retryable: true,
+          confirmationId: "conf-text",
+          questionId: QUESTION_1.id,
+        })
+      );
+      expect(draft()).toHaveValue("plants make sugar");
+    });
+
+    it("says a corrected answer was saved, only once the server says so", async () => {
+      await stage();
+      fireEvent.change(draft(), { target: { value: "plants make sugar" } });
+      fireEvent.click(screen.getByTestId("voice-confirm-yes"));
+      expect(screen.getByTestId("voice-live-status")).not.toHaveTextContent(/saved/i);
+
+      act(() =>
+        ws().serverSend("action.result", {
+          action: "answer",
+          status: "ok",
+          saved: true,
+          corrected: true,
+          confirmationId: "conf-text",
+          questionId: QUESTION_1.id,
+          answerId: "a1",
+        })
+      );
+      expect(screen.getByTestId("voice-live-status")).toHaveTextContent("Corrected answer saved.");
+      expect(screen.queryByTestId("voice-confirmation")).toBeNull();
+    });
+  });
+
+  describe("answer audio retention", () => {
+    const recordingCaps = {
+      stt: true,
+      tts: true,
+      recording: true,
+      ttsFormat: { encoding: "pcm_s16le", sampleRate: 24000, channels: 1 },
+      intentClassifier: "rules",
+    };
+
+    it("says nothing about recording when the server does not keep audio", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      expect(screen.queryByTestId("voice-recording-notice")).toBeNull();
+    });
+
+    it("tells the student audio is kept before they dictate, and that commands are not", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable({ capabilities: recordingCaps });
+      const notice = screen.getByTestId("voice-recording-notice");
+      expect(notice).toHaveTextContent(/recorded and kept/i);
+      expect(notice).toHaveTextContent(/commands are not recorded/i);
+    });
+
+    it("reports whether the audio was kept, separately from whether the answer was", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable({ capabilities: recordingCaps });
+      fireEvent.click(screen.getByTestId("voice-dictate-button"));
+      await flush();
+      const start = ws().ofType("audio.start").at(-1)!;
+
+      act(() =>
+        ws().serverSend(
+          "recording.status",
+          { streamId: start.payload!.streamId, status: "stored", recordingId: "r1", durationMs: 900 },
+          start.id
+        )
+      );
+      expect(screen.getByTestId("voice-recording-status")).toHaveTextContent(/audio .* was saved/i);
+      expect(screen.queryByTestId("voice-answer-status")).toBeNull(); // the answer is not claimed saved
+
+      act(() =>
+        ws().serverSend(
+          "recording.status",
+          { streamId: start.payload!.streamId, status: "failed", code: "recording_failed" },
+          start.id
+        )
+      );
+      expect(screen.getByTestId("voice-recording-status")).toHaveTextContent(/could not be saved/i);
+      expect(screen.getByTestId("voice-live-alert")).toHaveTextContent(/answer text is not affected/i);
+    });
+
+    it("ignores a status for an utterance that is no longer current", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable({ capabilities: recordingCaps });
+      fireEvent.click(screen.getByTestId("voice-dictate-button"));
+      await flush();
+
+      act(() =>
+        ws().serverSend("recording.status", { streamId: "some-older-stream", status: "failed" }, "old-request")
+      );
+      expect(screen.queryByTestId("voice-recording-status")).toBeNull();
+    });
+  });
+
+  describe("Enter key", () => {
+    // The toggle lock reads Date.now, so each test controls the clock.
+    let now = 0;
+    beforeEach(() => {
+      now = Date.now(); // start at the real time so expiry timestamps still make sense
+      vi.spyOn(Date, "now").mockImplementation(() => now);
+    });
+    afterEach(() => vi.restoreAllMocks());
+    const tick = (ms: number) => {
+      now += ms;
+    };
+
+    it("starts a command on a multiple-choice question and stops on the next press", async () => {
+      const { mic } = setup({ allowVoiceAnswer: false });
+      await enable();
+
+      fireEvent.keyDown(document.body, { key: "Enter" });
+      await flush();
+      expect(ws().ofType("audio.start").at(-1)!.payload!.mode).toBe("command");
+      expect(screen.getByTestId("voice-recording-indicator")).toBeInTheDocument();
+
+      tick(1000);
+      act(() => mic.emit());
+      fireEvent.keyDown(document.body, { key: "Enter" });
+      await flush();
+      expect(screen.queryByTestId("voice-recording-indicator")).not.toBeInTheDocument();
+      expect(ws().ofType("audio.end")).toHaveLength(1);
+    });
+
+    it("dictates an answer on a written-answer question", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+
+      fireEvent.keyDown(document.body, { key: "Enter" });
+      await flush();
+      expect(ws().ofType("audio.start").at(-1)!.payload!.mode).toBe("answer");
+    });
+
+    it("leaves Enter to buttons, text fields and dialogs", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      render(
+        <div>
+          <textarea aria-label="essay" />
+          <button type="button">Next</button>
+          <div role="dialog" aria-label="d">
+            <span>in dialog</span>
+          </div>
+        </div>
+      );
+
+      fireEvent.keyDown(screen.getByLabelText("essay"), { key: "Enter" });
+      fireEvent.keyDown(screen.getByRole("button", { name: "Next" }), { key: "Enter" });
+      fireEvent.keyDown(screen.getByText("in dialog"), { key: "Enter" });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+    });
+
+    it("does nothing for a held key, a modified Enter, or while composing text", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+
+      fireEvent.keyDown(document.body, { key: "Enter", repeat: true });
+      fireEvent.keyDown(document.body, { key: "Enter", shiftKey: true });
+      fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true });
+      fireEvent.keyDown(document.body, { key: "Enter", isComposing: true });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+    });
+
+    it("treats two presses in quick succession as one", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+
+      fireEvent.keyDown(document.body, { key: "Enter" });
+      tick(50);
+      fireEvent.keyDown(document.body, { key: "Enter" });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(1);
+      expect(ws().ofType("audio.end")).toHaveLength(0);
+      expect(screen.getByTestId("voice-recording-indicator")).toBeInTheDocument();
+    });
+
+    it("does not record while an answer waits for confirmation, and says why", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      act(() => ws().serverSend("confirm.request", stagedAnswer));
+
+      fireEvent.keyDown(document.body, { key: "Enter" });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+      expect(screen.getByTestId("voice-live-alert")).toHaveTextContent(/answer waiting/i);
+    });
+
+    it("never confirms an answer, even with the confirmation on screen", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      act(() => ws().serverSend("confirm.request", stagedAnswer));
+
+      fireEvent.keyDown(document.body, { key: "Enter" });
+      await flush();
+      expect(ws().ofType("command")).toHaveLength(0);
+    });
+  });
+
   describe("recording and streaming audio", () => {
     it("asks for the microphone only on Start speaking, then streams ordered PCM frames", async () => {
       const { mic } = setup();
@@ -225,6 +633,7 @@ describe("VoiceAssistant", () => {
         encoding: "pcm_s16le",
         sampleRate: 16000,
         channels: 1,
+        mode: "command",
       });
       expect(screen.getByTestId("voice-recording-indicator")).toHaveTextContent("Recording");
       expect(screen.getByTestId("voice-mic-button")).toHaveAttribute("aria-pressed", "true");
@@ -944,7 +1353,7 @@ describe("VoiceAssistant", () => {
         expect(button).not.toHaveAttribute("tabindex", "-1");
       }
       expect(screen.getByRole("group", { name: "Voice controls" })).toBeInTheDocument();
-      expect(screen.getByText(/alt\+m starts or stops recording/i)).toBeInTheDocument();
+      expect(screen.getByText(/alt\+m starts or stops a voice command/i)).toBeInTheDocument();
 
       // Alt+M toggles recording without touching the mouse.
       fireEvent.keyDown(window, { key: "m", altKey: true });

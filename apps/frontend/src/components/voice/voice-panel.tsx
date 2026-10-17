@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -15,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import type { VoiceController } from "@/hooks/use-voice-session";
 import type { ConnectionStatus } from "@/services/voice/voice-socket";
 import type { VoiceState } from "@/services/voice/voice-state";
@@ -23,6 +25,11 @@ export interface VoicePanelProps {
   voice: VoiceController;
   /** True while the page is navigating or submitting. */
   disabled?: boolean;
+  /** True when the current question takes a written answer, which can be dictated. */
+  allowVoiceAnswer?: boolean;
+  /** Whether each new question is read aloud when the page moves to it. */
+  autoRead?: boolean;
+  onAutoReadChange?(on: boolean): void;
 }
 
 const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
@@ -44,7 +51,11 @@ function connectionVariant(
 
 function activityText(state: VoiceState): string {
   if (state.mic === "requesting") return "Waiting for microphone permission…";
-  if (state.mic === "recording") return "Listening. Press Stop and send when you have finished.";
+  if (state.mic === "recording") {
+    return state.captureMode === "answer"
+      ? "Listening to your answer. Press Stop and send when you have finished."
+      : "Listening for a command. Press Stop and send when you have finished.";
+  }
   if (state.busy === "processing") return "Processing…";
   if (state.speech === "playing") return "Speaking…";
   return "Ready";
@@ -81,11 +92,121 @@ const TONE_CLASS = {
   error: "text-destructive",
 } as const;
 
+/** The server rejects answers longer than this. */
+const MAX_ANSWER_CHARS = 2000;
+
+/**
+ * The answer waiting for a yes or no. A dictated answer can be corrected here
+ * before it is saved: the student's version is what is kept, and the original
+ * recording and what the recognizer heard are kept alongside it. A chosen
+ * option has nothing to correct.
+ */
+function PendingAnswer({
+  pending,
+  canAct,
+  saving,
+  recordingKept,
+  onConfirm,
+  onDeny,
+}: {
+  pending: NonNullable<VoiceController["pending"]>;
+  canAct: boolean;
+  saving: boolean;
+  recordingKept: boolean;
+  onConfirm(text?: string): void;
+  onDeny(): void;
+}) {
+  const dictated = !pending.optionKey;
+  const [draft, setDraft] = useState(pending.text ?? "");
+  const changed = dictated && draft.trim() !== (pending.text ?? "").trim();
+  const empty = dictated && draft.trim() === "";
+
+  return (
+    <div
+      role="group"
+      aria-labelledby="voice-confirm-title"
+      className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex flex-col gap-2"
+      data-testid="voice-confirmation"
+    >
+      <p id="voice-confirm-title" className="font-semibold">
+        Confirm your answer
+      </p>
+      {dictated ? (
+        <>
+          <label htmlFor="voice-answer-draft" className="text-sm font-medium">
+            This is what was heard. Correct it here if it is wrong.
+          </label>
+          <textarea
+            id="voice-answer-draft"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            maxLength={MAX_ANSWER_CHARS}
+            rows={4}
+            aria-describedby="voice-answer-draft-help"
+            aria-invalid={empty}
+            disabled={saving}
+            className="w-full rounded-md border bg-background p-2 text-base leading-relaxed"
+            data-testid="voice-answer-draft"
+          />
+          <p id="voice-answer-draft-help" className="text-xs text-muted-foreground">
+            {changed
+              ? "You have changed the text. Your version will be saved."
+              : "If the text is right, just save it."}
+            {recordingKept && " Your original recording is kept either way."}
+          </p>
+          {empty && (
+            <p role="alert" className="text-xs text-destructive" data-testid="voice-answer-empty">
+              An answer cannot be empty.
+            </p>
+          )}
+        </>
+      ) : (
+        <p>
+          Option {pending.optionKey}
+          {pending.optionText ? `: ${pending.optionText}` : ""}
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        This answer is not saved yet. Say yes or no, or use the buttons.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          onClick={() => onConfirm(changed ? draft : undefined)}
+          disabled={!canAct || saving || empty}
+          className="gap-1.5"
+          data-testid="voice-confirm-yes"
+        >
+          <Check className="size-3.5" aria-hidden="true" />
+          {changed ? "Save my corrected answer" : "Yes, save answer"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onDeny}
+          disabled={!canAct || saving}
+          className="gap-1.5"
+          data-testid="voice-confirm-no"
+        >
+          <X className="size-3.5" aria-hidden="true" />
+          No, cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Controls and feedback for the voice assistant. Everything here is also
  * operable by keyboard, and every voice action has an on-screen equivalent.
  */
-export function VoicePanel({ voice, disabled = false }: VoicePanelProps) {
+export function VoicePanel({
+  voice,
+  disabled = false,
+  allowVoiceAnswer = false,
+  autoRead = false,
+  onAutoReadChange,
+}: VoicePanelProps) {
   const { state, pending } = voice;
   const connected = state.connection === "connected";
   const recording = state.mic === "recording";
@@ -226,6 +347,21 @@ export function VoicePanel({ voice, disabled = false }: VoicePanelProps) {
                 </Button>
               )}
 
+              {!recording && allowVoiceAnswer && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void voice.startSpeaking("answer")}
+                  disabled={!canAct || !sttAvailable || requesting}
+                  aria-keyshortcuts="Alt+D"
+                  className="gap-1.5"
+                  data-testid="voice-dictate-button"
+                >
+                  <Mic className="size-3.5" aria-hidden="true" />
+                  Dictate answer
+                </Button>
+              )}
+
               <Button
                 size="sm"
                 variant="outline"
@@ -269,6 +405,36 @@ export function VoicePanel({ voice, disabled = false }: VoicePanelProps) {
                 </Button>
               )}
             </div>
+
+            {onAutoReadChange && state.capabilities?.tts && (
+              <label className="flex items-center gap-2 text-sm">
+                <Switch
+                  checked={autoRead}
+                  onCheckedChange={onAutoReadChange}
+                  aria-label="Read each new question aloud"
+                  data-testid="voice-auto-read"
+                />
+                <span>Read each new question aloud</span>
+              </label>
+            )}
+
+            {state.capabilities?.recording === true && (
+              <p className="text-muted-foreground" data-testid="voice-recording-notice">
+                Audio of answers you dictate is recorded and kept so your teacher can check the
+                transcript against what you said. Voice commands are not recorded.
+                {state.recording === "stored" && (
+                  <span className="block font-medium" data-testid="voice-recording-status">
+                    The audio of your last dictated answer was saved.
+                  </span>
+                )}
+                {state.recording === "failed" && (
+                  <span className="block font-medium text-destructive" data-testid="voice-recording-status">
+                    The audio of your last dictated answer could not be saved. Your answer text is
+                    not affected.
+                  </span>
+                )}
+              </p>
+            )}
 
             {connected && state.capabilities && !sttAvailable && (
               <p className="text-muted-foreground">
@@ -325,47 +491,15 @@ export function VoicePanel({ voice, disabled = false }: VoicePanelProps) {
             )}
 
             {pending && (
-              <div
-                role="group"
-                aria-labelledby="voice-confirm-title"
-                className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex flex-col gap-2"
-                data-testid="voice-confirmation"
-              >
-                <p id="voice-confirm-title" className="font-semibold">
-                  Confirm your answer
-                </p>
-                <p>
-                  {pending.optionKey
-                    ? `Option ${pending.optionKey}${pending.optionText ? `: ${pending.optionText}` : ""}`
-                    : pending.text}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  This answer is not saved yet. Say yes or no, or use the buttons.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    onClick={voice.confirm}
-                    disabled={!canAct || state.answer.phase === "saving"}
-                    className="gap-1.5"
-                    data-testid="voice-confirm-yes"
-                  >
-                    <Check className="size-3.5" aria-hidden="true" />
-                    Yes, save answer
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={voice.deny}
-                    disabled={!canAct || state.answer.phase === "saving"}
-                    className="gap-1.5"
-                    data-testid="voice-confirm-no"
-                  >
-                    <X className="size-3.5" aria-hidden="true" />
-                    No, cancel
-                  </Button>
-                </div>
-              </div>
+              <PendingAnswer
+                key={pending.confirmationId}
+                pending={pending}
+                canAct={canAct}
+                saving={state.answer.phase === "saving"}
+                recordingKept={state.capabilities?.recording === true}
+                onConfirm={voice.confirm}
+                onDeny={voice.deny}
+              />
             )}
 
             {answer && (
@@ -384,7 +518,8 @@ export function VoicePanel({ voice, disabled = false }: VoicePanelProps) {
             )}
 
             <p className="text-xs text-muted-foreground">
-              Keyboard: Alt+M starts or stops recording. Alt+S stops speech.
+              Keyboard: Enter, when no button or field has focus, {allowVoiceAnswer ? "dictates your answer" : "starts a voice command"}, and Enter again stops. Alt+M starts or stops a voice command. {allowVoiceAnswer ? "Alt+D dictates your answer. " : ""}Alt+S stops speech. Left and Right arrows change question when no button or field has focus; Alt+N and Alt+P always do.
+              Words spoken while dictating are your answer, never commands.
             </p>
           </>
         )}
