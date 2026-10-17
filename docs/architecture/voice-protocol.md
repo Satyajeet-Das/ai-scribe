@@ -64,18 +64,18 @@ row close the connection (`1008`). A message over `limits.maxMessageBytes` close
 | `ping` | – | `pong` |
 | `session.sync` | – | `session.state` read from the session service |
 | `auth.refresh` | `{token}` | adopts a fresh access token for the same user; `ack` |
-| `audio.start` | `{streamId (uuid), encoding: "pcm_s16le", sampleRate: 8000\|16000\|24000\|48000, channels: 1}` | opens an audio stream; **barge-in**: cancels any speech or processing in progress |
+| `audio.start` | `{streamId (uuid), encoding: "pcm_s16le", sampleRate: 8000\|16000\|24000\|48000, channels: 1, mode?: "command"\|"answer"}` | opens an audio stream; **barge-in**: cancels any speech or processing in progress |
 | *(binary)* | audio chunk, see below | |
 | `audio.end` | `{streamId, chunks?}` | ends the stream; `chunks` (count sent) is verified if present |
 | `audio.cancel` | `{streamId}` | abandons the stream or its processing; `ack` |
 | `tts.cancel` | `{responseId?}` | stops speech; `ack` |
-| `command` | `{intent, optionKey?, confirmationId?}` | a typed intent without speech (keyboard, switch device). Same validation and confirmation path as speech. `dictate_answer` is not accepted here |
+| `command` | `{intent, optionKey?, confirmationId?, text?}` | a typed intent without speech (keyboard, switch device). Same validation and confirmation path as speech. `dictate_answer` is not accepted here |
 
 ## Server → client
 
 | Type | Payload | Notes |
 |---|---|---|
-| `ready` | `{connectionId, protocol, sessionId, resumed, limits, capabilities, session}` | first message |
+| `ready` | `{connectionId, protocol, sessionId, resumed, limits, capabilities, session}` | first message. `capabilities.recording` is true when dictated answers are kept as audio; a client must tell the student so |
 | `ack` / `pong` | – | |
 | `error` | `{code, message, retryable, streamId?}` | |
 | `session.state` | `{status, remainingSeconds?, question?}` | `question` is the student-facing DTO; never contains correctness data |
@@ -85,8 +85,9 @@ row close the connection (`1008`). A message over `limits.maxMessageBytes` close
 | `stt.final` | `{streamId, text}` | |
 | `intent` | `{streamId?, intent, optionKey?, confidence, classifier}` | what the classifier understood (after validation) |
 | `confirm.request` | `{confirmationId, action, questionId, optionKey?, optionText?, text?, expiresAt}` | an answer is staged, **not saved** |
-| `action.result` | `{action: "answer"\|"navigate", status: "ok"\|"failed"\|"rejected"\|"cancelled", saved, code?, retryable?, duplicate?, confirmationId?, questionId?, optionKey?, answerId?, savedAt?, direction?}` | `saved: true` only after the answer service has persisted |
+| `action.result` | `{action: "answer"\|"navigate", status: "ok"\|"failed"\|"rejected"\|"cancelled", saved, corrected?, code?, retryable?, duplicate?, confirmationId?, questionId?, optionKey?, answerId?, savedAt?, direction?}` | `saved: true` only after the answer service has persisted |
 | `response` | `{responseId, streamId?, kind, code?, text, audio}` | what the assistant says, always as text; `audio: true` means `tts.start` follows |
+| `recording.status` | `{streamId, status: "stored"\|"failed", recordingId?, durationMs?, code?}` | only when `capabilities.recording` is true. Whether the audio of a dictated answer was kept. **Says nothing about the answer**, which is saved only when `action.result` says so |
 | `tts.start` | `{responseId, format}` | |
 | *(binary)* | audio chunk tagged with `responseId` | |
 | `tts.end` | `{responseId, reason: "completed"\|"barge_in"\|"cancelled"\|"error", code?, chunks}` | |
@@ -107,6 +108,30 @@ with one `error`; its remaining chunks are discarded silently.
 **Discard server audio whose `responseId` is not the response you are playing.** After a
 barge-in the server stops sending and drops frames it had already queued, but a frame already
 on the wire can still arrive.
+
+## Audio modes
+
+`audio.start.mode` says what the utterance is for. It is chosen by a control (button or key) on
+the client and is never inferred from the words. An omitted mode means `command`.
+
+| Mode | What happens to the transcript |
+|---|---|
+| `command` (default) | Matched against the closed intent set (rules, then the optional LLM). **It can never become answer text**, except behind an explicit spoken phrase ("my answer is ..."). If a classifier proposes `dictate_answer` without that phrase, the result is `unknown` and the student is asked again. |
+| `answer` | **Not classified.** The transcript is staged verbatim as a free-text answer (`confirm.request`), exactly as for dictation, and still needs an explicit confirm. Command words inside it ("read the question") are literal content. Not valid for multiple-choice questions. |
+
+An unknown mode is rejected with `invalid_audio_mode`.
+
+## Spoken dictation in command mode
+
+In `command` mode only an explicit phrase turns speech into answer text: "my answer is ...", "the
+answer is ...", "write down ..." or "write ...", optionally after a filler such as "okay", "so",
+"well" or "um" (two at most). The saved text is what **follows** the phrase, in the student's words;
+the phrase is not part of the answer. A model labelling speech as `dictate_answer` is not enough:
+without the phrase the student is asked again, and told they can press **Dictate answer**. In
+`answer` mode nothing is stripped or interpreted.
+
+Length limits (`intent.maxTranscriptChars`, default 2000) count **characters, not bytes**, so text
+in Hindi or Arabic is not limited to a third of what English allows.
 
 ## Intents
 
@@ -131,6 +156,19 @@ student: "yes"   (or command{intent: confirm, confirmationId})
 
 - Answer selection **always** requires confirmation. `no`/`deny` discards it; so does any
   other request (the response says the answer was not saved).
+- **Correcting a dictated answer.** Before saving, the student may fix what the recognizer got
+  wrong: `command{intent: "confirm", confirmationId, text}`. `text` is the student's own wording
+  (never model output). It is valid only with `confirm`, only with the `confirmationId` of the
+  staged answer, only for a dictated (free-text) answer, non-blank, and no longer than
+  `intent.maxTranscriptChars`; anything else is refused and the answer stays staged. If `text`
+  equals what was heard, it is an ordinary confirmation. If it differs, that wording is saved
+  and `action.result` carries `corrected: true`. The recognizer's original words stay in the
+  stored transcript, and the saved answer is recorded as a `STUDENT_CORRECTION` revision that
+  still points at the recording it corrects.
+- **A confirmation is applied once.** Repeating a `confirmationId` that was already applied (for
+  example after a reconnect) changes nothing, even if the student has since saved something else:
+  the earlier value is never put back over a later one. Within a single request, the answer and its
+  history are written in one transaction.
 - A confirmation expires after `limits.confirmTtlMillis` and is void if the exam has moved to
   another question.
 - For free-text questions the saved text is the recognizer's transcript verbatim; no model
@@ -141,6 +179,26 @@ student: "yes"   (or command{intent: confirm, confirmationId})
   the server never retries a write on its own.
 - Once a save has started it is carried through even if the student interrupts or the socket
   drops, and `action.result` is still sent.
+
+## Answer audio retention
+
+Off unless the server is configured with `SCRIBE_RECORDING.ENABLED=true`: keeping audio of
+students is an institutional decision (notice, consent or authorization, retention period).
+
+- **Only `answer`-mode utterances on written-answer questions are kept**, and only once a
+  transcript exists. Commands, silence, multiple-choice utterances and interrupted utterances
+  are never retained.
+- The audio is stored first, then its metadata, so a database row always points at audio that
+  exists. If the metadata write fails the object is removed again. Re-saving the same `streamId`
+  stores it once.
+- **Answers never depend on it.** If the audio cannot be stored the student gets
+  `recording.status{status: "failed"}` and the transcript is staged for confirmation exactly as
+  it would be without recording. The answer is saved only when `action.result.saved` is true.
+- The machine transcript is stored once and never edited. When the student confirms, the answer
+  gets a revision (`STT_CONFIRMED`) in the same transaction as the answer, linked to the
+  transcription and the recording. A repeated confirmation adds no second revision.
+- Storage keys are random and carry no student, exam or question data. Audio is not served by any
+  endpoint yet; teacher playback is a separate, audited feature.
 
 ## Close codes
 
@@ -159,7 +217,7 @@ student: "yes"   (or command{intent: confirm, confirmationId})
 
 Protocol: `invalid_message`, `unsupported_version`, `unknown_type`, `duplicate_request`,
 `rate_limited`, `unauthorized`, `forbidden`.
-Audio: `invalid_audio_format`, `stream_already_active`, `unknown_stream`, `invalid_frame`,
+Audio: `invalid_audio_format`, `invalid_audio_mode`, `stream_already_active`, `unknown_stream`, `invalid_frame`,
 `chunk_too_large`, `chunk_out_of_order`, `stream_too_large`, `stream_too_long`,
 `chunk_count_mismatch`, `empty_stream`, `audio_backpressure`.
 Providers: `stt_unavailable`, `stt_failed`, `stt_timeout`, `provider_busy`,
