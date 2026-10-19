@@ -66,6 +66,11 @@ export interface StudentExamRoomProps {
   navigationNotice?: string | null;
   /** How many other questions have an answer whose save failed. */
   unsavedElsewhere?: number;
+  /**
+   * Asked when the submit dialog opens: what submitting now would throw away
+   * (a recording in progress, an answer not yet confirmed), if anything.
+   */
+  getSubmitWarning?: () => string | null;
 
   // Backward compatibility with previous offline mock usage if any
   questions?: Question[];
@@ -94,6 +99,7 @@ export function StudentExamRoom({
   voiceSlot,
   navigationNotice = null,
   unsavedElsewhere = 0,
+  getSubmitWarning,
   // backward compatibility props
   questions,
   onAnswerChange,
@@ -102,35 +108,42 @@ export function StudentExamRoom({
   const [largeText, setLargeText] = useState(false);
   const [contrast, setContrast] = useState(false);
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
+  const [submitWarning, setSubmitWarning] = useState<string | null>(null);
   const [boundaryNote, setBoundaryNote] = useState<{ seq: number; text: string } | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const shownQuestionRef = useRef<string | null>(null);
 
+  const openSubmitDialog = () => {
+    setSubmitWarning(getSubmitWarning?.() ?? null);
+    setSubmitDialogOpen(true);
+  };
+
+  // Time running out is reported once, however often the page re-renders. A
+  // reconnect that brings more time arms it again.
+  const onExpireRef = useRef(onExpire);
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
+  const expiredRef = useRef(false);
+
   // Sync initial seconds if it changes on reconnect
   useEffect(() => {
     setSeconds(initialSeconds);
+    if (initialSeconds > 0) expiredRef.current = false;
   }, [initialSeconds]);
 
   // Countdown timer
   useEffect(() => {
     if (seconds <= 0) {
-      onExpire?.();
+      if (!expiredRef.current) {
+        expiredRef.current = true;
+        onExpireRef.current?.();
+      }
       return;
     }
-
-    const timer = window.setInterval(() => {
-      setSeconds((prev) => {
-        if (prev <= 1) {
-          window.clearInterval(timer);
-          onExpire?.();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [seconds, onExpire]);
+    const timer = window.setTimeout(() => setSeconds((prev) => Math.max(0, prev - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [seconds]);
 
   // Keyboard navigation shortcuts.
   //  - Alt+N / Alt+P work unless the student is typing or a dialog is open.
@@ -261,7 +274,7 @@ export function StudentExamRoom({
             <Button
               variant="default"
               size="sm"
-              onClick={() => setSubmitDialogOpen(true)}
+              onClick={openSubmitDialog}
               className="gap-2 font-semibold shadow-xs"
               data-testid="submit-exam-button"
             >
@@ -614,7 +627,7 @@ export function StudentExamRoom({
                 <Button
                   size="sm"
                   variant="default"
-                  onClick={() => setSubmitDialogOpen(true)}
+                  onClick={openSubmitDialog}
                   disabled={navigating || submitting}
                   className="gap-1.5 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
                   data-testid="last-question-review-button"
@@ -668,6 +681,16 @@ export function StudentExamRoom({
                 </span>
               </div>
             )}
+            {submitWarning && (
+              <div
+                role="alert"
+                data-testid="submit-voice-warning"
+                className="mt-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive flex items-start gap-2 text-left"
+              >
+                <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+                <span>{submitWarning}</span>
+              </div>
+            )}
             <p className="mt-2 text-xs text-muted-foreground border-t pt-2 text-left">
               Submissions are final. Your active timer will stop, and responses will be locked.
             </p>
@@ -692,7 +715,7 @@ export function StudentExamRoom({
               ) : (
                 <>
                   <Send className="size-3.5 fill-current" />
-                  <span>Confirm & Submit</span>
+                  <span>{submitWarning ? "Submit anyway" : "Confirm & Submit"}</span>
                 </>
               )}
             </AlertDialogAction>

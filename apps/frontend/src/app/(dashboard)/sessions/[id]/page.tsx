@@ -398,17 +398,46 @@ export default function ActiveSessionRoomPage({
     }
   };
 
-  // Handle Session Expiration
+  // What submitting now would throw away. Submitting stops the voice
+  // assistant, so the student is told before, not after.
+  const getSubmitWarning = (): string | null => {
+    const a = voiceActivityRef.current;
+    if (a.recording) {
+      return "A recording is in progress. If you submit now, it is discarded and not saved as an answer.";
+    }
+    if (a.processing) {
+      return "Your last recording is still being processed. If you submit now, it will not be saved as an answer.";
+    }
+    if (a.awaitingConfirmation) {
+      return "An answer is waiting for your confirmation. If you submit now, it will not be saved.";
+    }
+    return null;
+  };
+
+  // Handle Session Expiration. The countdown on this device has reached zero;
+  // the server decides whether the exam is over.
+  const expiringRef = useRef(false);
   const handleExpire = async () => {
+    if (expiringRef.current) return;
+    expiringRef.current = true;
     try {
+      // Last chance for typed text: the server still accepts it until its own
+      // deadline, and refuses it after.
+      await flushPending();
       const sess = await sessionsApi.getSession(sessionId);
       if (sess.status === "EXPIRED" || sess.status === "SUBMITTED") {
         setSessionStatus(sess.status);
+      } else if (sess.remainingSeconds && sess.remainingSeconds > 0) {
+        // This device's clock ran ahead: carry on with the server's time.
+        setInitialSeconds(sess.remainingSeconds);
       } else {
         setSessionStatus("EXPIRED");
       }
     } catch {
+      // The server cannot be asked; time is up on this device, so stop here.
       setSessionStatus("EXPIRED");
+    } finally {
+      expiringRef.current = false;
     }
   };
 
@@ -596,6 +625,7 @@ export default function ActiveSessionRoomPage({
         onExpire={handleExpire}
         navigationNotice={navigationNotice}
         unsavedElsewhere={failedQuestionIds.filter((id) => id !== currentQuestion?.id).length}
+        getSubmitWarning={getSubmitWarning}
         voiceSlot={
           <VoiceAssistant
             sessionId={sessionId}

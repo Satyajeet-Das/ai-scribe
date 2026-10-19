@@ -5,6 +5,7 @@ import ActiveSessionRoomPage from "@/app/(dashboard)/sessions/[id]/page";
 import { sessionsApi, examsApi } from "@/services/api";
 import { useAuthStore } from "@/store/auth-store";
 import type { VoiceSessionState } from "@/services/voice/protocol";
+import type { VoiceActivity } from "@/components/voice/voice-assistant";
 import type { Session, StudentQuestionResponse } from "@/types/exam-types";
 
 vi.mock("next/navigation", () => ({
@@ -13,18 +14,22 @@ vi.mock("next/navigation", () => ({
 }));
 
 // A stand-in for the voice assistant that lets a test play what the backend
-// reports: voice navigation and answers saved by voice.
+// reports (voice navigation, answers saved by voice) and what the student is
+// doing with it.
 const voice: {
   sessionState: (s: VoiceSessionState) => void;
   answerSaved: (questionId: string) => Promise<void> | void;
-} = { sessionState: () => {}, answerSaved: () => {} };
+  activity: (a: VoiceActivity) => void;
+} = { sessionState: () => {}, answerSaved: () => {}, activity: () => {} };
 vi.mock("@/components/voice/voice-assistant", () => ({
   VoiceAssistant: (props: {
     onSessionState?: (s: VoiceSessionState) => void;
     onAnswerSaved?: (questionId: string) => Promise<void> | void;
+    onActivityChange?: (a: VoiceActivity) => void;
   }) => {
     voice.sessionState = (s) => props.onSessionState?.(s);
     voice.answerSaved = (id) => props.onAnswerSaved?.(id);
+    voice.activity = (a) => props.onActivityChange?.(a);
     return null;
   },
 }));
@@ -106,8 +111,8 @@ function deferred<T = unknown>() {
   return { promise, resolve, reject };
 }
 
-async function renderRoom(first: StudentQuestionResponse = essay) {
-  vi.mocked(sessionsApi.getSession).mockResolvedValue(session);
+async function renderRoom(first: StudentQuestionResponse = essay, sess: Session = session) {
+  vi.mocked(sessionsApi.getSession).mockResolvedValue(sess);
   vi.mocked(sessionsApi.getCurrentQuestion).mockResolvedValue(first);
   vi.mocked(sessionsApi.getAnswers).mockResolvedValue([]);
   vi.mocked(examsApi.getExam).mockResolvedValue({
@@ -297,5 +302,91 @@ describe("answers the server has not confirmed", () => {
     expect(await screen.findByTestId("navigation-notice")).toHaveTextContent(
       "Could not move to the next question"
     );
+  });
+});
+
+describe("submitting and running out of time", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAuthStore.setState({
+      user: {
+        id: "student-1",
+        email: "s@school.edu",
+        firstName: "S",
+        lastName: "C",
+        role: "STUDENT" as const,
+      },
+      isAuthenticated: true,
+      isHydrated: true,
+      status: "authenticated",
+      accessToken: "valid-token",
+    });
+  });
+
+  it("says what a recording in progress would lose before submitting", async () => {
+    vi.mocked(sessionsApi.submitSession).mockResolvedValue({
+      submittedAt: "2026-10-19T10:00:00Z",
+    } as never);
+    await renderRoom();
+    act(() => voice.activity({ recording: true, processing: false, awaitingConfirmation: false }));
+
+    fireEvent.click(screen.getByTestId("submit-exam-button"));
+    expect(await screen.findByTestId("submit-voice-warning")).toHaveTextContent(
+      "A recording is in progress. If you submit now, it is discarded"
+    );
+    const confirm = screen.getByTestId("confirm-submit-dialog-button");
+    expect(confirm).toHaveTextContent("Submit anyway");
+
+    fireEvent.click(confirm);
+    expect(await screen.findByTestId("exam-submitted-card")).toBeInTheDocument();
+  });
+
+  it("warns about an answer waiting for confirmation", async () => {
+    await renderRoom();
+    act(() => voice.activity({ recording: false, processing: false, awaitingConfirmation: true }));
+
+    fireEvent.click(screen.getByTestId("submit-exam-button"));
+    expect(await screen.findByTestId("submit-voice-warning")).toHaveTextContent(
+      "An answer is waiting for your confirmation"
+    );
+  });
+
+  it("shows no warning when the voice assistant is idle", async () => {
+    await renderRoom();
+    fireEvent.click(screen.getByTestId("submit-exam-button"));
+    expect(await screen.findByTestId("confirm-submit-dialog-button")).toHaveTextContent(
+      "Confirm & Submit"
+    );
+    expect(screen.queryByTestId("submit-voice-warning")).not.toBeInTheDocument();
+  });
+
+  it("saves typed text and asks the server once when the countdown reaches zero", async () => {
+    vi.mocked(sessionsApi.submitAnswer).mockResolvedValue({} as never);
+    await renderRoom(essay, { ...session, remainingSeconds: 1 });
+    fireEvent.change(screen.getByLabelText("Your Response"), { target: { value: "Last words" } });
+    vi.mocked(sessionsApi.getSession).mockClear();
+    vi.mocked(sessionsApi.getSession).mockResolvedValue({ ...session, status: "EXPIRED" });
+
+    expect(
+      await screen.findByTestId("exam-expired-card", {}, { timeout: 4000 })
+    ).toBeInTheDocument();
+    expect(sessionsApi.submitAnswer).toHaveBeenCalledWith("sess-1", "q-essay", {
+      textAnswer: "Last words",
+    });
+    const saveOrder = vi.mocked(sessionsApi.submitAnswer).mock.invocationCallOrder[0];
+    const askOrder = vi.mocked(sessionsApi.getSession).mock.invocationCallOrder[0];
+    expect(saveOrder).toBeLessThan(askOrder);
+    expect(sessionsApi.getSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("carries on with the server's time when this device's clock ran ahead", async () => {
+    await renderRoom(essay, { ...session, remainingSeconds: 1 });
+    vi.mocked(sessionsApi.getSession).mockClear();
+    vi.mocked(sessionsApi.getSession).mockResolvedValue({ ...session, remainingSeconds: 120 });
+
+    await waitFor(() => expect(sessionsApi.getSession).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByText("02:00")).toBeInTheDocument());
+    expect(screen.queryByTestId("exam-expired-card")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Your Response")).toBeInTheDocument();
   });
 });
