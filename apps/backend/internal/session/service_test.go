@@ -317,6 +317,8 @@ func TestSessionService_SubmitSession(t *testing.T) {
 	questionReader := &mockQuestionReader{}
 
 	svc := NewService(repo, nil, examReader, questionReader, cache, &mockTxManager{}, &mockTaskEnqueuer{}, &logger)
+	ended := &recordingNotifier{}
+	NotifyOnEnd(svc, ended)
 	ctx := context.Background()
 
 	// 1. Submit session succeeds
@@ -324,11 +326,18 @@ func TestSessionService_SubmitSession(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, StatusSubmitted, submitted.Status)
 	assert.NotNil(t, submitted.SubmittedAt)
+	assert.Equal(t, []uuid.UUID{sessID}, ended.ids, "attached voice connections are told at once")
 
-	// 2. Submit already submitted fails
+	// 2. Submit already submitted fails, and nothing is announced again
 	_, err = svc.SubmitSession(ctx, sessID, studentID)
 	assert.ErrorIs(t, err, ErrSessionAlreadySubmitted)
+	assert.Len(t, ended.ids, 1)
 }
+
+// recordingNotifier remembers which sessions were reported as ended.
+type recordingNotifier struct{ ids []uuid.UUID }
+
+func (n *recordingNotifier) SessionEnded(id uuid.UUID) { n.ids = append(n.ids, id) }
 
 func TestSessionService_ListSessions(t *testing.T) {
 	logger := zerolog.Nop()

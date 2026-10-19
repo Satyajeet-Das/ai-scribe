@@ -37,6 +37,11 @@ Sec-WebSocket-Protocol: scribe.v1, scribe.auth.<access token>
 - **Reconnecting.** Just connect again. The server re-authenticates and re-reads the session
   from PostgreSQL; `ready.resumed` is `true` and `ready.session` holds the authoritative
   position. A pending answer confirmation does **not** survive a reconnect (nothing was saved).
+- **When the session ends.** A submit (REST) or an expiry handled by this server tells the
+  session's voice connection at once: it re-reads the session and sends `session.closed`, then
+  closes with `4410`, whatever it was doing. A stream in progress is discarded and no audio from
+  it is kept. The notice is process-local; with several server instances, one that did not handle
+  the submit notices on its periodic re-check (every minute) or on the student's next action.
 
 ## Envelope
 

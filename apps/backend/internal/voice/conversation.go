@@ -78,6 +78,9 @@ type conversation struct {
 	authExpiresAt   time.Time
 	authWarned      bool
 	wake            chan struct{}
+	// recheck asks the watchdog to re-read the session now: it has just been
+	// submitted or expired elsewhere.
+	recheck chan struct{}
 
 	// dialogMu serializes interpretation and execution of intents, so two
 	// turns can never act on the exam concurrently from one connection.
@@ -171,6 +174,7 @@ func newConversation(s *Service, conn *ws.Conn, identity *platformauth.Authentic
 		limiter:   rate.NewLimiter(rate.Limit(20), 40),
 		seen:      make(map[string]struct{}, recentRequestIDs),
 		wake:      make(chan struct{}, 1),
+		recheck:   make(chan struct{}, 1),
 		completed: make(map[string]ActionResultPayload),
 		log: s.Logger.With().
 			Str("connection_id", id).
@@ -384,6 +388,13 @@ func (c *conversation) watch() {
 			return
 		case <-c.wake:
 			timer.Stop()
+			continue
+		case <-c.recheck:
+			timer.Stop()
+			nextCheck = c.svc.now().Add(c.svc.recheckInterval)
+			if !c.revalidate() {
+				return
+			}
 			continue
 		case <-timer.C:
 		}

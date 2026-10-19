@@ -35,6 +35,13 @@ type TaskEnqueuer interface {
 	EnqueueExpireSessionTask(sessionID uuid.UUID, delay time.Duration) error
 }
 
+// EndNotifier is told when a session stops being in progress (submitted or
+// expired), so that whatever is attached to it, such as a voice connection,
+// can stop at once instead of noticing on its next check.
+type EndNotifier interface {
+	SessionEnded(sessionID uuid.UUID)
+}
+
 type Service interface {
 	GetSession(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*Session, int, error)
 	GetCurrentQuestion(ctx context.Context, id uuid.UUID, callerID uuid.UUID) (*StudentQuestionResponse, error)
@@ -57,6 +64,21 @@ type sessionService struct {
 	txManager        database.TxManager
 	enqueuer         TaskEnqueuer
 	logger           *zerolog.Logger
+	ended            EndNotifier
+}
+
+// NotifyOnEnd makes svc tell n about every session it submits or expires. It
+// must be called before the service is used.
+func NotifyOnEnd(svc Service, n EndNotifier) {
+	if s, ok := svc.(*sessionService); ok {
+		s.ended = n
+	}
+}
+
+func (s *sessionService) notifyEnded(id uuid.UUID) {
+	if s.ended != nil {
+		s.ended.SessionEnded(id)
+	}
 }
 
 func NewService(repo Repository, assignmentReader AssignmentReader, examReader ExamReader, questionReader QuestionReader, cache Cache, txManager database.TxManager, enqueuer TaskEnqueuer, logger *zerolog.Logger) Service {
@@ -93,7 +115,9 @@ func (s *sessionService) GetSession(ctx context.Context, id uuid.UUID, callerID 
 	if sess.Status == StatusInProgress && ex.DurationMins > 0 {
 		maxAllowed := time.Duration(ex.DurationMins) * time.Minute
 		if time.Since(sess.StartedAt) > maxAllowed {
-			_ = s.repo.Expire(ctx, id)
+			if err := s.repo.Expire(ctx, id); err == nil {
+				s.notifyEnded(id)
+			}
 			sess.Status = StatusExpired
 		}
 	}
@@ -350,6 +374,7 @@ func (s *sessionService) SubmitSession(ctx context.Context, id uuid.UUID, caller
 
 	// Clear cache on submit
 	_ = s.cache.DeleteState(ctx, id)
+	s.notifyEnded(id)
 
 	s.logger.Info().
 		Str("event", "session.submitted").
@@ -523,6 +548,7 @@ func (s *sessionService) LockAndValidate(ctx context.Context, id uuid.UUID, even
 					}); err == nil {
 						sess.Status = StatusExpired
 						_ = s.cache.DeleteState(ctx, id)
+						s.notifyEnded(id)
 					}
 				}
 			}
@@ -579,6 +605,7 @@ func (s *sessionService) ExpireSession(ctx context.Context, id uuid.UUID) error 
 	// Update in-memory struct and clear cache
 	sess.Status = StatusExpired
 	_ = s.cache.DeleteState(ctx, id)
+	s.notifyEnded(id)
 
 	s.logger.Info().
 		Str("event", "session.expired").

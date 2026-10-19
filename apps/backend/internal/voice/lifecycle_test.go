@@ -308,6 +308,72 @@ func TestSession_WatchdogClosesWhenSessionEndsElsewhere(t *testing.T) {
 	assert.Equal(t, websocket.StatusCode(CloseSessionEnded), c.closeCode())
 }
 
+// The periodic re-check stays at its default (one minute) in these tests, so
+// a prompt close can only come from SessionEnded.
+func TestSessionEnded_ClosesTheConnectionAtOnce(t *testing.T) {
+	h := newHarness(t, withoutTTS())
+	c, _ := h.connect()
+
+	h.exam.setStatus(session.StatusSubmitted)
+	h.svc.SessionEnded(h.sessionID)
+
+	assert.Equal(t, "submitted", decode[SessionClosedPayload](t, c.until(TypeSessionClosed)).Reason)
+	assert.Equal(t, websocket.StatusCode(CloseSessionEnded), c.closeCode())
+	eventually(t, func() bool { return h.svc.ActiveConnections() == 0 }, "slot released")
+}
+
+func TestSessionEnded_DuringDictationKeepsNothing(t *testing.T) {
+	h := newHarness(t, withoutTTS(), withRecorder())
+	c, _ := h.connect()
+	toEssay(t, h, c)
+
+	stream := uuid.New()
+	c.send(TypeAudioStart, AudioStartPayload{StreamID: stream.String(), Encoding: "pcm_s16le", SampleRate: 16000, Channels: 1, Mode: AudioModeAnswer})
+	c.chunk(stream, 0, 640)
+	eventually(t, func() bool { return h.stt.Opened() == 1 }, "the stream is open")
+
+	h.exam.setStatus(session.StatusSubmitted)
+	h.svc.SessionEnded(h.sessionID)
+
+	assert.Equal(t, "submitted", decode[SessionClosedPayload](t, c.until(TypeSessionClosed)).Reason)
+	assert.Equal(t, websocket.StatusCode(CloseSessionEnded), c.closeCode())
+	eventually(t, func() bool { return h.svc.ActiveConnections() == 0 }, "slot released")
+	assert.Empty(t, h.rec.inputs(), "no audio of an ended exam is kept")
+	assert.Zero(t, h.exam.count("SubmitAnswer"))
+}
+
+func TestSessionEnded_WhileTheRecordingIsBeingStoredKeepsNothing(t *testing.T) {
+	h := newHarness(t, withoutTTS(), withRecorder())
+	h.rec.gate = make(chan struct{}) // the store never answers
+	c, _ := h.connect()
+	toEssay(t, h, c)
+
+	h.sayAs(c, AudioModeAnswer, "Plants turn light into energy")
+	c.until(TypeSTTFinal)
+
+	h.exam.setStatus(session.StatusExpired)
+	h.svc.SessionEnded(h.sessionID)
+
+	assert.Equal(t, "expired", decode[SessionClosedPayload](t, c.until(TypeSessionClosed)).Reason)
+	assert.Equal(t, websocket.StatusCode(CloseSessionEnded), c.closeCode())
+	eventually(t, func() bool { return h.svc.ActiveConnections() == 0 }, "slot released")
+	assert.Empty(t, h.rec.inputs(), "the save in progress is abandoned")
+	assert.Zero(t, h.exam.count("SubmitAnswer"))
+}
+
+func TestSessionEnded_IgnoresSessionsWithoutAConnection(t *testing.T) {
+	h := newHarness(t, withoutTTS())
+	c, _ := h.connect()
+
+	h.svc.SessionEnded(uuid.New()) // another session: this one is untouched
+	id := c.send(TypePing, nil)
+	assert.Equal(t, id, c.until(TypePong).ReplyTo)
+
+	c.conn.Close(websocket.StatusNormalClosure, "")
+	eventually(t, func() bool { return h.svc.ActiveConnections() == 0 }, "slot released")
+	h.svc.SessionEnded(h.sessionID) // after the connection has gone: a no-op
+}
+
 func TestSession_WatchdogSurvivesTransientOutage(t *testing.T) {
 	h := newHarness(t, withoutTTS())
 	h.svc.recheckInterval = 30 * time.Millisecond

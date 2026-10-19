@@ -80,6 +80,9 @@ type Service struct {
 	recentMu sync.Mutex
 	recent   map[uuid.UUID]time.Time
 
+	liveMu sync.Mutex
+	live   map[uuid.UUID]*conversation
+
 	// onConversation, when set, observes each new conversation. Tests only.
 	onConversation func(*conversation)
 }
@@ -109,7 +112,40 @@ func NewService(d Deps) *Service {
 		authWarnLead:    time.Minute,
 		now:             time.Now,
 		recent:          make(map[uuid.UUID]time.Time),
+		live:            make(map[uuid.UUID]*conversation),
 	}
+}
+
+// SessionEnded tells the voice connection of a session, if this process has
+// one, that the session was submitted or expired. The connection re-reads the
+// session at once and closes with session.closed, instead of noticing on its
+// next periodic check. Another server instance still notices within
+// recheckInterval. It never blocks.
+func (s *Service) SessionEnded(sessionID uuid.UUID) {
+	s.liveMu.Lock()
+	c := s.live[sessionID]
+	s.liveMu.Unlock()
+	if c == nil {
+		return
+	}
+	select {
+	case c.recheck <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Service) track(c *conversation) {
+	s.liveMu.Lock()
+	s.live[c.sessionID] = c
+	s.liveMu.Unlock()
+}
+
+func (s *Service) untrack(c *conversation) {
+	s.liveMu.Lock()
+	if s.live[c.sessionID] == c {
+		delete(s.live, c.sessionID)
+	}
+	s.liveMu.Unlock()
 }
 
 // RegisterRoutes mounts the WebSocket endpoint. It is deliberately not placed
@@ -264,6 +300,8 @@ func (s *Service) Connect(c echo.Context) error {
 
 	// The request context dies with the handler; connection work hangs off
 	// the service context so that Shutdown can cancel it.
+	s.track(conv)
+	defer s.untrack(conv)
 	conv.run(s.baseCtx)
 	return nil
 }

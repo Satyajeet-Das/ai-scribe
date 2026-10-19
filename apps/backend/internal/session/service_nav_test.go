@@ -105,10 +105,13 @@ func TestSessionService_PreviousQuestion(t *testing.T) {
 
 func TestSessionService_ExpireSession(t *testing.T) {
 	_, _, _, cache, svc, sessID, _ := setupNavTest()
+	ended := &recordingNotifier{}
+	NotifyOnEnd(svc, ended)
 	ctx := context.Background()
 
 	err := svc.ExpireSession(ctx, sessID)
 	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{sessID}, ended.ids)
 
 	// Should be deleted from cache
 	_, err = cache.GetState(ctx, sessID)
@@ -117,10 +120,13 @@ func TestSessionService_ExpireSession(t *testing.T) {
 	// Should fail if we try to expire again (or return nil since it's already expired)
 	err = svc.ExpireSession(ctx, sessID)
 	require.NoError(t, err) // It is idempotent and ignores already expired/submitted
+	assert.Len(t, ended.ids, 1, "an expiry that changed nothing is not announced")
 }
 
 func TestSessionService_LockAndValidate_PassiveExpiration(t *testing.T) {
 	repo, examReader, _, cache, svc, sessID, studentID := setupNavTest()
+	ended := &recordingNotifier{}
+	NotifyOnEnd(svc, ended)
 	ctx := context.Background()
 
 	sess, _ := cache.GetState(ctx, sessID)
@@ -135,6 +141,7 @@ func TestSessionService_LockAndValidate_PassiveExpiration(t *testing.T) {
 	_, _, err := svc.LockAndValidate(ctx, sessID, EventRecordAnswer, studentID)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSessionExpired)
+	assert.Equal(t, []uuid.UUID{sessID}, ended.ids, "a passive expiry is announced too")
 	
 	// Should be deleted from cache due to passive expiration
 	_, err = cache.GetState(ctx, sessID)

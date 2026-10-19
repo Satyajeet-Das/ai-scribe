@@ -224,6 +224,8 @@ func main() {
 		Metrics:        voice.NewMetrics(loggerService.GetApplication()),
 		Logger:         &log,
 	})
+	// A submit or expiry ends that session's voice connection straight away.
+	session.NotifyOnEnd(sessionService, voiceService)
 	log.Info().
 		Bool("enabled", cfg.Voice.Enabled).
 		Str("stt", voiceProviders.STT.Name()).

@@ -178,6 +178,7 @@ func TestVoice_EndToEndAgainstRealServices(t *testing.T) {
 		Classifier: intent.Rules{},
 		Logger:     &l,
 	})
+	session.NotifyOnEnd(sessionSvc, svc)
 	e := echo.New()
 	e.HideBanner = true
 	e.HTTPErrorHandler = middleware.NewGlobalMiddlewares(&l, nil).GlobalErrorHandler
@@ -352,14 +353,15 @@ func TestVoice_EndToEndAgainstRealServices(t *testing.T) {
 		c = fresh
 	})
 
-	t.Run("a submitted session rejects commands, closes, and refuses reconnects", func(t *testing.T) {
+	t.Run("submitting closes the voice connection at once, and reconnects are refused", func(t *testing.T) {
+		start := time.Now()
 		_, err := sessionSvc.SubmitSession(ctx, sess.ID, student.ID)
 		require.NoError(t, err)
 
-		id := c.command(voice.CommandPayload{Intent: "previous_question"})
-		errPayload := payloadOf[voice.ErrorPayload](t, c.until(voice.TypeError, id))
-		assert.Equal(t, voice.CodeSessionSubmitted, errPayload.Code)
+		closed := payloadOf[voice.SessionClosedPayload](t, c.until(voice.TypeSessionClosed, ""))
+		assert.Equal(t, "submitted", closed.Reason)
 		assert.Equal(t, websocket.StatusCode(voice.CloseSessionEnded), c.closeCode())
+		assert.Less(t, time.Since(start), 5*time.Second, "not left to the periodic re-check")
 
 		var current uuid.UUID
 		require.NoError(t, testDB.Pool.QueryRow(ctx, `SELECT current_question_id FROM sessions WHERE id = $1`, sess.ID).Scan(&current))
