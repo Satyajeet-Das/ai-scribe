@@ -220,6 +220,9 @@ students is an institutional decision (notice, consent or authorization, retenti
   another student or **different audio** is refused (`recording.status{status: "failed", code:
   "stream_reused"}`): the transcript is still staged, but linked to no recording, so a confirmed
   answer never points at audio of something else.
+- A recording is never written for a session that has ended. Its metadata write waits for a
+  submit or expiry already in progress and is then refused (`recording.status{status: "failed",
+  code: "session_ended"}`); the audio stored a moment before is removed again.
 - **Answers never depend on it.** If the audio cannot be stored the student gets
   `recording.status{status: "failed"}` and the transcript is staged for confirmation exactly as
   it would be without recording. The answer is saved only when `action.result.saved` is true.

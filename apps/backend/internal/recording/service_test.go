@@ -23,6 +23,7 @@ type fakeRepo struct {
 	recs    map[[2]uuid.UUID]*Recording
 	trs     map[uuid.UUID]*Transcription
 	failErr error
+	ended   bool
 }
 
 func newFakeRepo() *fakeRepo {
@@ -32,6 +33,9 @@ func newFakeRepo() *fakeRepo {
 func (f *fakeRepo) Insert(_ context.Context, rec *Recording, tr *Transcription) (*Recording, uuid.UUID, bool, error) {
 	if f.failErr != nil {
 		return nil, uuid.Nil, false, f.failErr
+	}
+	if f.ended {
+		return nil, uuid.Nil, false, ErrSessionEnded
 	}
 	k := [2]uuid.UUID{rec.SessionID, rec.StreamID}
 	if ex, ok := f.recs[k]; ok {
@@ -102,6 +106,18 @@ func TestSave_MetadataFailureRemovesTheStoredAudio(t *testing.T) {
 	_, err := svc.Save(context.Background(), input())
 	assert.ErrorIs(t, err, ErrStorage)
 	assert.Empty(t, store.Keys(), "audio without a row would be unreachable and unaccountable")
+}
+
+func TestSave_AfterTheSessionEndedNothingIsKept(t *testing.T) {
+	repo, store := newFakeRepo(), audiostore.NewMemory()
+	repo.ended = true
+	svc := newService(repo, store, Options{})
+
+	_, err := svc.Save(context.Background(), input())
+	assert.ErrorIs(t, err, ErrSessionEnded)
+	assert.NotErrorIs(t, err, ErrStorage, "not reported as a storage outage")
+	assert.Empty(t, store.Keys(), "the audio stored before the check is removed again")
+	assert.Empty(t, repo.recs)
 }
 
 func TestSave_RetryOfTheSameStreamStoresOnce(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"time"
 
@@ -93,6 +94,10 @@ func (s *Service) Save(ctx context.Context, in SaveInput) (*Saved, error) {
 	}
 
 	existing, existingTr, created, err := s.repo.Insert(ctx, rec, tr)
+	if errors.Is(err, ErrSessionEnded) {
+		s.discard(rec.StorageKey)
+		return nil, ErrSessionEnded
+	}
 	if err != nil {
 		s.discard(rec.StorageKey)
 		return nil, fmt.Errorf("%w: %v", ErrStorage, err)

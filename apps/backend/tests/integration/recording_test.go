@@ -23,6 +23,21 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/review"
 )
 
+// submitOnPut is a store that ends the session as soon as the audio is
+// stored, so the metadata write runs against a session that has just ended.
+type submitOnPut struct {
+	*audiostore.Memory
+	submit func()
+}
+
+func (s *submitOnPut) Put(ctx context.Context, key string, r io.Reader, size int64) error {
+	if err := s.Memory.Put(ctx, key, r, size); err != nil {
+		return err
+	}
+	s.submit()
+	return nil
+}
+
 // The seed helpers (reviewSeed) are shared with the review integration test.
 func TestRecording_Integration(t *testing.T) {
 	if testing.Short() {
@@ -130,6 +145,33 @@ func TestRecording_Integration(t *testing.T) {
 		require.NoError(t, testDB.Pool.QueryRow(ctx,
 			`SELECT text FROM transcriptions WHERE id = $1`, first.TranscriptionID).Scan(&text))
 		assert.Equal(t, "plants make sugar from light", text)
+	})
+
+	t.Run("a recording is refused once the session has ended, even if it ends while the audio is stored", func(t *testing.T) {
+		endedExam := seed.exam(teacher, "Ended")
+		ended := seed.session(seed.assign(endedExam, student, "ASSIGNED"), endedExam, student, "SUBMITTED", time.Now())
+		in := newInput(uuid.New())
+		in.SessionID = ended
+		_, err := svc.Save(ctx, in)
+		assert.ErrorIs(t, err, recording.ErrSessionEnded)
+
+		racingExam := seed.exam(teacher, "Racing")
+		racing := seed.session(seed.assign(racingExam, student, "ASSIGNED"), racingExam, student, "IN_PROGRESS", time.Now())
+		submitting := &submitOnPut{Memory: audiostore.NewMemory(), submit: func() {
+			_, err := testDB.Pool.Exec(ctx, `UPDATE sessions SET status = 'SUBMITTED', submitted_at = NOW() WHERE id = $1`, racing)
+			require.NoError(t, err)
+		}}
+		raced := recording.NewService(recording.NewRepository(testDB.Pool), submitting, recording.Options{}, &nop)
+		in = newInput(uuid.New())
+		in.SessionID = racing
+		_, err = raced.Save(ctx, in)
+		assert.ErrorIs(t, err, recording.ErrSessionEnded)
+		assert.Empty(t, submitting.Keys(), "the audio stored before the session ended is removed")
+
+		var n int
+		require.NoError(t, testDB.Pool.QueryRow(ctx,
+			`SELECT count(*) FROM audio_recordings WHERE session_id = ANY($1)`, []uuid.UUID{ended, racing}).Scan(&n))
+		assert.Zero(t, n)
 	})
 
 	t.Run("a transcription cannot be added twice for one recording", func(t *testing.T) {
@@ -437,7 +479,7 @@ func TestReviewPlayback_Integration(t *testing.T) {
 		return seed.session(seed.assign(exam, who, "ASSIGNED"), exam, who, status, time.Now())
 	}
 	sessionID := sessionOf(examID, student, "IN_PROGRESS")
-	classmateSession := sessionOf(examID, classmate, "SUBMITTED")
+	classmateSession := sessionOf(examID, classmate, "IN_PROGRESS")
 	sessionOf(otherExam, student, "SUBMITTED")
 
 	store := audiostore.NewMemory()
@@ -465,7 +507,11 @@ func TestReviewPlayback_Integration(t *testing.T) {
 			ConfirmationID: "c1", RecordingIDs: []uuid.UUID{kept.RecordingID},
 		},
 	}))
+	// Audio is only ever recorded while a session is in progress; the
+	// classmate has since submitted.
 	foreign := dictate(classmateSession, classmate, "the classmate's private answer")
+	_, err := testDB.Pool.Exec(ctx, `UPDATE sessions SET status = 'SUBMITTED', submitted_at = NOW() WHERE id = $1`, classmateSession)
+	require.NoError(t, err)
 
 	t.Run("the review lists each recording with the unedited transcript and what the student confirmed", func(t *testing.T) {
 		got, err := repo.GetResponses(ctx, examID, student, true)

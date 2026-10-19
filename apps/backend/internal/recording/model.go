@@ -23,6 +23,9 @@ var (
 	// reuses a stream ID would otherwise have its new audio silently replaced
 	// by the old.
 	ErrStreamReused = errors.New("recording: stream id already used for another recording")
+	// ErrSessionEnded means the session was submitted or expired before the
+	// recording could be written. Nothing is kept.
+	ErrSessionEnded = errors.New("recording: session is no longer in progress")
 	// ErrStorage means the audio could not be stored. The caller should carry
 	// on without a recording rather than fail the student's answer.
 	ErrStorage = errors.New("recording: storage failed")

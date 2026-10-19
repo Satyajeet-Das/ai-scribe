@@ -13,7 +13,8 @@ import (
 type Repository interface {
 	// Insert stores the recording and its transcription in one transaction. If
 	// a recording already exists for the same (session, stream), nothing is
-	// written and that recording is returned with created=false.
+	// written and that recording is returned with created=false. It refuses
+	// with ErrSessionEnded unless the session is still in progress.
 	Insert(ctx context.Context, rec *Recording, tr *Transcription) (existing *Recording, existingTranscription uuid.UUID, created bool, err error)
 }
 
@@ -29,6 +30,17 @@ func (r *pgRepository) Insert(ctx context.Context, rec *Recording, tr *Transcrip
 		return nil, uuid.Nil, false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	// FOR SHARE waits for a submit or expiry that is updating the session, so
+	// a recording can never be written after the session it belongs to ended.
+	var status string
+	err = tx.QueryRow(ctx, `SELECT status FROM sessions WHERE id = $1 FOR SHARE`, rec.SessionID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && status != "IN_PROGRESS") {
+		return nil, uuid.Nil, false, ErrSessionEnded
+	}
+	if err != nil {
+		return nil, uuid.Nil, false, err
+	}
 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO audio_recordings

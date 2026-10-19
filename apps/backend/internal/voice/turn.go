@@ -154,6 +154,9 @@ func (c *conversation) keepRecording(t *turn, format speech.AudioFormat, transcr
 			// stored audio for this stream ID is of something else.
 			code = "stream_reused"
 		}
+		if errors.Is(err, recording.ErrSessionEnded) {
+			code = "session_ended"
+		}
 		m.Inc(MetricFailures, code)
 		c.log.Error().Err(err).Str("event", "voice.recording_failed").Str("request_id", t.requestID).
 			Str("stream_id", t.streamLabel()).Msg("answer audio was not kept")
