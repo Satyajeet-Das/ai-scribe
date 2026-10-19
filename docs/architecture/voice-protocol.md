@@ -216,7 +216,10 @@ students is an institutional decision (notice, consent or authorization, retenti
   are never retained.
 - The audio is stored first, then its metadata, so a database row always points at audio that
   exists. If the metadata write fails the object is removed again. Re-saving the same `streamId`
-  stores it once.
+  with the same audio stores it once. A `streamId` that already holds audio of another question,
+  another student or **different audio** is refused (`recording.status{status: "failed", code:
+  "stream_reused"}`): the transcript is still staged, but linked to no recording, so a confirmed
+  answer never points at audio of something else.
 - **Answers never depend on it.** If the audio cannot be stored the student gets
   `recording.status{status: "failed"}` and the transcript is staged for confirmation exactly as
   it would be without recording. The answer is saved only when `action.result.saved` is true.

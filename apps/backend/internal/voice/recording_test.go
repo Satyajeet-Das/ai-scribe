@@ -122,6 +122,30 @@ func TestRecording_StorageFailureNeverBlocksTheAnswer(t *testing.T) {
 	assert.Nil(t, revs[0].TranscriptionID)
 }
 
+func TestRecording_AReusedStreamIsNotLinkedToTheAnswer(t *testing.T) {
+	h := newHarness(t, withoutTTS(), withRecorder())
+	h.rec.err = recording.ErrStreamReused
+	c, _ := h.connect()
+	qid := toEssay(t, h, c)
+
+	h.sayAs(c, AudioModeAnswer, "Plants turn light into energy")
+	status := recordingStatus(t, c)
+	assert.Equal(t, RecordingFailed, status.Status)
+	assert.Equal(t, "stream_reused", status.Code)
+	assert.Empty(t, status.RecordingID)
+
+	confirm := decode[ConfirmRequestPayload](t, c.until(TypeConfirmRequest))
+	assert.Equal(t, "Plants turn light into energy", confirm.Text, "the answer is still offered")
+	command(t, c, CommandPayload{Intent: "confirm"})
+	_, saved := h.exam.saved(qid)
+	require.True(t, saved)
+
+	revs := h.exam.revisionsOf()
+	require.Len(t, revs, 1)
+	assert.Empty(t, revs[0].RecordingIDs, "the old stream's recording is not claimed for this answer")
+	assert.Nil(t, revs[0].TranscriptionID)
+}
+
 func TestRecording_CommandsAreNeverRetained(t *testing.T) {
 	h := newHarness(t, withoutTTS(), withRecorder())
 	c, _ := h.connect()

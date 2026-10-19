@@ -112,6 +112,26 @@ func TestRecording_Integration(t *testing.T) {
 		assert.Equal(t, count("audio_recordings"), objects, "no orphaned audio is left by the losing retries")
 	})
 
+	t.Run("a stream id reused with different audio is refused, and the first transcription is untouched", func(t *testing.T) {
+		stream := uuid.New()
+		first, err := svc.Save(ctx, newInput(stream))
+		require.NoError(t, err)
+		recordings, objects := count("audio_recordings"), len(store.Keys())
+
+		other := newInput(stream)
+		other.PCM = bytes.Repeat([]byte{5, 0}, 8000)
+		other.Transcript = "read the question"
+		_, err = svc.Save(ctx, other)
+		assert.ErrorIs(t, err, recording.ErrStreamReused)
+		assert.Equal(t, recordings, count("audio_recordings"))
+		assert.Equal(t, objects, len(store.Keys()), "the new audio is not left in the store")
+
+		var text string
+		require.NoError(t, testDB.Pool.QueryRow(ctx,
+			`SELECT text FROM transcriptions WHERE id = $1`, first.TranscriptionID).Scan(&text))
+		assert.Equal(t, "plants make sugar from light", text)
+	})
+
 	t.Run("a transcription cannot be added twice for one recording", func(t *testing.T) {
 		saved, err := svc.Save(ctx, newInput(uuid.New()))
 		require.NoError(t, err)

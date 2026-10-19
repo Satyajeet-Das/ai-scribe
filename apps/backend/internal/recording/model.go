@@ -19,8 +19,9 @@ var (
 	// ErrInvalidAudio means the audio handed to Save cannot be a valid recording.
 	ErrInvalidAudio = errors.New("recording: invalid audio")
 	// ErrStreamReused means the stream ID already belongs to a recording of a
-	// different question or student. A client that reuses a stream ID would
-	// otherwise have its new audio silently replaced by the old.
+	// different question or student, or of different audio. A client that
+	// reuses a stream ID would otherwise have its new audio silently replaced
+	// by the old.
 	ErrStreamReused = errors.New("recording: stream id already used for another recording")
 	// ErrStorage means the audio could not be stored. The caller should carry
 	// on without a recording rather than fail the student's answer.

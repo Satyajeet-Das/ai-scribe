@@ -100,10 +100,12 @@ func (s *Service) Save(ctx context.Context, in SaveInput) (*Saved, error) {
 	if !created {
 		s.discard(rec.StorageKey)
 		// A retry of the same utterance is answered with the recording that is
-		// already there. A stream ID that belongs to something else is a mistake
-		// or an attack, and is refused rather than answered with someone else's
-		// recording.
-		if existing.QuestionID != in.QuestionID || existing.StudentID != in.StudentID {
+		// already there. A stream ID that belongs to something else, or that now
+		// carries different audio, is a mistake or an attack, and is refused:
+		// answering it with the existing recording would link a new transcript
+		// to audio of something else the student said.
+		if existing.QuestionID != in.QuestionID || existing.StudentID != in.StudentID ||
+			!bytes.Equal(existing.SHA256, sum[:]) {
 			return nil, ErrStreamReused
 		}
 		return &Saved{

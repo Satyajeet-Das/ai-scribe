@@ -139,6 +139,16 @@ func TestSave_AStreamIdCannotBeReusedForAnotherQuestionOrStudent(t *testing.T) {
 		assert.Len(t, store.Keys(), 1, "the new audio is not kept, and the first is untouched")
 		assert.Equal(t, saved.RecordingID, repo.recs[[2]uuid.UUID{first.SessionID, first.StreamID}].ID)
 	})
+	t.Run("different audio on the same question", func(t *testing.T) {
+		reuse := first
+		reuse.PCM = bytes.Repeat([]byte{7, 0}, 1600)
+		reuse.Transcript = "something else entirely"
+
+		_, err := svc.Save(context.Background(), reuse)
+		assert.ErrorIs(t, err, ErrStreamReused, "a new utterance is not linked to the old recording")
+		assert.Len(t, store.Keys(), 1)
+		assert.Equal(t, "plants make sugar", repo.trs[saved.RecordingID].Text, "the first transcription is untouched")
+	})
 	t.Run("another student", func(t *testing.T) {
 		reuse := first
 		reuse.StudentID = uuid.New()
