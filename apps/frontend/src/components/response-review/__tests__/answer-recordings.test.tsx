@@ -155,6 +155,18 @@ describe("AnswerRecordings", () => {
       show(essay([recording({ transcript: "something else", confirmed: false })]));
       expect(screen.queryByTestId("transcript-differs")).toBeNull();
     });
+
+    it("says when a confirmed recording no longer supports the saved answer", () => {
+      show(
+        essay(
+          [recording({ transcript: "plants make sugar", confirmed: true, supportsCurrentAnswer: false })],
+          "Typed over afterwards."
+        )
+      );
+      expect(screen.getByText("Confirmed earlier, no longer the saved answer")).toBeInTheDocument();
+      expect(screen.queryByText("Used for the saved answer")).toBeNull();
+      expect(screen.queryByTestId("transcript-differs")).toBeNull();
+    });
   });
 });
 

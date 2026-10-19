@@ -111,8 +111,11 @@ function RecordingItem({
 }) {
   const label = `recording ${index + 1} of ${total} for question ${question.questionNumber}`;
   const recorded = formatDateTime(recording.recordedAt);
+  // Older servers do not say; then a confirmed recording is taken to support
+  // the saved answer, as before.
+  const supportsAnswer = recording.confirmed && recording.supportsCurrentAnswer !== false;
   const differs =
-    recording.confirmed &&
+    supportsAnswer &&
     answerText.trim() !== "" &&
     recording.transcript.trim() !== "" &&
     words(recording.transcript) !== words(answerText);
@@ -128,8 +131,10 @@ function RecordingItem({
           {seconds(recording.durationMs)}
           {recorded && <> · {recorded}</>}
         </span>
-        {recording.confirmed ? (
+        {supportsAnswer ? (
           <Badge variant="secondary">Used for the saved answer</Badge>
+        ) : recording.confirmed ? (
+          <Badge variant="outline">Confirmed earlier, no longer the saved answer</Badge>
         ) : (
           <Badge variant="outline">Not used for the saved answer</Badge>
         )}

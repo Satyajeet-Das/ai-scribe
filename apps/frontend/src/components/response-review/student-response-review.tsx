@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AnswerHistory } from "@/components/response-review/answer-history";
 import { AnswerRecordings, SOURCE_LABEL } from "@/components/response-review/answer-recordings";
 import { ErrorPanel } from "@/components/response-review/error-panel";
 import {
@@ -487,6 +488,16 @@ function QuestionCard({
       )}
 
       <AnswerRecordings question={question} examId={examId} studentId={studentId} />
+
+      {question.answer.status === "ANSWERED" && (
+        <AnswerHistory
+          key={question.id}
+          examId={examId}
+          studentId={studentId}
+          questionId={question.id}
+          questionNumber={question.questionNumber}
+        />
+      )}
 
       {markingLine && marking.sheet?.markingAllowed && (
         <MarkingPanel

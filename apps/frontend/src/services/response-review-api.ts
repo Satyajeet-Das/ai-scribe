@@ -2,6 +2,7 @@ import { apiFetch } from "@/services/api";
 import type { MarkingSheet, SaveMarksRequest, SaveMarksResponse } from "@/types/marking";
 import type {
   ReviewListParams,
+  ReviewRevisionHistory,
   ReviewStudentList,
   ReviewStudentResponses,
 } from "@/types/response-review";
@@ -86,6 +87,19 @@ export const responseReviewApi = {
       body: JSON.stringify(body),
       cache: "no-store",
     });
+  },
+
+  /** Every value one answer has held, oldest first. Read-only; nothing is logged as played. */
+  getRevisions(
+    examId: string,
+    studentId: string,
+    questionId: string,
+    signal?: AbortSignal
+  ): Promise<ReviewRevisionHistory> {
+    return apiFetch<ReviewRevisionHistory>(
+      `/exams/${encodeURIComponent(examId)}/responses/${encodeURIComponent(studentId)}/questions/${encodeURIComponent(questionId)}/revisions`,
+      { signal, cache: "no-store" }
+    );
   },
 
   /**

@@ -111,6 +111,32 @@ export interface ReviewRecording {
   transcript: string;
   /** The student confirmed an answer using this audio. */
   confirmed: boolean;
+  /**
+   * The saved answer is still the one confirmed with this audio. False once
+   * the student typed or dictated over it. Absent from older servers.
+   */
+  supportsCurrentAnswer?: boolean;
+}
+
+/** One value an answer held, from GET .../questions/:questionId/revisions. */
+export interface ReviewRevision {
+  revisionNo: number;
+  source: ReviewAnswerSource;
+  textAnswer?: string;
+  selectedOptionKey?: string;
+  createdAt: string;
+  /** What the speech recognizer heard, for a dictated value. */
+  transcript?: string;
+  /** The student changed the recognized words before confirming them. */
+  corrected: boolean;
+  recordingIds: string[];
+}
+
+export interface ReviewRevisionHistory {
+  available: boolean;
+  unavailableReason?: ReviewUnavailableReason;
+  /** Oldest first. */
+  revisions: ReviewRevision[];
 }
 
 export interface ReviewQuestion {
