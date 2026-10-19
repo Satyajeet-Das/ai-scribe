@@ -62,10 +62,14 @@ function activityText(state: VoiceState): string {
 }
 
 function answerText(
-  state: VoiceState
+  state: VoiceState,
+  pendingShown: boolean
 ): { text: string; tone: "muted" | "ok" | "warn" | "error" } | null {
   switch (state.answer.phase) {
     case "awaiting_confirmation":
+      // A staged answer for a question the page has moved away from is not
+      // offered, so neither is its status.
+      if (!pendingShown) return null;
       return { text: "Waiting for your confirmation. Not saved yet.", tone: "warn" };
     case "saving":
       return { text: "Saving your answer…", tone: "muted" };
@@ -213,7 +217,7 @@ export function VoicePanel({
   const requesting = state.mic === "requesting";
   const sttAvailable = state.capabilities?.stt === true;
   const canAct = connected && !disabled;
-  const answer = answerText(state);
+  const answer = answerText(state, pending !== null);
   const canRetryConnection =
     state.connection === "disconnected" ||
     (state.connection === "error" && (state.fatal === "replaced" || state.fatal === "protocol"));

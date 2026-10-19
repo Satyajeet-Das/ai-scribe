@@ -446,3 +446,38 @@ describe("voiceReducer: errors and connection", () => {
     expect(again.notice).toBe(blocked.notice);
   });
 });
+
+describe("voiceReducer: a request that never gets a reply", () => {
+  const processing = run(speaking, { type: "capture_ended" });
+
+  it("goes back to idle and says so", () => {
+    const s = run(processing, { type: "request_timed_out", id: "r1" });
+    expect(s.busy).toBe("idle");
+    expect(s.activeRequestId).toBeNull();
+    expect(s.notice).toMatchObject({
+      tone: "error",
+      text: "No reply from the voice assistant. Please try again.",
+    });
+
+    // A reply that turns up afterwards is stale and changes nothing.
+    const late = run(s, server("stt.final", { streamId: "stream-1", text: "next question" }, "r1"));
+    expect(late.finalTranscript).toBe(s.finalTranscript);
+  });
+
+  it("ignores a timeout for a request that is no longer the one waited for", () => {
+    expect(run(processing, { type: "request_timed_out", id: "r0" })).toBe(processing);
+    expect(run(speaking, { type: "request_timed_out", id: "r1" })).toBe(speaking);
+  });
+
+  it("does not claim an answer whose confirmation got no reply was saved", () => {
+    const saving = run(speaking, server("confirm.request", confirmRequest, "r1"), {
+      type: "request_started",
+      id: "r2",
+      kind: "command",
+      intent: "confirm",
+    });
+    const s = run(saving, { type: "request_timed_out", id: "r2" });
+    expect(s.answer).toMatchObject({ phase: "failed", retryable: true });
+    expect(s.notice?.text).toMatch(/may not be saved/);
+  });
+});

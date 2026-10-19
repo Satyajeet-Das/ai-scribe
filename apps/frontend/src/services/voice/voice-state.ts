@@ -129,6 +129,8 @@ export type VoiceAction =
     }
   | { type: "capture_ended" }
   | { type: "capture_aborted"; notice?: string }
+  /** The request being processed got no reply in time (see PROCESSING_TIMEOUT_MS). */
+  | { type: "request_timed_out"; id: string }
   | { type: "mic"; state: MicState }
   | { type: "speech"; state: PlaybackState }
   | { type: "confirmation_expired"; confirmationId: string }
@@ -474,6 +476,30 @@ export function voiceReducer(state: VoiceState, action: VoiceAction): VoiceState
         partialTranscript: "",
         notice: action.notice ? notify(state, "error", action.notice) : state.notice,
       };
+
+    case "request_timed_out": {
+      // Only the request still waited for; a late reply to it is then ignored
+      // like any other stale message.
+      if (state.busy !== "processing" || state.activeRequestId !== action.id) return state;
+      const saving = state.answer.phase === "saving";
+      return {
+        ...state,
+        busy: "idle",
+        activeRequestId: null,
+        activeStreamId: null,
+        partialTranscript: "",
+        // A confirmation sent without a reply may still have been saved;
+        // confirming again is safe (it is applied once).
+        answer: saving ? { ...state.answer, phase: "failed", retryable: true } : state.answer,
+        notice: notify(
+          state,
+          "error",
+          saving
+            ? "No reply from the voice assistant. Your answer may not be saved; check it on screen, then confirm again if needed."
+            : "No reply from the voice assistant. Please try again."
+        ),
+      };
+    }
 
     case "mic":
       return { ...state, mic: action.state };

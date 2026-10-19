@@ -37,6 +37,11 @@ const CHUNK_MILLIS = 100;
 const MAX_BUFFERED_BYTES = 256 * 1024;
 /** Recording stops this long before the server's limit so the last chunk still fits. */
 const STREAM_MARGIN_MILLIS = 750;
+/**
+ * How long to wait for the reply to a recording or command. The server's own
+ * limits (final transcript, intent, saving) add up to about 21 s at worst.
+ */
+export const PROCESSING_TIMEOUT_MS = 30_000;
 
 /** Collaborators that tests replace. */
 export interface VoiceDeps {
@@ -250,7 +255,12 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
           break;
 
         case "tts.start":
-          if (message.payload.responseId === acceptedResponseRef.current) {
+          // A repeated tts.start for the response already playing would
+          // restart it and play its audio twice.
+          if (
+            message.payload.responseId === acceptedResponseRef.current &&
+            playerRef.current?.getActiveId() !== message.payload.responseId
+          ) {
             playerRef.current?.begin(message.payload.responseId, message.payload.format);
           }
           break;
@@ -626,6 +636,21 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
     autoReadPendingRef.current = null;
     sendCommand("repeat_question");
   }, [questionId, disabled, connection, ttsAvailable, options.autoReadQuestions, sendCommand]);
+
+  // A request that never gets a reply must not leave the assistant (and the
+  // page's navigation, which waits for it) stuck in "processing".
+  const processingId = state.busy === "processing" ? state.activeRequestId : null;
+  useEffect(() => {
+    if (!processingId) return;
+    const timer = setTimeout(() => {
+      if (activeRequestRef.current === processingId) {
+        activeRequestRef.current = null;
+        acceptedResponseRef.current = null;
+      }
+      dispatch({ type: "request_timed_out", id: processingId });
+    }, PROCESSING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [processingId]);
 
   // A staged answer expires on the backend; stop offering it at the same moment.
   const pendingId = pendingRaw?.confirmationId;

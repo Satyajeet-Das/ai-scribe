@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VoiceAssistant } from "../voice-assistant";
-import type { VoiceDeps } from "@/hooks/use-voice-session";
+import { PROCESSING_TIMEOUT_MS, type VoiceDeps } from "@/hooks/use-voice-session";
 import { sessionsApi, setStoredToken } from "@/services/api";
 import { useAuthStore } from "@/store/auth-store";
 import { MicError, type MicCapture, type MicCaptureOptions } from "@/services/voice/mic-capture";
@@ -1216,6 +1216,51 @@ describe("VoiceAssistant", () => {
       serverSpeaks(second, R2, "You have 50 minutes left.", 1);
       expect(audio().sources).toHaveLength(1);
       expect(screen.getByTestId("voice-response")).toHaveTextContent("50 minutes");
+    });
+
+    it("plays a response once even if its tts.start arrives twice", async () => {
+      setup();
+      await enable();
+      const id = clickCommand("Read question");
+      serverSpeaks(id, R1, "Question 1 of 2.", 2);
+      expect(audio().sources).toHaveLength(2);
+
+      act(() => {
+        ws().serverSend("tts.start", { responseId: R1, format: TTS_FORMAT }, id);
+        ws().serverAudio(R1, 0, 2400);
+        ws().serverAudio(R1, 1, 2400);
+      });
+      expect(audio().sources).toHaveLength(2);
+    });
+
+    it("gives up on a request that never gets a reply, and ignores the late reply", async () => {
+      vi.useFakeTimers();
+      setup();
+      fireEvent.click(screen.getByTestId("voice-enable-button"));
+      await act(async () => {});
+      act(() => ws().handshake());
+      const id = clickCommand("Read question");
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PROCESSING_TIMEOUT_MS);
+      });
+      expect(screen.getByTestId("voice-live-alert")).toHaveTextContent(/no reply/i);
+      expect(screen.getByRole("button", { name: "Start speaking" })).toBeEnabled();
+
+      act(() =>
+        ws().serverSend("response", { responseId: R1, kind: "question", text: "Question 1 of 2.", audio: false }, id)
+      );
+      expect(screen.queryByTestId("voice-response")).not.toBeInTheDocument();
+    });
+
+    it("does not show a waiting answer's status once the page has moved to another question", async () => {
+      const s = setup({ allowVoiceAnswer: true });
+      await enable();
+      act(() => ws().serverSend("confirm.request", stagedAnswer));
+      expect(screen.getByTestId("voice-answer-status")).toHaveTextContent(/waiting for your confirmation/i);
+
+      s.rerender({ allowVoiceAnswer: true, questionId: QUESTION_2.id });
+      expect(screen.queryByTestId("voice-answer-status")).not.toBeInTheDocument();
     });
 
     it("ignores audio that no response announced", async () => {
