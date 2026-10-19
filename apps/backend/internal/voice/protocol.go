@@ -105,17 +105,17 @@ const (
 	CodeConfirmationUnknown = "confirmation_mismatch"
 	// CodeSuperseded is on the cancelled action.result of a staged answer that
 	// a newer one replaced before it was confirmed.
-	CodeSuperseded = "superseded"
-	CodeNoNextQuestion      = "no_next_question"
-	CodeNoPreviousQuestion  = "no_previous_question"
-	CodeNoAnswer            = "no_answer"
-	CodeSessionExpired      = "session_expired"
-	CodeSessionSubmitted    = "session_submitted"
-	CodeSessionInactive     = "session_inactive"
-	CodeExamUnavailable     = "exam_unavailable"
-	CodeBusy                = "busy"
-	CodeUnavailable         = "service_unavailable"
-	CodeInternal            = "internal_error"
+	CodeSuperseded         = "superseded"
+	CodeNoNextQuestion     = "no_next_question"
+	CodeNoPreviousQuestion = "no_previous_question"
+	CodeNoAnswer           = "no_answer"
+	CodeSessionExpired     = "session_expired"
+	CodeSessionSubmitted   = "session_submitted"
+	CodeSessionInactive    = "session_inactive"
+	CodeExamUnavailable    = "exam_unavailable"
+	CodeBusy               = "busy"
+	CodeUnavailable        = "service_unavailable"
+	CodeInternal           = "internal_error"
 )
 
 // Application close codes (4000-4999 are reserved for applications).
@@ -289,20 +289,24 @@ type ConfirmRequestPayload struct {
 	OptionKey      string    `json:"optionKey,omitempty"`
 	OptionText     string    `json:"optionText,omitempty"`
 	Text           string    `json:"text,omitempty"`
-	ExpiresAt      time.Time `json:"expiresAt"`
+	// CommandLike is set when a dictated answer is, word for word, a command
+	// such as "read the question": the intent it sounds like. The answer is
+	// still the student's words; the client should ask before saving it.
+	CommandLike string    `json:"commandLike,omitempty"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 // ActionResultPayload reports the outcome of a state-changing action.
 // Saved is true only after the answer service has durably persisted the answer.
 type ActionResultPayload struct {
-	Action         string     `json:"action"`
-	Status         string     `json:"status"`
-	Code           string     `json:"code,omitempty"`
-	Retryable      bool       `json:"retryable,omitempty"`
-	Saved          bool       `json:"saved"`
+	Action    string `json:"action"`
+	Status    string `json:"status"`
+	Code      string `json:"code,omitempty"`
+	Retryable bool   `json:"retryable,omitempty"`
+	Saved     bool   `json:"saved"`
 	// Corrected is true when the student changed the recognized text before
 	// confirming, so the saved answer is not what the recognizer heard.
-	Corrected bool `json:"corrected,omitempty"`
+	Corrected      bool       `json:"corrected,omitempty"`
 	Duplicate      bool       `json:"duplicate,omitempty"`
 	ConfirmationID string     `json:"confirmationId,omitempty"`
 	QuestionID     *uuid.UUID `json:"questionId,omitempty"`

@@ -406,3 +406,26 @@ func TestDictationBody(t *testing.T) {
 		})
 	}
 }
+
+func TestCommandPhrase_MatchesOnlyAWholeReadOrNavigationCommand(t *testing.T) {
+	cases := map[string]Name{
+		"Read the question.":      RepeatQuestion,
+		"  next   question ":      NextQuestion,
+		"go back":                 PreviousQuestion,
+		"read my answer":          ReadBackAnswer,
+		"how much time is left?":  TimeRemaining,
+		"read the question twice": "",
+		"I read the question":     "",
+		"yes":                     "", // genuine short answers are not flagged
+		"no":                      "",
+		"correct":                 "",
+		"plants make sugar":       "",
+		"":                        "",
+	}
+	for said, want := range cases {
+		got, ok := CommandPhrase(said)
+		if got != want || ok != (want != "") {
+			t.Errorf("CommandPhrase(%q) = %q, %v; want %q", said, got, ok, want)
+		}
+	}
+}

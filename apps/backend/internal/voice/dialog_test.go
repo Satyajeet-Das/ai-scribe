@@ -380,6 +380,28 @@ func TestDictation_UsesStudentWordsVerbatim(t *testing.T) {
 	assert.Contains(t, resp.Text, "Plants turn light into chemical energy")
 }
 
+func TestDictation_OnlyAWholeCommandPhraseIsFlagged(t *testing.T) {
+	cases := []struct {
+		mode, said, want string
+	}{
+		{AudioModeAnswer, "I will read the question carefully before answering", ""},
+		{AudioModeAnswer, "Next question", "next_question"},
+		{AudioModeAnswer, "yes", ""}, // a genuine short answer, not flagged
+		{AudioModeCommand, "my answer is time left", "time_remaining"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.said, func(t *testing.T) {
+			h := newHarness(t, withoutTTS())
+			c, _ := h.connect()
+			toEssay(t, h, c)
+
+			h.sayAs(c, tc.mode, tc.said)
+			confirm := decode[ConfirmRequestPayload](t, c.until(TypeConfirmRequest))
+			assert.Equal(t, tc.want, confirm.CommandLike)
+		})
+	}
+}
+
 func TestAnswerMode_CommandWordsAreLiteralContent(t *testing.T) {
 	h := newHarness(t, withoutTTS())
 	c, _ := h.connect()
@@ -388,6 +410,9 @@ func TestAnswerMode_CommandWordsAreLiteralContent(t *testing.T) {
 	h.sayAs(c, AudioModeAnswer, "Read the question")
 	confirm := decode[ConfirmRequestPayload](t, c.until(TypeConfirmRequest))
 	assert.Equal(t, "Read the question", confirm.Text, "dictated words are kept as typed by the recognizer")
+	assert.Equal(t, "repeat_question", confirm.CommandLike, "but the client is told they sound like a command")
+	resp := decode[ResponsePayload](t, c.until(TypeResponse))
+	assert.Contains(t, resp.Text, "sounds like a command", "said aloud as well")
 	h.cls.mu.Lock()
 	classified := len(h.cls.inputs)
 	h.cls.mu.Unlock()

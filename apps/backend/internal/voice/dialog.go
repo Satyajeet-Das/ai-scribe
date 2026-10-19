@@ -67,6 +67,8 @@ type pendingConfirmation struct {
 	optionKey   string
 	text        string
 	expiresAt   time.Time
+	// commandLike is the command a dictated answer sounds like, if any.
+	commandLike intent.Name
 	// transcriptionID and recordingIDs are set when the dictated audio was kept.
 	// They are linked to the answer's revision only when it is confirmed.
 	transcriptionID *uuid.UUID
@@ -268,6 +270,7 @@ func (c *conversation) propose(t *turn, p *pendingConfirmation, action, optionTe
 		OptionKey:      p.optionKey,
 		OptionText:     optionText,
 		Text:           p.text,
+		CommandLike:    string(p.commandLike),
 		ExpiresAt:      p.expiresAt,
 	})
 }
@@ -309,7 +312,17 @@ func (c *conversation) proposeText(t *turn, transcript string, q *session.Studen
 		trID, recID := t.saved.TranscriptionID, t.saved.RecordingID
 		p.transcriptionID, p.recordingIDs = &trID, []uuid.UUID{recID}
 	}
+	if name, ok := intent.CommandPhrase(text); ok {
+		p.commandLike = name
+	}
 	c.propose(t, p, string(intent.DictateAnswer), "")
+	if p.commandLike != "" {
+		// Said aloud too, for a student who cannot see the screen.
+		return reply{
+			kind: kindConfirmation,
+			text: fmt.Sprintf("I heard: %s. That sounds like a command, not an answer. Say yes only if this is your answer, or no to cancel.", text),
+		}
+	}
 	return reply{
 		kind: kindConfirmation,
 		text: fmt.Sprintf("I heard: %s. Say yes to save this as your answer, or no to cancel.", text),

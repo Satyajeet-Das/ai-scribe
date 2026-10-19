@@ -89,7 +89,7 @@ row close the connection (`1008`). A message over `limits.maxMessageBytes` close
 | `stt.partial` | `{streamId, text}` | advisory, may be dropped under load |
 | `stt.final` | `{streamId, text}` | |
 | `intent` | `{streamId?, intent, optionKey?, confidence, classifier}` | what the classifier understood (after validation) |
-| `confirm.request` | `{confirmationId, action, questionId, optionKey?, optionText?, text?, expiresAt}` | an answer is staged, **not saved** |
+| `confirm.request` | `{confirmationId, action, questionId, optionKey?, optionText?, text?, commandLike?, expiresAt}` | an answer is staged, **not saved**. `commandLike` is set when the dictated text is, word for word, a command (see below) |
 | `action.result` | `{action: "answer"\|"navigate", status: "ok"\|"failed"\|"rejected"\|"cancelled", saved, corrected?, code?, retryable?, duplicate?, confirmationId?, questionId?, optionKey?, answerId?, savedAt?, direction?}` | `saved: true` only after the answer service has persisted |
 | `response` | `{responseId, streamId?, kind, code?, text, audio}` | what the assistant says, always as text; `audio: true` means `tts.start` follows |
 | `recording.status` | `{streamId, status: "stored"\|"failed", recordingId?, durationMs?, code?}` | only when `capabilities.recording` is true. Whether the audio of a dictated answer was kept. **Says nothing about the answer**, which is saved only when `action.result` says so |
@@ -125,6 +125,14 @@ the client and is never inferred from the words. An omitted mode means `command`
 | `answer` | **Not classified.** The transcript is staged verbatim as a free-text answer (`confirm.request`), exactly as for dictation, and still needs an explicit confirm. Command words inside it ("read the question") are literal content. Not valid for multiple-choice questions. |
 
 An unknown mode is rejected with `invalid_audio_mode`.
+
+**A dictation that is only a command.** If the whole dictated text is exactly one of the fixed
+phrases for asking about or moving through the exam ("read the question", "next question", "go
+back", "read my answer", "time left"), it is still staged as the student's words, but
+`confirm.request.commandLike` names the intent it sounds like (for example `repeat_question`) and
+the spoken confirmation says "That sounds like a command, not an answer". The client asks before
+saving it. Words inside a longer sentence never count, and "yes", "no", "correct" and similar are
+not flagged: they are common genuine answers.
 
 ## Spoken dictation in command mode
 

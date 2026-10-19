@@ -40,6 +40,28 @@ var phrases = map[string]Name{
 	"do not save": Deny,
 }
 
+// commandLike are the intents whose exact phrases are worth pointing out when
+// they turn up as a whole dictated answer: asking for the question, moving on,
+// or asking about the answer or the time is rarely meant as the answer itself.
+// "Yes", "no", "correct" and the like are left out: they are common genuine
+// answers.
+var commandLike = map[Name]bool{
+	RepeatQuestion: true, NextQuestion: true, PreviousQuestion: true, ReadBackAnswer: true, TimeRemaining: true,
+}
+
+// CommandPhrase reports whether the whole transcript is exactly one of the
+// fixed command phrases for asking about or moving through the exam ("read
+// the question", "next question"), and which. Words inside a longer sentence
+// do not count. It never decides anything: a dictated answer that matches is
+// still staged as the student's words, and only flagged.
+func CommandPhrase(transcript string) (Name, bool) {
+	name, ok := phrases[Normalize(transcript)]
+	if !ok || !commandLike[name] {
+		return "", false
+	}
+	return name, true
+}
+
 // optionPrefixes may precede an option key; they are tried longest first.
 var optionPrefixes = []string{
 	"my answer is option ", "the answer is option ", "i choose option ", "i select option ", "select option ",
