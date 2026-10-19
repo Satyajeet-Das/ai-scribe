@@ -171,6 +171,8 @@ const serverSchemas = {
     optionKey: z.string().optional(),
     optionText: z.string().optional(),
     text: z.string().optional(),
+    /** Set when the dictated text is, word for word, a command; names the intent. */
+    commandLike: z.string().optional(),
     expiresAt: z.string(),
   }),
   "action.result": z.object({

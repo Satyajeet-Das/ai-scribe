@@ -620,6 +620,66 @@ describe("VoiceAssistant", () => {
     });
   });
 
+  describe("a dictated answer that sounds like a command", () => {
+    const commandLike = {
+      confirmationId: "conf-cmd",
+      action: "dictate_answer",
+      questionId: QUESTION_1.id,
+      text: "Read the question",
+      commandLike: "repeat_question",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+
+    it("warns, puts focus on No, and offers the command instead", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      act(() => ws().serverSend("confirm.request", commandLike));
+
+      expect(screen.getByTestId("voice-command-like-warning")).toHaveTextContent(
+        "This sounds like the command “Read the question”, not an answer."
+      );
+      expect(document.activeElement).toBe(screen.getByTestId("voice-confirm-no"));
+
+      fireEvent.click(screen.getByTestId("voice-command-instead"));
+      const sent = ws().ofType("command").at(-1)!;
+      expect(sent.payload).toEqual({ intent: "repeat_question" });
+      expect(ws().ofType("command").filter((m) => m.payload!.intent === "confirm")).toHaveLength(0);
+    });
+
+    it("still lets the student save it as their answer", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      act(() => ws().serverSend("confirm.request", commandLike));
+
+      fireEvent.click(screen.getByTestId("voice-confirm-yes"));
+      expect(ws().ofType("command").at(-1)!.payload).toMatchObject({
+        intent: "confirm",
+        confirmationId: "conf-cmd",
+      });
+    });
+
+    it("does not take focus from a field the student is typing in", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      render(<textarea aria-label="notes" />);
+      const notes = screen.getByLabelText("notes");
+      notes.focus();
+
+      act(() => ws().serverSend("confirm.request", commandLike));
+      expect(document.activeElement).toBe(notes);
+    });
+
+    it("shows no warning for an ordinary dictation", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      act(() =>
+        ws().serverSend("confirm.request", { ...commandLike, text: "Plants make sugar", commandLike: undefined })
+      );
+      expect(screen.queryByTestId("voice-command-like-warning")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("voice-command-instead")).not.toBeInTheDocument();
+    });
+  });
+
   describe("one rule for starting a recording, whichever control is used", () => {
     it("the Start speaking button refuses while an answer waits, and says why", async () => {
       setup({ allowVoiceAnswer: true });

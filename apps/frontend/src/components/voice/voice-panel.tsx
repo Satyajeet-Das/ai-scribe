@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import type { VoiceController } from "@/hooks/use-voice-session";
+import { isTextEntryTarget } from "@/lib/keyboard";
+import type { CommandIntent } from "@/services/voice/protocol";
 import type { ConnectionStatus } from "@/services/voice/voice-socket";
 import type { VoiceState } from "@/services/voice/voice-state";
 
@@ -99,6 +101,15 @@ const TONE_CLASS = {
 /** The server rejects answers longer than this. */
 const MAX_ANSWER_CHARS = 2000;
 
+/** Commands a dictated answer can sound like, with what the student would call them. */
+const COMMAND_LABEL: Partial<Record<CommandIntent, string>> = {
+  repeat_question: "Read the question",
+  next_question: "Next question",
+  previous_question: "Previous question",
+  read_back_answer: "Read my answer",
+  time_remaining: "Time left",
+};
+
 /**
  * The answer waiting for a yes or no. A dictated answer can be corrected here
  * before it is saved: the student's version is what is kept, and the original
@@ -112,6 +123,7 @@ function PendingAnswer({
   recordingKept,
   onConfirm,
   onDeny,
+  onCommandInstead,
 }: {
   pending: NonNullable<VoiceController["pending"]>;
   canAct: boolean;
@@ -119,11 +131,26 @@ function PendingAnswer({
   recordingKept: boolean;
   onConfirm(text?: string): void;
   onDeny(): void;
+  /** Runs the command the answer sounds like; the server drops the staged answer. */
+  onCommandInstead(intent: CommandIntent): void;
 }) {
   const dictated = !pending.optionKey;
   const [draft, setDraft] = useState(pending.text ?? "");
   const changed = dictated && draft.trim() !== (pending.text ?? "").trim();
   const empty = dictated && draft.trim() === "";
+
+  // The answer is exactly a command ("Read the question"). Saving it by
+  // habit would be easy, so the safe choice gets focus, unless the student
+  // is typing somewhere.
+  const commandIntent = pending.commandLike as CommandIntent | undefined;
+  const commandLabel = commandIntent ? COMMAND_LABEL[commandIntent] : undefined;
+  const noRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!commandLabel) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && isTextEntryTarget(active)) return;
+    noRef.current?.focus();
+  }, [commandLabel]);
 
   return (
     <div
@@ -135,6 +162,17 @@ function PendingAnswer({
       <p id="voice-confirm-title" className="font-semibold">
         Confirm your answer
       </p>
+      {dictated && commandLabel && (
+        <p
+          role="alert"
+          className="flex items-start gap-2 text-sm font-medium text-amber-900 dark:text-amber-200"
+          data-testid="voice-command-like-warning"
+        >
+          <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+          This sounds like the command &ldquo;{commandLabel}&rdquo;, not an answer. Save it as your
+          answer only if that is what you meant.
+        </p>
+      )}
       {dictated ? (
         <>
           <label htmlFor="voice-answer-draft" className="text-sm font-medium">
@@ -185,6 +223,7 @@ function PendingAnswer({
           {changed ? "Save my corrected answer" : "Yes, save answer"}
         </Button>
         <Button
+          ref={noRef}
           size="sm"
           variant="outline"
           onClick={onDeny}
@@ -195,6 +234,17 @@ function PendingAnswer({
           <X className="size-3.5" aria-hidden="true" />
           No, cancel
         </Button>
+        {dictated && commandIntent && commandLabel && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onCommandInstead(commandIntent)}
+            disabled={!canAct || saving}
+            data-testid="voice-command-instead"
+          >
+            {commandLabel} instead
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -527,6 +577,7 @@ export function VoicePanel({
                 recordingKept={state.capabilities?.recording === true}
                 onConfirm={voice.confirm}
                 onDeny={voice.deny}
+                onCommandInstead={(intent) => voice.sendCommand(intent)}
               />
             )}
 
