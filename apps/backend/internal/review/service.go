@@ -166,6 +166,9 @@ type StudentResponses struct {
 type Service interface {
 	ListStudents(ctx context.Context, examID uuid.UUID, q ListQuery, caller Caller) (*StudentList, error)
 	GetStudentResponses(ctx context.Context, examID, studentID uuid.UUID, caller Caller) (*StudentResponses, error)
+	// GetRevisions is the history of one answer: every value it held, where
+	// each came from, and the transcript and recordings behind a dictated one.
+	GetRevisions(ctx context.Context, examID, studentID, questionID uuid.UUID, caller Caller) (*RevisionHistory, error)
 }
 
 type service struct {
@@ -236,6 +239,16 @@ func (s *service) ListStudents(ctx context.Context, examID uuid.UUID, q ListQuer
 		Limit:  params.Limit,
 		Offset: params.Offset,
 	}, nil
+}
+
+func (s *service) GetRevisions(ctx context.Context, examID, studentID, questionID uuid.UUID, caller Caller) (*RevisionHistory, error) {
+	if _, err := s.authorize(ctx, examID, caller); err != nil {
+		return nil, err
+	}
+	if studentID == uuid.Nil || questionID == uuid.Nil {
+		return nil, fmt.Errorf("%w: invalid id", ErrInvalidQuery)
+	}
+	return s.repo.GetRevisions(ctx, examID, studentID, questionID, s.policy.AllowInProgress)
 }
 
 func (s *service) GetStudentResponses(ctx context.Context, examID, studentID uuid.UUID, caller Caller) (*StudentResponses, error) {

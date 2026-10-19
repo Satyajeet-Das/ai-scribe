@@ -115,6 +115,54 @@ type RecordingDTO struct {
 	Transcript string `json:"transcript"`
 	// Confirmed is true when the student confirmed an answer using this audio.
 	Confirmed bool `json:"confirmed"`
+	// SupportsCurrentAnswer is true when the saved answer is still the one
+	// confirmed with this audio, and false once it was typed or dictated over.
+	SupportsCurrentAnswer bool `json:"supportsCurrentAnswer"`
+}
+
+// RevisionDTO is one value an answer held.
+type RevisionDTO struct {
+	RevisionNo int `json:"revisionNo"`
+	// Source is OPTION, TYPED, STT_CONFIRMED or STUDENT_CORRECTION.
+	Source            string    `json:"source"`
+	TextAnswer        string    `json:"textAnswer,omitempty"`
+	SelectedOptionKey string    `json:"selectedOptionKey,omitempty"`
+	CreatedAt         time.Time `json:"createdAt"`
+	// Transcript is what the speech recognizer heard, for a dictated value.
+	Transcript *string `json:"transcript,omitempty"`
+	// Corrected is true when the student changed the recognized words before
+	// confirming them.
+	Corrected bool `json:"corrected"`
+	// RecordingIDs are the recordings confirmed for this value.
+	RecordingIDs []uuid.UUID `json:"recordingIds"`
+}
+
+// RevisionHistoryResponse is the history of one answer, oldest value first.
+// Revisions is always an array; it is empty when Available is false, in
+// which case UnavailableReason says why.
+type RevisionHistoryResponse struct {
+	Available         bool          `json:"available"`
+	UnavailableReason string        `json:"unavailableReason,omitempty"`
+	Revisions         []RevisionDTO `json:"revisions"`
+}
+
+func ToRevisionHistoryResponse(h *RevisionHistory) RevisionHistoryResponse {
+	out := RevisionHistoryResponse{
+		Available: h.Available, UnavailableReason: h.UnavailableReason,
+		Revisions: make([]RevisionDTO, 0, len(h.Revisions)),
+	}
+	for _, r := range h.Revisions {
+		ids := r.RecordingIDs
+		if ids == nil {
+			ids = []uuid.UUID{}
+		}
+		out.Revisions = append(out.Revisions, RevisionDTO{
+			RevisionNo: r.RevisionNo, Source: r.Source, TextAnswer: r.TextAnswer,
+			SelectedOptionKey: r.OptionKey, CreatedAt: r.CreatedAt, Transcript: r.Transcript,
+			Corrected: r.Source == "STUDENT_CORRECTION", RecordingIDs: ids,
+		})
+	}
+	return out
 }
 
 type QuestionDTO struct {
@@ -203,6 +251,7 @@ func toQuestionDTO(q QuestionRecord, showCorrect bool) QuestionDTO {
 		dto.Recordings = append(dto.Recordings, RecordingDTO{
 			ID: r.ID, SegmentIndex: r.SegmentIndex, Status: r.Status, DurationMs: r.DurationMillis,
 			RecordedAt: r.RecordedAt, Transcript: r.Transcript, Confirmed: r.Confirmed,
+			SupportsCurrentAnswer: r.SupportsCurrentAnswer,
 		})
 	}
 	for _, o := range q.Options {

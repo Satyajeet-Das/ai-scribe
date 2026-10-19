@@ -23,6 +23,9 @@ type Repository interface {
 	// session in the given exam. A recording of any other exam or student is
 	// not found, whatever its ID.
 	GetRecording(ctx context.Context, examID, studentID, recordingID uuid.UUID) (*RecordingFile, error)
+	// GetRevisions returns the history of one answer in the attempt the review
+	// shows. ErrQuestionNotFound if the question is not in the exam.
+	GetRevisions(ctx context.Context, examID, studentID, questionID uuid.UUID, allowInProgress bool) (*RevisionHistory, error)
 }
 
 type pgRepository struct {
@@ -351,7 +354,11 @@ func attachRecordings(ctx context.Context, tx pgx.Tx, sessionID uuid.UUID, quest
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT r.question_id, r.id, r.segment_index, r.status, r.duration_ms, r.recorded_at,
-		       COALESCE(t.text, ''), r.answer_revision_id IS NOT NULL
+		       COALESCE(t.text, ''), r.answer_revision_id IS NOT NULL,
+		       r.answer_revision_id IS NOT NULL AND r.answer_revision_id = (
+		           SELECT v.id FROM answers a JOIN answer_revisions v ON v.answer_id = a.id
+		           WHERE a.session_id = r.session_id AND a.question_id = r.question_id
+		           ORDER BY v.revision_no DESC LIMIT 1)
 		FROM audio_recordings r
 		LEFT JOIN transcriptions t ON t.recording_id = r.id
 		WHERE r.session_id = $1
@@ -365,7 +372,7 @@ func attachRecordings(ctx context.Context, tx pgx.Tx, sessionID uuid.UUID, quest
 		var rec RecordingRecord
 		var status string
 		if err := rows.Scan(&qid, &rec.ID, &rec.SegmentIndex, &status, &rec.DurationMillis, &rec.RecordedAt,
-			&rec.Transcript, &rec.Confirmed); err != nil {
+			&rec.Transcript, &rec.Confirmed, &rec.SupportsCurrentAnswer); err != nil {
 			return err
 		}
 		rec.Status = RecordingAvailable
@@ -401,6 +408,72 @@ func (r *pgRepository) GetRecording(ctx context.Context, examID, studentID, reco
 	f.SessionStatus = Status(sessionStatus)
 	f.Removed = status != "STORED"
 	return &f, nil
+}
+
+func (r *pgRepository) GetRevisions(ctx context.Context, examID, studentID, questionID uuid.UUID, allowInProgress bool) (*RevisionHistory, error) {
+	out := &RevisionHistory{Revisions: []RevisionRecord{}}
+	err := r.readTx(ctx, func(tx pgx.Tx) error {
+		var inExam bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM questions WHERE id = $1 AND exam_id = $2)`, questionID, examID,
+		).Scan(&inExam); err != nil {
+			return err
+		}
+		if !inExam {
+			return ErrQuestionNotFound
+		}
+		sess, err := ResolveSession(ctx, tx, examID, studentID)
+		if err != nil {
+			return err
+		}
+		out.Session = sess
+		switch {
+		case sess == nil:
+			out.UnavailableReason = ReasonNotStarted
+			return nil
+		case sess.Status == StatusInProgress && !allowInProgress:
+			out.UnavailableReason = ReasonInProgressBlocked
+			return nil
+		}
+		out.Available = true
+
+		rows, err := tx.Query(ctx, `
+			SELECT v.revision_no, v.source, v.text_answer, COALESCE(o.option_key, ''), v.created_at, t.text,
+			       COALESCE((SELECT array_agg(rec.id::text ORDER BY rec.recorded_at, rec.id)
+			                 FROM audio_recordings rec WHERE rec.answer_revision_id = v.id), '{}')
+			FROM answers a
+			JOIN answer_revisions v ON v.answer_id = a.id
+			LEFT JOIN question_options o ON o.id = v.selected_option_id
+			LEFT JOIN transcriptions t ON t.id = v.transcription_id
+			WHERE a.session_id = $1 AND a.question_id = $2
+			ORDER BY v.revision_no`, sess.ID, questionID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var rev RevisionRecord
+			var ids []string
+			if err := rows.Scan(&rev.RevisionNo, &rev.Source, &rev.TextAnswer, &rev.OptionKey, &rev.CreatedAt,
+				&rev.Transcript, &ids); err != nil {
+				return err
+			}
+			rev.RecordingIDs = make([]uuid.UUID, 0, len(ids))
+			for _, s := range ids {
+				id, err := uuid.Parse(s)
+				if err != nil {
+					return err
+				}
+				rev.RecordingIDs = append(rev.RecordingIDs, id)
+			}
+			out.Revisions = append(out.Revisions, rev)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // RowQuerier is the part of a pool or transaction that reading one row needs.

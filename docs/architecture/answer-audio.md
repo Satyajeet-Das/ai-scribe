@@ -27,6 +27,18 @@ Each kept recording has:
   the recognizer's original words stay untouched in the transcript, so a teacher can see both. `STT_CONFIRMED` and `STUDENT_CORRECTION` revisions are never
   modified; consecutive `TYPED` autosaves and `OPTION` changes coalesce into one revision.
 
+**Checking how an answer came to be.** The review lists each recording with its transcript, and
+says whether the saved answer is still the one confirmed with it (`supportsCurrentAnswer`: false
+once the student typed or dictated over it). Every value an answer has held is available from
+
+`GET /api/v1/exams/:exam_id/responses/:student_id/questions/:question_id/revisions`
+
+oldest first: the source (`OPTION`, `TYPED`, `STT_CONFIRMED`, `STUDENT_CORRECTION`), the text or
+option, the time, what the recognizer heard for a dictated value, whether the student corrected
+it, and the recordings confirmed for it. It follows the same access rules as the review (owner or
+administrator, the attempt the review shows, the in-progress policy), is never cached, and only
+reads. It returns no audio, so it is not a playback and writes no audit entry.
+
 **An answer never depends on its audio.** If the audio cannot be stored, the student is told
 (`recording.status` = `failed`) and the transcript is staged for confirmation exactly as it would
 be without recording. See [voice-protocol.md](./voice-protocol.md#answer-audio-retention).

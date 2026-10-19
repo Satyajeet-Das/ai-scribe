@@ -705,6 +705,56 @@ func TestReviewPlayback_Integration(t *testing.T) {
 		audio.Body.Close()
 		assert.Equal(t, before, reviewSeed{pool: testDB.Pool, ctx: ctx, t: t}.snapshot())
 	})
+
+	t.Run("an answer's history shows every value, where it came from and what was heard", func(t *testing.T) {
+		before := reviewSeed{pool: testDB.Pool, ctx: ctx, t: t}.snapshot()
+		h, err := repo.GetRevisions(ctx, examID, student, essay, true)
+		require.NoError(t, err)
+		assert.Equal(t, before, reviewSeed{pool: testDB.Pool, ctx: ctx, t: t}.snapshot(), "reading the history changes nothing")
+		require.True(t, h.Available)
+		require.Len(t, h.Revisions, 1)
+		r := h.Revisions[0]
+		assert.Equal(t, answer.SourceSTTConfirmed, r.Source)
+		assert.Equal(t, "plants make sugar", r.TextAnswer)
+		require.NotNil(t, r.Transcript)
+		assert.Equal(t, "plants make sugar", *r.Transcript)
+		assert.Equal(t, []uuid.UUID{kept.RecordingID}, r.RecordingIDs)
+
+		got, err := repo.GetResponses(ctx, examID, student, true)
+		require.NoError(t, err)
+		supports := map[uuid.UUID]bool{}
+		for _, rec := range got.Questions[0].Recordings {
+			supports[rec.ID] = rec.SupportsCurrentAnswer
+		}
+		assert.True(t, supports[kept.RecordingID], "the saved answer is still the dictated one")
+		assert.False(t, supports[rejected.RecordingID])
+
+		// The student then types over the dictated answer.
+		require.NoError(t, answers.Upsert(ctx, &answer.Answer{SessionID: sessionID, QuestionID: essay, TextAnswer: "plants make sugar and oxygen"}))
+		h, err = repo.GetRevisions(ctx, examID, student, essay, true)
+		require.NoError(t, err)
+		require.Len(t, h.Revisions, 2)
+		assert.Equal(t, answer.SourceTyped, h.Revisions[1].Source)
+		assert.Nil(t, h.Revisions[1].Transcript)
+		assert.Empty(t, h.Revisions[1].RecordingIDs)
+
+		got, err = repo.GetResponses(ctx, examID, student, true)
+		require.NoError(t, err)
+		for _, rec := range got.Questions[0].Recordings {
+			if rec.ID == kept.RecordingID {
+				assert.True(t, rec.Confirmed, "it was confirmed once")
+				assert.False(t, rec.SupportsCurrentAnswer, "but no longer supports the saved answer")
+			}
+		}
+
+		_, err = repo.GetRevisions(ctx, otherExam, student, essay, true)
+		assert.ErrorIs(t, err, review.ErrQuestionNotFound, "a question of another exam")
+		blocked, err := repo.GetRevisions(ctx, examID, student, essay, false)
+		require.NoError(t, err)
+		assert.False(t, blocked.Available, "the in-progress policy applies")
+		assert.Equal(t, review.ReasonInProgressBlocked, blocked.UnavailableReason)
+		assert.Empty(t, blocked.Revisions)
+	})
 }
 
 func TestRecordingJanitor_Integration(t *testing.T) {

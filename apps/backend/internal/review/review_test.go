@@ -24,6 +24,7 @@ type fakeRepo struct {
 	page      *StudentPage
 	responses *Responses
 	file      *RecordingFile
+	history   *RevisionHistory
 	err       error
 
 	gotParams          ListParams
@@ -37,6 +38,11 @@ func (f *fakeRepo) ListStudents(_ context.Context, p ListParams) (*StudentPage, 
 
 func (f *fakeRepo) GetRecording(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*RecordingFile, error) {
 	return f.file, f.err
+}
+
+func (f *fakeRepo) GetRevisions(_ context.Context, _, _, _ uuid.UUID, allow bool) (*RevisionHistory, error) {
+	f.gotAllowInProgress = allow
+	return f.history, f.err
 }
 
 func (f *fakeRepo) GetResponses(_ context.Context, _, _ uuid.UUID, allow bool) (*Responses, error) {
@@ -331,9 +337,14 @@ func TestEscapeLike(t *testing.T) {
 // --- handler -----------------------------------------------------------------
 
 type stubService struct {
-	list *StudentList
-	resp *StudentResponses
-	err  error
+	list    *StudentList
+	resp    *StudentResponses
+	history *RevisionHistory
+	err     error
+}
+
+func (s *stubService) GetRevisions(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, Caller) (*RevisionHistory, error) {
+	return s.history, s.err
 }
 
 func (s *stubService) ListStudents(context.Context, uuid.UUID, ListQuery, Caller) (*StudentList, error) {
@@ -448,4 +459,65 @@ func TestOnlyGetRoutesAreRegistered(t *testing.T) {
 	for _, r := range routes {
 		assert.Equal(t, http.MethodGet, r.Method, "review route %s must be read-only", r.Path)
 	}
+}
+
+func TestRevisions_SameAccessRulesAsTheReview(t *testing.T) {
+	f := newFixture(Policy{AllowInProgress: false})
+	ctx := context.Background()
+	student, question := uuid.New(), uuid.New()
+	f.repo.history = &RevisionHistory{Revisions: []RevisionRecord{}}
+
+	_, err := f.svc.GetRevisions(ctx, f.examID, student, question, f.teacher)
+	require.NoError(t, err)
+	assert.False(t, f.repo.gotAllowInProgress, "the in-progress policy is passed on")
+
+	_, err = f.svc.GetRevisions(ctx, f.examID, student, question, f.other)
+	assert.ErrorIs(t, err, ErrExamNotFound)
+	_, err = f.svc.GetRevisions(ctx, f.examID, student, question, f.student)
+	assert.ErrorIs(t, err, ErrForbiddenRole)
+	_, err = f.svc.GetRevisions(ctx, f.examID, student, uuid.Nil, f.teacher)
+	assert.ErrorIs(t, err, ErrInvalidQuery)
+}
+
+func TestRevisionsHandler(t *testing.T) {
+	good := uuid.NewString()
+	params := map[string]string{"exam_id": good, "student_id": good, "question_id": good}
+
+	t.Run("a bad question id is a bad request", func(t *testing.T) {
+		h := NewHandler(&stubService{})
+		_, err := call(t, h.GetRevisions, "/x", map[string]string{"exam_id": good, "student_id": good, "question_id": "nope"})
+		var he *httperrs.HTTPError
+		require.True(t, errors.As(err, &he))
+		assert.Equal(t, http.StatusBadRequest, he.Status)
+	})
+	t.Run("a question of another exam is not found", func(t *testing.T) {
+		h := NewHandler(&stubService{err: ErrQuestionNotFound})
+		_, err := call(t, h.GetRevisions, "/x", params)
+		var he *httperrs.HTTPError
+		require.True(t, errors.As(err, &he))
+		assert.Equal(t, http.StatusNotFound, he.Status)
+	})
+	t.Run("the history is never cached, and is an array even when empty", func(t *testing.T) {
+		transcript := "plants make shugar"
+		h := NewHandler(&stubService{history: &RevisionHistory{Available: true, Revisions: []RevisionRecord{
+			{RevisionNo: 1, Source: "STUDENT_CORRECTION", TextAnswer: "plants make sugar", Transcript: &transcript},
+		}}})
+		rec, err := call(t, h.GetRevisions, "/x", params)
+		require.NoError(t, err)
+		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+		var body RevisionHistoryResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.Len(t, body.Revisions, 1)
+		assert.True(t, body.Revisions[0].Corrected)
+		assert.Equal(t, "plants make shugar", *body.Revisions[0].Transcript)
+		assert.Equal(t, []uuid.UUID{}, body.Revisions[0].RecordingIDs)
+
+		h = NewHandler(&stubService{history: &RevisionHistory{UnavailableReason: ReasonNotStarted}})
+		rec, err = call(t, h.GetRevisions, "/x", params)
+		require.NoError(t, err)
+		var raw map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+		assert.Equal(t, []any{}, raw["revisions"])
+		assert.Equal(t, ReasonNotStarted, raw["unavailableReason"])
+	})
 }

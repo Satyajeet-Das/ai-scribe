@@ -23,6 +23,8 @@ var (
 	// ErrAuditUnavailable means the access could not be recorded, so nothing was
 	// played. Playing audio without a record of it is not allowed.
 	ErrAuditUnavailable = errors.New("access could not be recorded")
+	// ErrQuestionNotFound means the question is not part of the exam.
+	ErrQuestionNotFound = errors.New("question not found")
 	// ErrInvalidQuery wraps a human-readable reason a request was rejected.
 	ErrInvalidQuery = errors.New("invalid query")
 )

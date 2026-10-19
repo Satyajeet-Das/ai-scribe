@@ -131,8 +131,38 @@ type RecordingRecord struct {
 	// Transcript is what the recognizer produced, unedited.
 	Transcript string
 	// Confirmed is true when the student confirmed an answer that used this
-	// recording, so its audio supports the saved answer.
+	// recording.
 	Confirmed bool
+	// SupportsCurrentAnswer is true when the answer's latest revision is the
+	// one this recording was confirmed for. It is false once the student has
+	// typed or dictated over that answer.
+	SupportsCurrentAnswer bool
+}
+
+// RevisionRecord is one value an answer held, oldest first.
+type RevisionRecord struct {
+	RevisionNo int
+	// Source is OPTION, TYPED, STT_CONFIRMED or STUDENT_CORRECTION.
+	Source     string
+	TextAnswer string
+	// OptionKey is the chosen option's key, for a multiple-choice answer.
+	OptionKey string
+	CreatedAt time.Time
+	// Transcript is what the recognizer heard, for a dictated revision.
+	Transcript *string
+	// RecordingIDs are the recordings confirmed for this revision.
+	RecordingIDs []uuid.UUID
+}
+
+// RevisionHistory is every value one answer has held in the attempt the
+// review shows.
+type RevisionHistory struct {
+	Session *SessionInfo
+	// Available is false when there is nothing to show: no session yet, or a
+	// session in progress that the policy hides (see UnavailableReason).
+	Available         bool
+	UnavailableReason string
+	Revisions         []RevisionRecord
 }
 
 type QuestionRecord struct {

@@ -51,6 +51,7 @@ func (h *Handler) RegisterRoutes(g *echo.Group, authMiddleware echo.MiddlewareFu
 	}
 	responses.GET("", h.ListStudents)
 	responses.GET("/:student_id", h.GetStudentResponses)
+	responses.GET("/:student_id/questions/:question_id/revisions", h.GetRevisions)
 	if h.playback != nil {
 		var mw []echo.MiddlewareFunc
 		if h.playbackLimit != nil {
@@ -146,6 +147,29 @@ func (h *Handler) GetStudentResponses(c echo.Context) error {
 	return c.JSON(http.StatusOK, ToStudentResponsesResponse(res))
 }
 
+// GetRevisions is the history of one answer, for checking how it came to be.
+func (h *Handler) GetRevisions(c echo.Context) error {
+	examID, err := uuid.Parse(c.Param("exam_id"))
+	if err != nil {
+		return httperrs.NewBadRequestError("Invalid exam ID format", false, nil, nil, nil)
+	}
+	studentID, err := uuid.Parse(c.Param("student_id"))
+	if err != nil {
+		return httperrs.NewBadRequestError("Invalid student ID format", false, nil, nil, nil)
+	}
+	questionID, err := uuid.Parse(c.Param("question_id"))
+	if err != nil {
+		return httperrs.NewBadRequestError("Invalid question ID format", false, nil, nil, nil)
+	}
+
+	res, err := h.service.GetRevisions(c.Request().Context(), examID, studentID, questionID, getCaller(c))
+	if err != nil {
+		return h.mapError(err)
+	}
+	setNoStore(c)
+	return c.JSON(http.StatusOK, ToRevisionHistoryResponse(res))
+}
+
 // setNoStore keeps student answers out of shared and browser caches.
 func setNoStore(c echo.Context) {
 	h := c.Response().Header()
@@ -180,7 +204,7 @@ func intParam(c echo.Context, name string) (int, error) {
 
 func (h *Handler) mapError(err error) error {
 	switch {
-	case errors.Is(err, ErrExamNotFound), errors.Is(err, ErrStudentNotAssigned):
+	case errors.Is(err, ErrExamNotFound), errors.Is(err, ErrStudentNotAssigned), errors.Is(err, ErrQuestionNotFound):
 		return httperrs.NewNotFoundError(err.Error(), true, nil)
 	case errors.Is(err, ErrRecordingNotFound), errors.Is(err, ErrPlaybackDisabled):
 		code := "RECORDING_NOT_FOUND"
