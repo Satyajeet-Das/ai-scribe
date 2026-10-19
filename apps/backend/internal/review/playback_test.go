@@ -153,6 +153,34 @@ func TestPlayback_RemovedAndMissingAudioAreDistinctStates(t *testing.T) {
 	})
 }
 
+// unreadableStore opens objects whose content then fails to read.
+type unreadableStore struct{ *audiostore.Memory }
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("connection reset mid-object") }
+
+func (s unreadableStore) Open(context.Context, string) (io.ReadCloser, int64, error) {
+	return io.NopCloser(failingReader{}), 100, nil
+}
+
+func TestPlayback_AudioThatCannotBeReadIsNeverRecordedAsPlayed(t *testing.T) {
+	p := newPlaybackFixture(t, DefaultPolicy())
+	p.playback = EnablePlayback(p.svc, unreadableStore{p.store}, p.audit)
+
+	_, err := p.open(p.teacher)
+	assert.ErrorIs(t, err, ErrAudioUnavailable)
+	events := p.audit.all()
+	require.Len(t, events, 1)
+	assert.Equal(t, audit.ActionAudioUnavailable, events[0].Action, "noted as unavailable, not as a playback")
+}
+
+func TestPlayback_TheDownloadNameFollowsTheContentType(t *testing.T) {
+	assert.Equal(t, ".wav", audioExtension("audio/wav"))
+	assert.Equal(t, ".webm", audioExtension("audio/webm; codecs=opus"))
+	assert.Equal(t, "", audioExtension("application/octet-stream"))
+}
+
 func TestPlayback_FollowsTheSamePolicyAsTheAnswers(t *testing.T) {
 	p := newPlaybackFixture(t, Policy{AllowInProgress: false})
 	p.file.SessionStatus = StatusInProgress

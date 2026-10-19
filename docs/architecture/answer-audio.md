@@ -36,8 +36,9 @@ be without recording. See [voice-protocol.md](./voice-protocol.md#answer-audio-r
 `GET /api/v1/exams/:exam_id/responses/:student_id/recordings/:recording_id/audio`
 
 - Only the exam's owner and administrators. Students and proctors are refused.
-- The recording must belong to **that student's session in that exam**; any other ID is
-  "not found", so an ID from another student or exam reveals nothing.
+- The recording must belong to **the attempt the review shows** (the submitted one if there is
+  one, otherwise the most recent) of a student **still assigned** to that exam; any other ID is
+  "not found", so an ID from another student, exam or attempt reveals nothing.
 - Review of an unfinished session follows the same policy flag that decides whether its answers
   are shown (`review.Policy.AllowInProgress`).
 - The response is `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, supports `Range`
@@ -49,12 +50,14 @@ be without recording. See [voice-protocol.md](./voice-protocol.md#answer-audio-r
 | 200 / 206 | audio |
 | 404 `RECORDING_NOT_FOUND` | no such recording for this student and exam, or playback is not configured |
 | 410 `RECORDING_REMOVED` | the audio was deleted; the transcript remains |
+| 429 `TOO_MANY_REQUESTS` | more than 60 plays a minute by one reviewer (`Retry-After` says when to try again) |
 | 503 `AUDIO_UNAVAILABLE` | the file cannot be read, **or the access could not be audited** (the reason is not disclosed) |
 
 ## What is audited
 
-Every playback writes an `audit_events` row **before any audio is sent**; if that write fails,
-nothing is played (fail closed). The row holds the actor, role, time, recording, session, request
+Every playback writes an `audit_events` row **before any audio is sent**, and only after the audio
+has been read in full, so an entry never says audio was played that could not be; if that write
+fails, nothing is played (fail closed). The row holds the actor, role, time, recording, session, request
 ID and client address. It never holds audio, transcripts or answers. An authorized attempt whose
 file turned out to be unreadable is recorded as `audio.unavailable`, not as a playback. Refused
 requests play nothing and write no playback entry (denials are logged as `review.denied`).

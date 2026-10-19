@@ -259,6 +259,9 @@ func main() {
 	assignmentHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	sessionHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
 	answerHandler.RegisterRoutes(v1, authMiddleware.RequireAuth)
+	// Each press of Play fetches a recording once, so 60 a minute per reviewer
+	// is generous for real use and stops anything scripted from bulk-copying audio.
+	reviewHandler.WithPlaybackLimit(middlewares.RateLimit.WithRedis(redisClient, &log).LimitPerUser(60, time.Minute))
 	reviewHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
 	gradingHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
 	voiceService.RegisterRoutes(v1)

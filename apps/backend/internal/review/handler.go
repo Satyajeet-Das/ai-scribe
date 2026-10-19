@@ -17,8 +17,9 @@ import (
 )
 
 type Handler struct {
-	service  Service
-	playback PlaybackService
+	service       Service
+	playback      PlaybackService
+	playbackLimit echo.MiddlewareFunc
 }
 
 func NewHandler(service Service) *Handler {
@@ -31,9 +32,11 @@ func (h *Handler) WithPlayback(p PlaybackService) *Handler {
 	return h
 }
 
-// maxPlayableBytes bounds how much audio one playback request reads into
-// memory. Recordings are limited far below this when they are made.
-const maxPlayableBytes = 32 << 20
+// WithPlaybackLimit puts mw (a rate limit) in front of the audio route only.
+func (h *Handler) WithPlaybackLimit(mw echo.MiddlewareFunc) *Handler {
+	h.playbackLimit = mw
+	return h
+}
 
 // RegisterRoutes mounts the read-only review endpoints. Both are GET only, so
 // no route here can change an answer, a session or an exam. The role
@@ -49,7 +52,11 @@ func (h *Handler) RegisterRoutes(g *echo.Group, authMiddleware echo.MiddlewareFu
 	responses.GET("", h.ListStudents)
 	responses.GET("/:student_id", h.GetStudentResponses)
 	if h.playback != nil {
-		responses.GET("/:student_id/recordings/:recording_id/audio", h.GetRecordingAudio)
+		var mw []echo.MiddlewareFunc
+		if h.playbackLimit != nil {
+			mw = append(mw, h.playbackLimit)
+		}
+		responses.GET("/:student_id/recordings/:recording_id/audio", h.GetRecordingAudio, mw...)
 	}
 }
 
@@ -77,8 +84,8 @@ func (h *Handler) GetRecordingAudio(c echo.Context) error {
 	}
 	defer audio.Body.Close()
 
-	data, err := io.ReadAll(io.LimitReader(audio.Body, maxPlayableBytes+1))
-	if err != nil || int64(len(data)) > maxPlayableBytes {
+	data, err := io.ReadAll(audio.Body) // already in memory, see OpenRecording
+	if err != nil {
 		return h.mapError(ErrAudioUnavailable)
 	}
 
@@ -86,7 +93,7 @@ func (h *Handler) GetRecordingAudio(c echo.Context) error {
 	hdr := c.Response().Header()
 	hdr.Set("Content-Type", audio.ContentType)
 	hdr.Set("X-Content-Type-Options", "nosniff")
-	hdr.Set("Content-Disposition", `inline; filename="response.wav"`)
+	hdr.Set("Content-Disposition", `inline; filename="response`+audioExtension(audio.ContentType)+`"`)
 	http.ServeContent(c.Response(), c.Request(), "", time.Time{}, bytes.NewReader(data))
 	return nil
 }
@@ -144,6 +151,23 @@ func setNoStore(c echo.Context) {
 	h := c.Response().Header()
 	h.Set("Cache-Control", "no-store")
 	h.Set("Pragma", "no-cache")
+}
+
+// audioExtension is the file extension for a recording's content type, for a
+// download name that names nothing about the student.
+func audioExtension(contentType string) string {
+	switch strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0])) {
+	case "audio/wav", "audio/wave", "audio/x-wav":
+		return ".wav"
+	case "audio/webm":
+		return ".webm"
+	case "audio/ogg":
+		return ".ogg"
+	case "audio/mpeg":
+		return ".mp3"
+	default:
+		return ""
+	}
 }
 
 func intParam(c echo.Context, name string) (int, error) {

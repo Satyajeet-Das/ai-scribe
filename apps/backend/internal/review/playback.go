@@ -1,6 +1,7 @@
 package review
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -17,7 +18,13 @@ type AccessMeta struct {
 	IP        string
 }
 
-// Audio is a recording opened for playback. The caller closes Body.
+// maxPlayableBytes bounds how much audio one playback reads into memory.
+// Recordings are limited far below this when they are made.
+const maxPlayableBytes = 32 << 20
+
+// Audio is a recording opened for playback. Body is already in memory: the
+// audio was read in full before its playback was recorded. The caller closes
+// Body.
 type Audio struct {
 	Body        io.ReadCloser
 	Size        int64
@@ -49,9 +56,10 @@ func (disabledPlayback) OpenRecording(context.Context, uuid.UUID, uuid.UUID, uui
 
 // OpenRecording checks, in order: the caller's role, ownership of the exam,
 // that the recording is this student's recording for this exam, that review of
-// the session is allowed, and that the audio can be read. Only then is the
-// access recorded, and only if that record is written is the audio returned:
-// no audio leaves the system without an audit entry.
+// the session is allowed, and that the audio can be read in full. Only then
+// is the access recorded, and only if that record is written is the audio
+// returned: no audio leaves the system without an audit entry, and no entry
+// says audio was played when it could not be read.
 func (s *service) OpenRecording(ctx context.Context, examID, studentID, recordingID uuid.UUID, caller Caller, meta AccessMeta) (*Audio, error) {
 	if s.store == nil || s.audit == nil {
 		return nil, ErrPlaybackDisabled
@@ -80,11 +88,11 @@ func (s *service) OpenRecording(ctx context.Context, examID, studentID, recordin
 		Outcome: audit.OutcomeOK, RequestID: meta.RequestID, IP: meta.IP,
 	}
 
-	body, size, err := s.store.Open(ctx, file.StorageKey)
+	data, err := s.readAudio(ctx, file.StorageKey)
 	if err != nil {
 		if s.logger != nil {
 			s.logger.Error().Err(err).Str("event", "review.audio_unavailable").
-				Str("recording_id", file.ID.String()).Msg("recording audio could not be opened")
+				Str("recording_id", file.ID.String()).Msg("recording audio could not be read")
 		}
 		if !errors.Is(err, context.Canceled) {
 			// Best effort: nothing was played, so a failure to note this does not matter.
@@ -95,12 +103,30 @@ func (s *service) OpenRecording(ctx context.Context, examID, studentID, recordin
 	}
 
 	if err := s.audit.Record(ctx, event); err != nil {
-		_ = body.Close()
 		if s.logger != nil {
 			s.logger.Error().Err(err).Str("event", "review.audit_failed").
 				Str("recording_id", file.ID.String()).Msg("audio not played: access could not be recorded")
 		}
 		return nil, ErrAuditUnavailable
 	}
-	return &Audio{Body: body, Size: size, ContentType: file.ContentType}, nil
+	return &Audio{Body: io.NopCloser(bytes.NewReader(data)), Size: int64(len(data)), ContentType: file.ContentType}, nil
+}
+
+var errTooLarge = errors.New("recording is larger than playback allows")
+
+// readAudio reads a stored recording in full, up to maxPlayableBytes.
+func (s *service) readAudio(ctx context.Context, key string) ([]byte, error) {
+	body, _, err := s.store.Open(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+	data, err := io.ReadAll(io.LimitReader(body, maxPlayableBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxPlayableBytes {
+		return nil, errTooLarge
+	}
+	return data, nil
 }

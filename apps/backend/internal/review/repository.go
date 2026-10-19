@@ -382,11 +382,14 @@ func attachRecordings(ctx context.Context, tx pgx.Tx, sessionID uuid.UUID, quest
 func (r *pgRepository) GetRecording(ctx context.Context, examID, studentID, recordingID uuid.UUID) (*RecordingFile, error) {
 	var f RecordingFile
 	var status, sessionStatus string
+	// Only a recording of the attempt the review shows, for a student who is
+	// still assigned: the same rule as GetResponses, so nothing can be played
+	// that the reviewer cannot see listed.
 	err := r.pool.QueryRow(ctx, `
 		SELECT r.id, r.session_id, s.status, r.storage_key, r.content_type, r.byte_size, r.status
-		FROM audio_recordings r
-		JOIN sessions s ON s.id = r.session_id
-		WHERE r.id = $1 AND s.exam_id = $2 AND s.student_id = $3`,
+		FROM assignments a`+sessionLateral+`
+		JOIN audio_recordings r ON r.session_id = s.id
+		WHERE r.id = $1 AND a.exam_id = $2 AND a.student_id = $3 AND a.status = 'ASSIGNED'`,
 		recordingID, examID, studentID,
 	).Scan(&f.ID, &f.SessionID, &sessionStatus, &f.StorageKey, &f.ContentType, &f.ByteSize, &status)
 	if err != nil {

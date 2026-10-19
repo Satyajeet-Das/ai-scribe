@@ -600,6 +600,30 @@ func TestReviewPlayback_Integration(t *testing.T) {
 		assert.ErrorIs(t, err, review.ErrRecordingNotFound)
 	})
 
+	t.Run("only the attempt the review shows can be played, and only while the student is assigned", func(t *testing.T) {
+		retaker := seed.user("STUDENT", "Rae", "Retaker", "R102")
+		asg := seed.assign(examID, retaker, "ASSIGNED")
+		first := seed.session(asg, examID, retaker, "IN_PROGRESS", time.Now().Add(-2*time.Hour))
+		older := dictate(first, retaker, "first attempt")
+		_, err := testDB.Pool.Exec(ctx, `UPDATE sessions SET status = 'EXPIRED' WHERE id = $1`, first)
+		require.NoError(t, err)
+		second := seed.session(asg, examID, retaker, "IN_PROGRESS", time.Now().Add(-time.Hour))
+		shown := dictate(second, retaker, "second attempt")
+		_, err = testDB.Pool.Exec(ctx, `UPDATE sessions SET status = 'SUBMITTED', submitted_at = NOW() WHERE id = $1`, second)
+		require.NoError(t, err)
+
+		f, err := repo.GetRecording(ctx, examID, retaker, shown.RecordingID)
+		require.NoError(t, err, "the submitted attempt is the one the review shows")
+		assert.Equal(t, second, f.SessionID)
+		_, err = repo.GetRecording(ctx, examID, retaker, older.RecordingID)
+		assert.ErrorIs(t, err, review.ErrRecordingNotFound, "an attempt the review does not show cannot be played")
+
+		_, err = testDB.Pool.Exec(ctx, `UPDATE assignments SET status = 'REVOKED' WHERE id = $1`, asg)
+		require.NoError(t, err)
+		_, err = repo.GetRecording(ctx, examID, retaker, shown.RecordingID)
+		assert.ErrorIs(t, err, review.ErrRecordingNotFound, "nothing of a student no longer assigned can be played")
+	})
+
 	examSvc := exam.NewService(exam.NewRepository(testDB.Pool), &nop)
 	auditRec := audit.NewRecorder(testDB.Pool)
 	svc := review.NewService(repo, examSvc, review.DefaultPolicy(), &nop)

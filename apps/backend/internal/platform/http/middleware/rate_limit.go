@@ -40,18 +40,38 @@ func (r *RateLimitMiddleware) RecordRateLimitHit(endpoint string) {
 
 // Limit returns an IP-based rate limiting echo middleware.
 func (r *RateLimitMiddleware) Limit(maxRequests int64, window time.Duration) echo.MiddlewareFunc {
+	return r.limit(maxRequests, window, func(c echo.Context) string {
+		ip := c.RealIP()
+		if ip == "" {
+			ip = "unknown"
+		}
+		return ip
+	})
+}
+
+// LimitPerUser limits each signed-in user, whatever address they use. It
+// must run after authentication; a request without a user is limited by IP.
+func (r *RateLimitMiddleware) LimitPerUser(maxRequests int64, window time.Duration) echo.MiddlewareFunc {
+	return r.limit(maxRequests, window, func(c echo.Context) string {
+		if id := GetUserID(c); id != "" {
+			return "user:" + id
+		}
+		ip := c.RealIP()
+		if ip == "" {
+			ip = "unknown"
+		}
+		return "ip:" + ip
+	})
+}
+
+func (r *RateLimitMiddleware) limit(maxRequests int64, window time.Duration, subject func(echo.Context) string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if r.redis == nil {
 				return next(c)
 			}
 
-			ip := c.RealIP()
-			if ip == "" {
-				ip = "unknown"
-			}
-
-			key := fmt.Sprintf("ratelimit:%s:%s", c.Path(), ip)
+			key := fmt.Sprintf("ratelimit:%s:%s", c.Path(), subject(c))
 			ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
 			defer cancel()
 
