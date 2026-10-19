@@ -159,6 +159,39 @@ describe("StudentResponseReview", () => {
     expect(screen.getByRole("heading", { name: /Question 3/ })).toBeInTheDocument();
   });
 
+  it("moves between questions with the arrow keys and puts focus on the new heading", async () => {
+    getResponses.mockResolvedValue(responses());
+    const user = userEvent.setup();
+    render(<StudentResponseReview examId="exam-1" studentId="s-1" />);
+    await screen.findByText(Q1.text);
+
+    await user.keyboard("{ArrowRight}");
+    const heading = screen.getByRole("heading", { name: /Question 2/ });
+    expect(heading).toHaveFocus();
+    await user.keyboard("{ArrowRight}"); // the focused heading is still the page
+    expect(screen.getByRole("heading", { name: /Question 3/ })).toHaveFocus();
+    await user.keyboard("{ArrowRight}"); // stays on the last question
+    expect(screen.getByRole("heading", { name: /Question 3/ })).toBeInTheDocument();
+    await user.keyboard("{ArrowLeft}");
+    expect(screen.getByRole("heading", { name: /Question 2/ })).toHaveFocus();
+  });
+
+  it("leaves the arrow keys to controls and ignores them with modifiers", async () => {
+    getResponses.mockResolvedValue(responses());
+    const user = userEvent.setup();
+    render(<StudentResponseReview examId="exam-1" studentId="s-1" />);
+    await screen.findByText(Q1.text);
+
+    const next = screen.getByRole("button", { name: /Next/ });
+    next.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("heading", { name: /Question 1/ })).toBeInTheDocument();
+
+    (document.activeElement as HTMLElement).blur();
+    await user.keyboard("{Shift>}{ArrowRight}{/Shift}");
+    expect(screen.getByRole("heading", { name: /Question 1/ })).toBeInTheDocument();
+  });
+
   it("flags a session that is still in progress as not final", async () => {
     getResponses.mockResolvedValue(
       responses({

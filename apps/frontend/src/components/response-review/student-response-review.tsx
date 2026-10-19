@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Info, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,7 @@ import { useRemoteResource } from "@/hooks/use-remote-resource";
 import { formatMarks, useStudentMarking, type StudentMarking } from "@/hooks/use-student-marking";
 import { responseReviewApi } from "@/services/response-review-api";
 import { DESIGN_TOKENS } from "@/lib/constants";
+import { hasNoModifiers, isPlainShortcutEvent, isSurfaceTarget } from "@/lib/keyboard";
 import type { MarkingQuestion } from "@/types/marking";
 import type { ReviewCounts, ReviewQuestion, ReviewStudentResponses } from "@/types/response-review";
 
@@ -252,6 +253,43 @@ function QuestionReview({
   stale: boolean;
   marking: StudentMarking;
 }) {
+  const found = questions.findIndex((q) => q.id === selectedId);
+  const index = found === -1 ? 0 : found;
+  const question = questions[index];
+  const prev = questions[index - 1];
+  const next = questions[index + 1];
+
+  // Left and Right arrows move between questions when focus is on the page
+  // itself, as in the exam room. On a control (the marks field, the audio
+  // slider) they keep their own meaning.
+  const navRef = useRef({ prev: prev?.id, next: next?.id, onSelect });
+  useEffect(() => {
+    navRef.current = { prev: prev?.id, next: next?.id, onSelect };
+  });
+  const focusHeadingRef = useRef(false);
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (!isPlainShortcutEvent(e) || !hasNoModifiers(e) || !isSurfaceTarget(e.target)) return;
+      e.preventDefault();
+      const { prev: before, next: after, onSelect: select } = navRef.current;
+      const target = e.key === "ArrowRight" ? after : before;
+      if (!target) return;
+      focusHeadingRef.current = true;
+      select(target);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+  // After moving by keyboard, focus goes to the new question's heading, so a
+  // screen reader starts there and the arrows keep working.
+  const questionId = question?.id;
+  useEffect(() => {
+    if (!focusHeadingRef.current) return;
+    focusHeadingRef.current = false;
+    document.getElementById("question-heading")?.focus();
+  }, [questionId]);
+
   if (questions.length === 0) {
     return (
       <Card className="items-center px-6 py-12 text-center">
@@ -260,11 +298,6 @@ function QuestionReview({
     );
   }
 
-  const found = questions.findIndex((q) => q.id === selectedId);
-  const index = found === -1 ? 0 : found;
-  const question = questions[index];
-  const prev = questions[index - 1];
-  const next = questions[index + 1];
   const lineOf = (id: string) => marking.sheet?.questions.find((m) => m.questionId === id);
 
   return (
@@ -408,7 +441,7 @@ function QuestionCard({
   return (
     <Card className="gap-5 p-5 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 id="question-heading" className="text-lg font-bold">
+        <h2 id="question-heading" tabIndex={-1} className="text-lg font-bold focus:outline-none">
           Question {question.questionNumber}
           <span className="font-normal text-muted-foreground"> of {total}</span>
         </h2>

@@ -34,6 +34,12 @@ export function describePlaybackError(err: unknown): PlaybackProblem {
     if (err.status === 401) {
       return { message: "Your session has expired. Please sign in again.", retryable: false };
     }
+    if (err.status === 429) {
+      return {
+        message: "Too many recordings were played in a short time. Wait a minute, then try again.",
+        retryable: true,
+      };
+    }
     if (err.status === 0) {
       return {
         message: "Could not reach the server. Check your connection and try again.",
@@ -76,6 +82,33 @@ export function RecordingPlayer({ label, durationMs, load }: RecordingPlayerProp
   const [rate, setRate] = useState<number>(1);
   const [status, setStatus] = useState("");
 
+  // The control that had focus is replaced as the player moves from Play to
+  // loading to the playback controls (or an error). Focus follows it, so a
+  // keyboard user is not sent back to the top of the page.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef<HTMLParagraphElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const problemRef = useRef<HTMLDivElement>(null);
+  const keepFocusRef = useRef(false);
+  useEffect(() => {
+    if (!keepFocusRef.current) return;
+    // Only while focus is still on the player (or was lost with the control
+    // it was on): if the reviewer moved elsewhere meanwhile, it stays there.
+    const active = document.activeElement;
+    const onPlayer =
+      !active || active === document.body || containerRef.current?.contains(active) === true;
+    if (!onPlayer) {
+      keepFocusRef.current = false;
+      return;
+    }
+    if (phase === "loading") loadingRef.current?.focus();
+    if (phase === "ready") toggleRef.current?.focus();
+    if (phase === "error") {
+      (problemRef.current?.querySelector("button") ?? problemRef.current)?.focus();
+    }
+    if (phase !== "loading") keepFocusRef.current = false;
+  }, [phase]);
+
   const release = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -91,6 +124,7 @@ export function RecordingPlayer({ label, durationMs, load }: RecordingPlayerProp
   const fetchAndPlay = useCallback(async () => {
     const audio = audioRef.current;
     if (!audio) return;
+    keepFocusRef.current = containerRef.current?.contains(document.activeElement) ?? false;
     release();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -142,7 +176,7 @@ export function RecordingPlayer({ label, durationMs, load }: RecordingPlayerProp
   };
 
   return (
-    <div className="flex flex-col gap-2" data-testid="recording-player">
+    <div ref={containerRef} className="flex flex-col gap-2" data-testid="recording-player">
       {/* No native controls: the controls below are labelled and keyboard operable. */}
       <audio
         ref={audioRef}
@@ -182,7 +216,12 @@ export function RecordingPlayer({ label, durationMs, load }: RecordingPlayerProp
       )}
 
       {phase === "loading" && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground" aria-busy="true">
+        <p
+          ref={loadingRef}
+          tabIndex={-1}
+          className="flex items-center gap-2 text-sm text-muted-foreground focus:outline-none"
+          aria-busy="true"
+        >
           <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
           Loading recording…
         </p>
@@ -191,6 +230,7 @@ export function RecordingPlayer({ label, durationMs, load }: RecordingPlayerProp
       {phase === "ready" && (
         <div role="group" aria-label={label} className="flex flex-wrap items-center gap-2">
           <Button
+            ref={toggleRef}
             variant="outline"
             size="icon"
             onClick={toggle}
@@ -252,8 +292,10 @@ export function RecordingPlayer({ label, durationMs, load }: RecordingPlayerProp
 
       {phase === "error" && problem && (
         <div
+          ref={problemRef}
           role="alert"
-          className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"
+          tabIndex={-1}
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm focus:outline-none"
         >
           <span className="flex-1">{problem.message}</span>
           {problem.retryable && (

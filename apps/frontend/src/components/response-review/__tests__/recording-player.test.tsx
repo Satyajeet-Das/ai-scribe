@@ -65,6 +65,30 @@ describe("RecordingPlayer", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Recording ready.");
   });
 
+  it("keeps keyboard focus on the player when Play is replaced by the controls", async () => {
+    setup();
+    screen.getByRole("button", { name: `Play ${LABEL}` }).focus();
+    await userEvent.keyboard("{Enter}");
+
+    const pause = await screen.findByRole("button", { name: new RegExp(`(Pause|Play) ${LABEL}`) });
+    await waitFor(() => expect(document.activeElement).toBe(pause));
+  });
+
+  it("does not move focus when the reviewer is elsewhere", async () => {
+    let finish!: (b: Blob) => void;
+    const { load } = setup(vi.fn(() => new Promise<Blob>((r) => (finish = r))));
+    await press(`Play ${LABEL}`);
+    // While it loads, the reviewer moves on to something else.
+    const elsewhere = document.createElement("button");
+    document.body.appendChild(elsewhere);
+    elsewhere.focus();
+    await act(async () => finish(blob()));
+    await screen.findByRole("group", { name: LABEL });
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
+  });
+
   it("pauses and resumes without fetching again", async () => {
     const { load } = setup();
     await press(`Play ${LABEL}`);
@@ -200,6 +224,21 @@ describe("RecordingPlayer", () => {
       expect(screen.queryByRole("alert")).toBeNull();
     });
 
+    it("puts focus on Try again when a temporary failure replaces the Play button", async () => {
+      setup(vi.fn().mockRejectedValue(new ApiError("unavailable", 503, "AUDIO_UNAVAILABLE")));
+      screen.getByRole("button", { name: `Play ${LABEL}` }).focus();
+      await userEvent.keyboard("{Enter}");
+      const retry = await screen.findByRole("button", { name: /try again/i });
+      await waitFor(() => expect(document.activeElement).toBe(retry));
+    });
+
+    it("asks the reviewer to wait after playing too many recordings", async () => {
+      setup(vi.fn().mockRejectedValue(new ApiError("slow down", 429, "TOO_MANY_REQUESTS")));
+      await press(`Play ${LABEL}`);
+      expect(await screen.findByRole("alert")).toHaveTextContent(/wait a minute/i);
+      expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    });
+
     it("explains a permission problem without offering a pointless retry", async () => {
       setup(vi.fn().mockRejectedValue(new ApiError("no", 403)));
       await press(`Play ${LABEL}`);
@@ -226,6 +265,7 @@ describe("describePlaybackError", () => {
     [403, false],
     [401, false],
     [0, true],
+    [429, true],
     [503, true],
     [500, true],
   ])("status %i → retryable %s", (status, retryable) => {
