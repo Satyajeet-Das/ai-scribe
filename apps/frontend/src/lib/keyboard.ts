@@ -32,7 +32,18 @@ export function isInsideLayer(target: EventTarget | null): boolean {
  * part of an IME composition, and not already handled by something else.
  */
 export function isPlainShortcutEvent(e: KeyboardEvent): boolean {
-  return !e.repeat && !e.isComposing && !e.defaultPrevented;
+  // keyCode 229 is what some browsers report for a key press an input method
+  // is handling, without setting isComposing.
+  return !e.repeat && !e.isComposing && e.keyCode !== 229 && !e.defaultPrevented;
+}
+
+/**
+ * The letter of an Alt shortcut, from the physical key where the browser
+ * reports it. On a Mac, Option+M types "µ", so e.key alone would never match.
+ */
+export function shortcutLetter(e: KeyboardEvent): string {
+  if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3).toLowerCase();
+  return e.key.toLowerCase();
 }
 
 const INTERACTIVE_SELECTOR = [

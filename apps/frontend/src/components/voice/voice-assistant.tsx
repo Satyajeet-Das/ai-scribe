@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { VoicePanel } from "@/components/voice/voice-panel";
 import { useVoiceSession, type UseVoiceSessionOptions } from "@/hooks/use-voice-session";
-import { hasNoModifiers, isPlainShortcutEvent, isSurfaceTarget } from "@/lib/keyboard";
+import {
+  hasNoModifiers,
+  isInsideLayer,
+  isPlainShortcutEvent,
+  isSurfaceTarget,
+  shortcutLetter,
+} from "@/lib/keyboard";
 
 /** What the voice assistant is doing that must not be interrupted by leaving the question. */
 export interface VoiceActivity {
@@ -50,8 +56,10 @@ export const TOGGLE_LOCK_MS = 300;
  *    itself and not on a control, so it never fires a button or types a line
  *    break. On a written-answer question it dictates the answer; otherwise it
  *    listens for a command.
+ *  - Escape discards a recording in progress, unless a dialog has the keyboard.
  *  - Alt+M starts or stops a voice command, Alt+D dictates an answer and Alt+S
- *    stops speech. These work wherever focus is.
+ *    stops speech. These work wherever focus is, except inside a dialog. They
+ *    match the physical key, so Option+M works on a Mac.
  */
 export function VoiceAssistant(props: VoiceAssistantProps) {
   const { allowVoiceAnswer = false, onActivityChange, ...sessionOptions } = props;
@@ -66,7 +74,7 @@ export function VoiceAssistant(props: VoiceAssistantProps) {
     }
   };
   const voice = useVoiceSession({ ...sessionOptions, autoReadQuestions: autoRead });
-  const { state, startSpeaking, finishSpeaking, stopSpeech, announce } = voice;
+  const { state, startSpeaking, finishSpeaking, cancelSpeaking, stopSpeech, announce } = voice;
   const enabled = state.enabled;
   const recording = state.mic === "recording";
   const requesting = state.mic === "requesting";
@@ -109,33 +117,31 @@ export function VoiceAssistant(props: VoiceAssistantProps) {
           return;
         }
         if (requesting) return;
-        if (awaitingConfirmation) {
-          announce(
-            "You have an answer waiting. Choose Yes, save answer or No, cancel before recording again.",
-            "error"
-          );
-          return;
-        }
-        if (processing) {
-          announce("Still processing your last recording. Please wait.", "info");
-          return;
-        }
+        // startSpeaking refuses, and says why, while an answer waits for
+        // confirmation or the last request is still being processed.
         void startSpeaking(allowVoiceAnswer ? "answer" : "command");
         return;
       }
 
-      if (!e.altKey || e.ctrlKey || e.metaKey) return;
-      const key = e.key.toLowerCase();
-      if (key === "m") {
+      if (e.key === "Escape" && hasNoModifiers(e)) {
+        // Escape closes a dialog first; it only discards a recording when no
+        // dialog, menu or list has the keyboard.
+        if (!(recording || requesting) || isInsideLayer(e.target)) return;
         e.preventDefault();
-        lastToggleRef.current = Date.now();
-        if (recording) finishSpeaking();
-        else void startSpeaking("command");
-      } else if (key === "d" && allowVoiceAnswer) {
+        cancelSpeaking();
+        announce("Recording discarded. Nothing was sent.", "info");
+        return;
+      }
+
+      // Alt shortcuts work wherever focus is, except inside a dialog (such as
+      // the submit confirmation), which owns the keyboard.
+      if (!e.altKey || e.ctrlKey || e.metaKey || isInsideLayer(e.target)) return;
+      const key = shortcutLetter(e);
+      if (key === "m" || (key === "d" && allowVoiceAnswer)) {
         e.preventDefault();
-        lastToggleRef.current = Date.now();
+        lastToggleRef.current = Date.now(); // an Enter right after is the same press
         if (recording) finishSpeaking();
-        else void startSpeaking("answer");
+        else if (!requesting) void startSpeaking(key === "d" ? "answer" : "command");
       } else if (key === "s") {
         e.preventDefault();
         stopSpeech();
@@ -147,11 +153,10 @@ export function VoiceAssistant(props: VoiceAssistantProps) {
     enabled,
     recording,
     requesting,
-    processing,
-    awaitingConfirmation,
     allowVoiceAnswer,
     startSpeaking,
     finishSpeaking,
+    cancelSpeaking,
     stopSpeech,
     announce,
   ]);

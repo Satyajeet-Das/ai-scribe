@@ -270,6 +270,42 @@ describe("Sprint 6: StudentExamRoom Component", () => {
     expect(onPrevious).toHaveBeenCalledTimes(1);
   });
 
+  it("matches Alt+N and Alt+P by the physical key, and not with Ctrl or Meta or while submitting", () => {
+    const onNext = vi.fn();
+    const onPrevious = vi.fn();
+    const middleQuestion: StudentQuestionResponse = {
+      ...mockQuestion1,
+      questionNumber: 2,
+      currentIndex: 2,
+      isFirst: false,
+      isLast: false,
+    };
+    const room = (submitting: boolean) => (
+      <StudentExamRoom
+        currentQuestion={middleQuestion}
+        answers={{}}
+        onSelectOption={vi.fn()}
+        onNext={onNext}
+        onPrevious={onPrevious}
+        onSubmit={vi.fn()}
+        submitting={submitting}
+      />
+    );
+    const { rerender } = render(room(false));
+
+    // Option+N and Option+P on a Mac type other characters.
+    fireEvent.keyDown(window, { key: "˜", code: "KeyN", altKey: true });
+    fireEvent.keyDown(window, { key: "π", code: "KeyP", altKey: true });
+    expect(onNext).toHaveBeenCalledTimes(1);
+    expect(onPrevious).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(window, { key: "n", code: "KeyN", altKey: true, ctrlKey: true });
+    fireEvent.keyDown(window, { key: "n", code: "KeyN", altKey: true, metaKey: true });
+    rerender(room(true));
+    fireEvent.keyDown(window, { key: "n", code: "KeyN", altKey: true });
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores navigation shortcuts that repeat, or come from fields and dialogs", () => {
     const onNext = vi.fn();
     const middleQuestion: StudentQuestionResponse = {

@@ -620,6 +620,139 @@ describe("VoiceAssistant", () => {
     });
   });
 
+  describe("one rule for starting a recording, whichever control is used", () => {
+    it("the Start speaking button refuses while an answer waits, and says why", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      act(() => ws().serverSend("confirm.request", stagedAnswer));
+
+      fireEvent.click(screen.getByRole("button", { name: "Start speaking" }));
+      fireEvent.keyDown(window, { key: "d", altKey: true });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+      expect(screen.getByTestId("voice-live-alert")).toHaveTextContent(/answer waiting/i);
+    });
+
+    it("Alt+M refuses while the last request is still being processed", async () => {
+      setup();
+      await enable();
+      clickCommand("Read question");
+
+      fireEvent.keyDown(window, { key: "m", altKey: true });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+      expect(screen.getByTestId("voice-live-status")).toHaveTextContent(/still processing/i);
+    });
+
+    it("says so when voice is not connected yet", async () => {
+      setup({ allowVoiceAnswer: true });
+      fireEvent.click(screen.getByTestId("voice-enable-button"));
+      await flush();
+
+      fireEvent.keyDown(document.body, { key: "Enter" });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+      expect(screen.getByTestId("voice-live-alert")).toHaveTextContent(/not connected yet/i);
+    });
+
+    it("matches Alt shortcuts by the physical key, so Option+M works on a Mac", async () => {
+      const { mic } = setup();
+      await enable();
+
+      fireEvent.keyDown(window, { key: "µ", code: "KeyM", altKey: true });
+      await flush();
+      expect(mic.starts).toBe(1);
+      expect(ws().ofType("audio.start").at(-1)!.payload!.mode).toBe("command");
+    });
+
+    it("ignores Alt shortcuts inside a dialog", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      render(
+        <div role="alertdialog" aria-label="Submit exam">
+          <button type="button">Keep working</button>
+        </div>
+      );
+
+      fireEvent.keyDown(screen.getByRole("button", { name: "Keep working" }), {
+        key: "d",
+        code: "KeyD",
+        altKey: true,
+      });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+    });
+
+    it("ignores Enter while an input method is composing (keyCode 229)", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+
+      fireEvent.keyDown(document.body, { key: "Enter", keyCode: 229 });
+      await flush();
+      expect(ws().ofType("audio.start")).toHaveLength(0);
+    });
+
+    it("Escape discards a recording and says nothing was sent", async () => {
+      const { mic } = setup({ allowVoiceAnswer: true });
+      await enable();
+      const { streamId } = await startRecording();
+      act(() => mic.emit());
+
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await flush();
+      expect(ws().ofType("audio.cancel").at(-1)!.payload!.streamId).toBe(streamId);
+      expect(ws().ofType("audio.end")).toHaveLength(0);
+      expect(screen.queryByTestId("voice-recording-indicator")).not.toBeInTheDocument();
+      expect(screen.getByTestId("voice-live-status")).toHaveTextContent("Recording discarded");
+    });
+
+    it("Escape inside a dialog leaves the recording alone", async () => {
+      setup({ allowVoiceAnswer: true });
+      await enable();
+      await startRecording();
+      render(
+        <div role="dialog" aria-label="Help">
+          <button type="button">Close help</button>
+        </div>
+      );
+
+      fireEvent.keyDown(screen.getByRole("button", { name: "Close help" }), { key: "Escape" });
+      await flush();
+      expect(ws().ofType("audio.cancel")).toHaveLength(0);
+      expect(screen.getByTestId("voice-recording-indicator")).toBeInTheDocument();
+    });
+
+    it("does not throw a recording away when a command button is pressed", async () => {
+      const { mic } = setup();
+      await enable();
+      await startRecording();
+      act(() => mic.emit());
+
+      fireEvent.click(screen.getByRole("button", { name: "Read question" }));
+      await flush();
+      expect(ws().ofType("command")).toHaveLength(0);
+      expect(ws().ofType("audio.cancel")).toHaveLength(0);
+      expect(screen.getByTestId("voice-recording-indicator")).toBeInTheDocument();
+      expect(screen.getByTestId("voice-live-alert")).toHaveTextContent(/recording is in progress/i);
+    });
+
+    it("keeps focus on the mic button when Start and Stop swap", async () => {
+      const { mic } = setup();
+      await enable();
+
+      const start = screen.getByRole("button", { name: "Start speaking" });
+      start.focus();
+      fireEvent.click(start);
+      await flush();
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Stop and send" }));
+
+      act(() => mic.emit());
+      fireEvent.click(screen.getByRole("button", { name: "Stop and send" }));
+      await flush();
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Start speaking" }));
+    });
+  });
+
   describe("recording and streaming audio", () => {
     it("asks for the microphone only on Start speaking, then streams ordered PCM frames", async () => {
       const { mic } = setup();
@@ -1260,10 +1393,10 @@ describe("VoiceAssistant", () => {
       fireEvent.click(screen.getByTestId("voice-enable-button"));
       await act(async () => {});
       act(() => ws().handshake());
-      act(() => ws().serverSend("confirm.request", stagedAnswer));
       fireEvent.click(screen.getByRole("button", { name: "Start speaking" }));
       await act(async () => {});
       act(() => s.mic.emit());
+      expect(s.mic.active).toBe(true);
 
       act(() => ws().serverClose(1006));
       expect(s.mic.active).toBe(false);

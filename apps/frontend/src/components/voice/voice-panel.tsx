@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type FocusEvent } from "react";
 import {
   AlertTriangle,
   Check,
@@ -218,6 +218,24 @@ export function VoicePanel({
     state.connection === "disconnected" ||
     (state.connection === "error" && (state.fatal === "replaced" || state.fatal === "protocol"));
 
+  // Starting or stopping a recording swaps the Start and Stop buttons. When
+  // focus was on them, it moves to the button that replaced them instead of
+  // falling back to the top of the page.
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const focusInControlsRef = useRef(false);
+  const trackFocusLeaving = (e: FocusEvent<HTMLDivElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (next ? !e.currentTarget.contains(next) : e.target.isConnected) {
+      focusInControlsRef.current = false; // the student moved focus elsewhere
+    }
+  };
+  useEffect(() => {
+    if (!focusInControlsRef.current) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && controlsRef.current?.contains(active)) return;
+    controlsRef.current?.querySelector<HTMLElement>('[data-testid="voice-mic-button"]')?.focus();
+  }, [recording]);
+
   return (
     <Card className="bg-background shadow-xs border" data-testid="voice-panel">
       <CardHeader className="py-3 px-4">
@@ -303,9 +321,14 @@ export function VoicePanel({
             )}
 
             <div
+              ref={controlsRef}
               className="flex flex-wrap items-center gap-2"
               role="group"
               aria-label="Voice controls"
+              onFocusCapture={() => {
+                focusInControlsRef.current = true;
+              }}
+              onBlurCapture={trackFocusLeaving}
             >
               {recording ? (
                 <>
@@ -335,6 +358,7 @@ export function VoicePanel({
                   onClick={() => void voice.startSpeaking()}
                   disabled={!canAct || !sttAvailable || requesting}
                   aria-pressed="false"
+                  aria-keyshortcuts="Alt+M"
                   className="gap-1.5"
                   data-testid="voice-mic-button"
                 >
@@ -518,7 +542,7 @@ export function VoicePanel({
             )}
 
             <p className="text-xs text-muted-foreground">
-              Keyboard: Enter, when no button or field has focus, {allowVoiceAnswer ? "dictates your answer" : "starts a voice command"}, and Enter again stops. Alt+M starts or stops a voice command. {allowVoiceAnswer ? "Alt+D dictates your answer. " : ""}Alt+S stops speech. Left and Right arrows change question when no button or field has focus; Alt+N and Alt+P always do.
+              Keyboard: Enter, when no button or field has focus, {allowVoiceAnswer ? "dictates your answer" : "starts a voice command"}, and Enter again stops. Alt+M starts or stops a voice command. {allowVoiceAnswer ? "Alt+D dictates your answer. " : ""}Escape discards a recording. Alt+S stops speech. Left and Right arrows change question when no button or field has focus; Alt+N and Alt+P do too, except while you are typing in a field.
               Words spoken while dictating are your answer, never commands.
             </p>
           </>

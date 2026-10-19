@@ -37,6 +37,7 @@ import {
   isPlainShortcutEvent,
   isSurfaceTarget,
   isTextEntryTarget,
+  shortcutLetter,
 } from "@/lib/keyboard";
 import type { StudentQuestionResponse, StudentOptionResponse, Question } from "@/types/exam-types";
 
@@ -157,7 +158,7 @@ export function StudentExamRoom({
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         if (!hasNoModifiers(e) || !isSurfaceTarget(e.target)) return;
         e.preventDefault();
-        if (navigating || submitting) return;
+        if (navigating || submitting || !currentQuestion) return;
         const forward = e.key === "ArrowRight";
         if (forward ? currentQuestion?.isLast : currentQuestion?.isFirst) {
           setBoundaryNote((prev) => ({
@@ -172,17 +173,13 @@ export function StudentExamRoom({
       }
 
       if (isTextEntryTarget(e.target) || isInsideLayer(e.target)) return;
-      if (e.altKey && (e.key === "n" || e.key === "N")) {
-        e.preventDefault();
-        if (!currentQuestion?.isLast && !navigating) {
-          onNext();
-        }
-      } else if (e.altKey && (e.key === "p" || e.key === "P")) {
-        e.preventDefault();
-        if (!currentQuestion?.isFirst && !navigating) {
-          onPrevious();
-        }
-      }
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const key = shortcutLetter(e);
+      if (key !== "n" && key !== "p") return;
+      e.preventDefault();
+      if (navigating || submitting || !currentQuestion) return;
+      if (key === "n" && !currentQuestion.isLast) onNext();
+      else if (key === "p" && !currentQuestion.isFirst) onPrevious();
     }
 
     window.addEventListener("keydown", handleKeyDown);

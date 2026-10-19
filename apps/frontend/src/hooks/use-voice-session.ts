@@ -400,13 +400,32 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
     [deps, finishSpeaking, stopCapture]
   );
 
+  // Every way of starting a recording (Enter, Alt+M, Alt+D, the buttons) goes
+  // through here, so they all refuse for the same reasons, and say why.
   const startSpeaking = useCallback(async (mode: AudioMode = "command") => {
     const { state: current, options: opts } = latest.current;
     const socket = socketRef.current;
-    if (!socket || !socket.isConnected() || opts.disabled) return;
+    if (opts.disabled) return; // the page is changing question or submitting
     if (captureRef.current || startingRef.current) return;
-    if (!current.capabilities?.stt || !current.limits) return;
-    if (!current.limits.audioEncodings.includes(PCM_ENCODING)) return;
+    const refuse = (text: string, tone: "info" | "error" = "error") =>
+      dispatch({ type: "notice", tone, text });
+    if (!socket || !socket.isConnected()) {
+      refuse("The voice assistant is not connected yet. Please wait a moment and try again.");
+      return;
+    }
+    const staged = current.pending;
+    if (staged && (opts.questionId == null || staged.questionId === opts.questionId)) {
+      refuse("You have an answer waiting. Choose Yes, save answer or No, cancel before recording again.");
+      return;
+    }
+    if (current.busy === "processing") {
+      refuse("Still processing your last request. Please wait.", "info");
+      return;
+    }
+    if (!current.capabilities?.stt || !current.limits || !current.limits.audioEncodings.includes(PCM_ENCODING)) {
+      refuse("Speech recognition is not available right now. You can still type your answer.");
+      return;
+    }
 
     if (!deps.micSupported()) {
       dispatch({ type: "mic", state: "unsupported" });
@@ -487,8 +506,16 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
     (intent: CommandIntent, optionKey?: string, confirmationId?: string, text?: string) => {
       const socket = socketRef.current;
       if (!socket || latest.current.options.disabled) return;
-      // A command supersedes whatever is in progress, here and on the server.
-      if (captureRef.current || startingRef.current) stopCapture();
+      if (captureRef.current || startingRef.current) {
+        // A button press must not silently throw a recording away.
+        dispatch({
+          type: "notice",
+          tone: "error",
+          text: "A recording is in progress. Stop it with Enter or Stop and send, or discard it, first.",
+        });
+        return;
+      }
+      // A command supersedes whatever is still being processed, here and on the server.
       silence();
 
       const requestId = socket.send("command", {
@@ -504,7 +531,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions): VoiceControlle
       activeRequestRef.current = requestId;
       dispatch({ type: "request_started", id: requestId, kind: "command", intent });
     },
-    [silence, stopCapture]
+    [silence]
   );
 
   const pendingRaw = state.pending;
