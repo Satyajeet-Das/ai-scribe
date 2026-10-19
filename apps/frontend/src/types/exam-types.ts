@@ -116,8 +116,21 @@ export interface Answer {
   questionId: string;
   selectedOptionId?: string;
   textAnswer: string;
+  /**
+   * Changes whenever the answer gets a new revision. Sent back as
+   * expectedRevisionNo, it stops a save from overwriting a newer answer.
+   */
+  revisionNo?: number;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** What a save of an answer sends. */
+export interface AnswerPayload {
+  selectedOptionId?: string;
+  textAnswer: string;
+  /** The revisionNo last seen (0 for none); a newer answer refuses the save with 409 ANSWER_CHANGED. */
+  expectedRevisionNo?: number;
 }
 
 export interface User {

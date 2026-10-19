@@ -7,6 +7,7 @@ import type {
   BulkAssignResult,
   Session,
   Answer,
+  AnswerPayload,
   ExamStatus,
   QuestionType,
   StudentQuestionResponse,
@@ -752,23 +753,19 @@ export const sessionsApi = {
 
   async submitAnswer(
     sessionId: string,
-    questionIdOrPayload:
-      | string
-      | { questionId: string; selectedOptionId?: string; textAnswer: string },
-    payloadArg?: { selectedOptionId?: string; textAnswer: string }
+    questionIdOrPayload: string | ({ questionId: string } & AnswerPayload),
+    payloadArg?: AnswerPayload
   ): Promise<Answer> {
     let questionId: string;
-    let payload: { selectedOptionId?: string; textAnswer: string };
+    let payload: AnswerPayload;
 
     if (typeof questionIdOrPayload === "string") {
       questionId = questionIdOrPayload;
       payload = payloadArg || { textAnswer: "" };
     } else {
-      questionId = questionIdOrPayload.questionId;
-      payload = {
-        selectedOptionId: questionIdOrPayload.selectedOptionId,
-        textAnswer: questionIdOrPayload.textAnswer,
-      };
+      const { questionId: id, ...rest } = questionIdOrPayload;
+      questionId = id;
+      payload = rest;
     }
 
     return apiFetch<Answer>(`/sessions/${sessionId}/questions/${questionId}/answer`, {

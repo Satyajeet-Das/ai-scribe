@@ -10,7 +10,7 @@ import { VoiceAssistant, type VoiceActivity } from "@/components/voice/voice-ass
 import type { VoiceSessionState } from "@/services/voice/protocol";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { sessionsApi, examsApi, ApiError } from "@/services/api";
-import type { Session, StudentQuestionResponse, SessionStatus } from "@/types/exam-types";
+import type { Answer, Session, StudentQuestionResponse, SessionStatus } from "@/types/exam-types";
 
 /** How long after the last keystroke a typed answer is saved. */
 const TEXT_SAVE_DELAY_MS = 800;
@@ -109,6 +109,13 @@ export default function ActiveSessionRoomPage({
           }
           setAnswers(ansMap);
         }
+        // Saves say which revision they replace only when every revision is
+        // known; a server that does not report them gets plain saves.
+        const list = savedList ?? [];
+        if (list.every((a) => typeof a.revisionNo === "number")) {
+          revisionsRef.current = new Map(list.map((a) => [a.questionId, a.revisionNo as number]));
+          revisionsKnownRef.current = true;
+        }
       } catch {
         // Non-fatal if no answers saved yet
       }
@@ -180,6 +187,25 @@ export default function ActiveSessionRoomPage({
   // Questions whose newest answer failed to save.
   const [failedQuestionIds, setFailedQuestionIds] = useState<string[]>([]);
 
+  // The revision of each answer as last seen from the server. Every save says
+  // which revision it replaces, so it cannot silently overwrite an answer that
+  // changed elsewhere (for example a dictation confirmed meanwhile).
+  const revisionsRef = useRef<Map<string, number>>(new Map());
+  const revisionsKnownRef = useRef(false);
+  const noteRevision = (questionId: string, a: Answer | null | undefined) => {
+    if (typeof a?.revisionNo === "number") revisionsRef.current.set(questionId, a.revisionNo);
+  };
+
+  // Answers whose save was refused because the saved one changed: the saved
+  // answer, until the student chooses which to keep. Not sent meanwhile.
+  const conflictsRef = useRef<Map<string, Answer>>(new Map());
+  const [conflicts, setConflicts] = useState<Record<string, Answer>>({});
+  const setConflict = (questionId: string, saved: Answer | null) => {
+    if (saved) conflictsRef.current.set(questionId, saved);
+    else conflictsRef.current.delete(questionId);
+    setConflicts(Object.fromEntries(conflictsRef.current));
+  };
+
   const markFailed = useCallback((questionId: string, failed: boolean) => {
     setFailedQuestionIds((prev) => {
       if (failed) return prev.includes(questionId) ? prev : [...prev, questionId];
@@ -206,6 +232,7 @@ export default function ActiveSessionRoomPage({
         const [questionId, entry] = next;
         tried.add(entry);
         const isShown = () => questionId === shownQuestionIdRef.current;
+        if (conflictsRef.current.has(questionId)) continue; // waits for the student's choice
 
         if (!entry.value.selectedOptionId && entry.value.textAnswer.trim() === "") {
           // The server rejects an empty answer, so a saved answer cannot be
@@ -226,14 +253,38 @@ export default function ActiveSessionRoomPage({
           setSaveStatus("saving");
           setSaveError(null);
         }
+        const seen = revisionsRef.current.get(questionId) ?? (revisionsKnownRef.current ? 0 : undefined);
         try {
-          await sessionsApi.submitAnswer(sessionId, questionId, entry.value);
+          const saved = await sessionsApi.submitAnswer(
+            sessionId,
+            questionId,
+            seen === undefined ? entry.value : { ...entry.value, expectedRevisionNo: seen }
+          );
+          noteRevision(questionId, saved);
         } catch (err: unknown) {
           // Keep the value for a retry unless the student has changed it since.
           if (!pending.has(questionId)) {
             entry.attempted = true;
             pending.set(questionId, entry);
-            markFailed(questionId, true);
+          }
+          markFailed(questionId, true);
+          if (err instanceof ApiError && err.code === "ANSWER_CHANGED") {
+            // The saved answer changed since this one was typed. Show both and
+            // let the student choose; retrying would only be refused again.
+            let current: Answer | null = null;
+            try {
+              current = await sessionsApi.getQuestionAnswer(sessionId, questionId);
+            } catch {
+              // Shown as an ordinary failure below; a retry asks again.
+            }
+            if (current) {
+              setConflict(questionId, current);
+              if (isShown()) {
+                setSaveStatus("failed");
+                setSaveError("This answer was changed somewhere else. Choose which version to keep.");
+              }
+              continue;
+            }
           }
           if (isShown()) {
             setSaveStatus(pending.get(questionId) === entry ? "failed" : "unsaved");
@@ -306,6 +357,36 @@ export default function ActiveSessionRoomPage({
   const handleRetrySave = () => {
     void flushPending();
   };
+
+  // The student chose between their answer and the one saved elsewhere.
+  const handleResolveConflict = (keepMine: boolean) => {
+    if (!currentQuestion) return;
+    const questionId = currentQuestion.id;
+    const saved = conflictsRef.current.get(questionId);
+    if (!saved) return;
+    setConflict(questionId, null);
+    noteRevision(questionId, saved);
+    if (keepMine) {
+      // Saved again, now as a deliberate replacement of the newer answer.
+      void flushPending();
+      return;
+    }
+    pendingRef.current.delete(questionId);
+    markFailed(questionId, false);
+    setAnswers((prev) => ({ ...prev, [questionId]: saved.selectedOptionId || saved.textAnswer || "" }));
+    setSaveStatus("saved");
+    setSaveError(null);
+  };
+
+  const shownConflict = currentQuestion ? conflicts[currentQuestion.id] : undefined;
+  const conflictLabel = (() => {
+    if (!shownConflict || !currentQuestion) return null;
+    if (shownConflict.selectedOptionId) {
+      const o = currentQuestion.options?.find((opt) => opt.id === shownConflict.selectedOptionId);
+      return o ? `Option ${o.optionKey}: ${o.optionText}` : "A different option";
+    }
+    return shownConflict.textAnswer;
+  })();
 
   // Shows a question the page has moved to, with the save state of whatever
   // is still queued for it.
@@ -468,8 +549,9 @@ export default function ActiveSessionRoomPage({
     async (questionId: string) => {
       const entry = pendingRef.current.get(questionId);
       if (entry && !entry.attempted) {
-        // The student has typed since: that newer text is saved next and is
-        // what stays on screen.
+        // The student has typed since. That text is saved next; it names the
+        // revision it replaces, so if the dictation is newer the student is
+        // asked which to keep instead of losing either.
         return;
       }
       if (entry) {
@@ -481,6 +563,7 @@ export default function ActiveSessionRoomPage({
       try {
         const saved = await sessionsApi.getQuestionAnswer(sessionId, questionId);
         if (pendingRef.current.has(questionId)) return; // typed while this was loading
+        noteRevision(questionId, saved);
         setAnswers((prev) => ({
           ...prev,
           [questionId]: saved.selectedOptionId || saved.textAnswer || "",
@@ -626,6 +709,8 @@ export default function ActiveSessionRoomPage({
         navigationNotice={navigationNotice}
         unsavedElsewhere={failedQuestionIds.filter((id) => id !== currentQuestion?.id).length}
         getSubmitWarning={getSubmitWarning}
+        answerConflict={conflictLabel === null ? null : { savedAnswer: conflictLabel }}
+        onResolveConflict={handleResolveConflict}
         voiceSlot={
           <VoiceAssistant
             sessionId={sessionId}

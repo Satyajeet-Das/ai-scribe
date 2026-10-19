@@ -2,11 +2,11 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { Suspense } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import ActiveSessionRoomPage from "@/app/(dashboard)/sessions/[id]/page";
-import { sessionsApi, examsApi } from "@/services/api";
+import { sessionsApi, examsApi, ApiError } from "@/services/api";
 import { useAuthStore } from "@/store/auth-store";
 import type { VoiceSessionState } from "@/services/voice/protocol";
 import type { VoiceActivity } from "@/components/voice/voice-assistant";
-import type { Session, StudentQuestionResponse } from "@/types/exam-types";
+import type { Answer, Session, StudentQuestionResponse } from "@/types/exam-types";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
@@ -111,10 +111,14 @@ function deferred<T = unknown>() {
   return { promise, resolve, reject };
 }
 
-async function renderRoom(first: StudentQuestionResponse = essay, sess: Session = session) {
+async function renderRoom(
+  first: StudentQuestionResponse = essay,
+  sess: Session = session,
+  saved: Answer[] = []
+) {
   vi.mocked(sessionsApi.getSession).mockResolvedValue(sess);
   vi.mocked(sessionsApi.getCurrentQuestion).mockResolvedValue(first);
-  vi.mocked(sessionsApi.getAnswers).mockResolvedValue([]);
+  vi.mocked(sessionsApi.getAnswers).mockResolvedValue(saved);
   vi.mocked(examsApi.getExam).mockResolvedValue({
     id: "exam-1",
     title: "Biology",
@@ -170,6 +174,7 @@ describe("answers the server has not confirmed", () => {
     await waitFor(() =>
       expect(sessionsApi.submitAnswer).toHaveBeenLastCalledWith("sess-1", "q-essay", {
         textAnswer: "Light becomes sugar",
+        expectedRevisionNo: 0,
       })
     );
     await waitFor(() =>
@@ -212,10 +217,12 @@ describe("answers the server has not confirmed", () => {
     expect(sessionsApi.submitAnswer).toHaveBeenNthCalledWith(1, "sess-1", "q-mcq", {
       selectedOptionId: "opt-a",
       textAnswer: "",
+      expectedRevisionNo: 0,
     });
     expect(sessionsApi.submitAnswer).toHaveBeenNthCalledWith(2, "sess-1", "q-mcq", {
       selectedOptionId: "opt-d",
       textAnswer: "",
+      expectedRevisionNo: 0,
     });
     await waitFor(() =>
       expect(screen.getByTestId("answer-save-status")).toHaveTextContent("Answer saved")
@@ -237,6 +244,7 @@ describe("answers the server has not confirmed", () => {
       expect(sessionsApi.submitAnswer).toHaveBeenLastCalledWith("sess-1", "q-mcq", {
         selectedOptionId: "opt-b",
         textAnswer: "",
+        expectedRevisionNo: 0,
       })
     );
     await waitFor(() =>
@@ -372,6 +380,7 @@ describe("submitting and running out of time", () => {
     ).toBeInTheDocument();
     expect(sessionsApi.submitAnswer).toHaveBeenCalledWith("sess-1", "q-essay", {
       textAnswer: "Last words",
+      expectedRevisionNo: 0,
     });
     const saveOrder = vi.mocked(sessionsApi.submitAnswer).mock.invocationCallOrder[0];
     const askOrder = vi.mocked(sessionsApi.getSession).mock.invocationCallOrder[0];
@@ -388,5 +397,131 @@ describe("submitting and running out of time", () => {
     await waitFor(() => expect(screen.getByText("02:00")).toBeInTheDocument());
     expect(screen.queryByTestId("exam-expired-card")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Your Response")).toBeInTheDocument();
+  });
+});
+
+describe("an answer changed somewhere else", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAuthStore.setState({
+      user: {
+        id: "student-1",
+        email: "s@school.edu",
+        firstName: "S",
+        lastName: "C",
+        role: "STUDENT" as const,
+      },
+      isAuthenticated: true,
+      isHydrated: true,
+      status: "authenticated",
+      accessToken: "valid-token",
+    });
+  });
+
+  const changed = () =>
+    Object.assign(new ApiError("changed"), { status: 409, code: "ANSWER_CHANGED" });
+  const savedEssay: Answer = {
+    id: "ans-1",
+    sessionId: "sess-1",
+    questionId: "q-essay",
+    textAnswer: "typed before",
+    revisionNo: 3,
+  };
+  const dictated: Answer = { ...savedEssay, textAnswer: "dictated answer", revisionNo: 5 };
+
+  it("says which revision each save replaces, and follows the server's count", async () => {
+    vi.mocked(sessionsApi.submitAnswer).mockResolvedValue({ ...savedEssay, revisionNo: 4 });
+    await renderRoom(essay, session, [savedEssay]);
+    const box = screen.getByLabelText("Your Response");
+
+    fireEvent.change(box, { target: { value: "first edit" } });
+    await waitFor(
+      () =>
+        expect(sessionsApi.submitAnswer).toHaveBeenLastCalledWith("sess-1", "q-essay", {
+          textAnswer: "first edit",
+          expectedRevisionNo: 3,
+        }),
+      { timeout: 3000 }
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("answer-save-status")).toHaveTextContent("Answer saved")
+    );
+
+    fireEvent.change(box, { target: { value: "second edit" } });
+    await waitFor(
+      () =>
+        expect(sessionsApi.submitAnswer).toHaveBeenLastCalledWith("sess-1", "q-essay", {
+          textAnswer: "second edit",
+          expectedRevisionNo: 4,
+        }),
+      { timeout: 3000 }
+    );
+  });
+
+  it("shows both versions when the saved answer changed, and keeps mine on request", async () => {
+    vi.mocked(sessionsApi.submitAnswer).mockRejectedValueOnce(changed());
+    vi.mocked(sessionsApi.getQuestionAnswer).mockResolvedValue(dictated);
+    await renderRoom(essay, session, [savedEssay]);
+    const box = screen.getByLabelText("Your Response");
+
+    fireEvent.change(box, { target: { value: "my typed version" } });
+    fireEvent.click(screen.getByTestId("next-question-button"));
+
+    expect(await screen.findByTestId("answer-conflict-saved")).toHaveTextContent("dictated answer");
+    expect(box).toHaveValue("my typed version");
+    expect(sessionsApi.nextQuestion).not.toHaveBeenCalled();
+
+    vi.mocked(sessionsApi.submitAnswer).mockResolvedValue({
+      ...dictated,
+      textAnswer: "my typed version",
+      revisionNo: 6,
+    });
+    fireEvent.click(screen.getByTestId("conflict-keep-mine"));
+    await waitFor(() =>
+      expect(sessionsApi.submitAnswer).toHaveBeenLastCalledWith("sess-1", "q-essay", {
+        textAnswer: "my typed version",
+        expectedRevisionNo: 5,
+      })
+    );
+    await waitFor(() => expect(screen.queryByTestId("answer-conflict")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("answer-save-status")).toHaveTextContent("Answer saved")
+    );
+  });
+
+  it("uses the saved answer on request and sends nothing more", async () => {
+    vi.mocked(sessionsApi.submitAnswer).mockRejectedValueOnce(changed());
+    vi.mocked(sessionsApi.getQuestionAnswer).mockResolvedValue(dictated);
+    await renderRoom(essay, session, [savedEssay]);
+    const box = screen.getByLabelText("Your Response");
+
+    fireEvent.change(box, { target: { value: "my typed version" } });
+    fireEvent.click(screen.getByTestId("next-question-button"));
+    await screen.findByTestId("answer-conflict");
+
+    fireEvent.click(screen.getByTestId("conflict-use-saved"));
+    expect(box).toHaveValue("dictated answer");
+    expect(screen.queryByTestId("answer-conflict")).not.toBeInTheDocument();
+
+    vi.mocked(sessionsApi.submitAnswer).mockClear();
+    vi.mocked(sessionsApi.nextQuestion).mockResolvedValue(undefined as never);
+    vi.mocked(sessionsApi.getCurrentQuestion).mockResolvedValue(mcq);
+    fireEvent.click(screen.getByTestId("next-question-button"));
+    await screen.findByText(mcq.text);
+    expect(sessionsApi.submitAnswer).not.toHaveBeenCalled();
+  });
+
+  it("sends plain saves to a server that does not report revisions", async () => {
+    vi.mocked(sessionsApi.submitAnswer).mockResolvedValue({} as never);
+    await renderRoom(essay, session, [{ ...savedEssay, revisionNo: undefined }]);
+
+    fireEvent.change(screen.getByLabelText("Your Response"), { target: { value: "edit" } });
+    await waitFor(
+      () =>
+        expect(sessionsApi.submitAnswer).toHaveBeenLastCalledWith("sess-1", "q-essay", {
+          textAnswer: "edit",
+        }),
+      { timeout: 3000 }
+    );
   });
 });

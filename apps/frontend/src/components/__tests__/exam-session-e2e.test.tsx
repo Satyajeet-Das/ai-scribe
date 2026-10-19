@@ -198,7 +198,7 @@ describe("Sprint 6 E2E: Candidate Exam Session & FSM Journey", () => {
     await waitFor(() => {
       expect(sessionsApi.submitAnswer).toHaveBeenCalledWith("sess-uuid-500", "q-uuid-1", {
         selectedOptionId: "opt-2",
-        textAnswer: "",
+        textAnswer: "", expectedRevisionNo: 0,
       });
       expect(screen.getByTestId("answer-save-status")).toHaveTextContent("Answer saved");
     });
@@ -231,7 +231,7 @@ describe("Sprint 6 E2E: Candidate Exam Session & FSM Journey", () => {
     await waitFor(() => {
       expect(sessionsApi.submitAnswer).toHaveBeenCalledWith("sess-uuid-500", "q-uuid-2", {
         selectedOptionId: "opt-4",
-        textAnswer: "",
+        textAnswer: "", expectedRevisionNo: 0,
       });
     });
 

@@ -72,6 +72,13 @@ export interface StudentExamRoomProps {
    * (a recording in progress, an answer not yet confirmed), if anything.
    */
   getSubmitWarning?: () => string | null;
+  /**
+   * The shown question's answer was changed elsewhere (for example by a
+   * dictation confirmed meanwhile) while the student changed it here. Both are
+   * kept until the student chooses.
+   */
+  answerConflict?: { savedAnswer: string } | null;
+  onResolveConflict?: (keepMine: boolean) => void;
 
   // Backward compatibility with previous offline mock usage if any
   questions?: Question[];
@@ -101,6 +108,8 @@ export function StudentExamRoom({
   navigationNotice = null,
   unsavedElsewhere = 0,
   getSubmitWarning,
+  answerConflict = null,
+  onResolveConflict,
   // backward compatibility props
   questions,
   onAnswerChange,
@@ -513,8 +522,47 @@ export function StudentExamRoom({
 
               {/* Options & Response Input */}
               <CardContent className="pt-6">
+                {answerConflict && (
+                  <div
+                    role="alert"
+                    data-testid="answer-conflict"
+                    className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200 flex flex-col gap-2"
+                  >
+                    <p className="flex items-start gap-2 font-medium">
+                      <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+                      This answer was changed somewhere else, for example by a dictation you
+                      confirmed. Your version below is not saved yet.
+                    </p>
+                    <div className="rounded-md border bg-background p-2 text-foreground">
+                      <span className="block text-xs text-muted-foreground">Saved answer</span>
+                      <span className="whitespace-pre-wrap" data-testid="answer-conflict-saved">
+                        {answerConflict.savedAnswer}
+                      </span>
+                    </div>
+                    {onResolveConflict && (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => onResolveConflict(true)}
+                          data-testid="conflict-keep-mine"
+                        >
+                          Keep my version
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onResolveConflict(false)}
+                          data-testid="conflict-use-saved"
+                        >
+                          Use the saved answer
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Save Error Banner */}
-                {saveStatus === "failed" && (
+                {saveStatus === "failed" && !answerConflict && (
                   <div className="mb-6 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="size-4 shrink-0" />

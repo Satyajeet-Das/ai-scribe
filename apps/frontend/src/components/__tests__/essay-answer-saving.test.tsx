@@ -124,6 +124,7 @@ describe("typed essay answers", () => {
       () =>
         expect(sessionsApi.submitAnswer).toHaveBeenCalledWith("sess-1", "q-essay", {
           textAnswer: "Plants make sugar from light",
+          expectedRevisionNo: 0,
         }),
       { timeout: 3000 }
     );
@@ -171,6 +172,7 @@ describe("typed essay answers", () => {
     await waitFor(() =>
       expect(sessionsApi.submitAnswer).toHaveBeenLastCalledWith("sess-1", "q-essay", {
         textAnswer: "Important text",
+        expectedRevisionNo: 0,
       })
     );
     await waitFor(() =>
