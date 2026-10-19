@@ -15,6 +15,24 @@ import type { Session, StudentQuestionResponse, SessionStatus } from "@/types/ex
 /** How long after the last keystroke a typed answer is saved. */
 const TEXT_SAVE_DELAY_MS = 800;
 
+type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "failed";
+
+/** An answer the server has not confirmed yet. */
+type PendingAnswer = {
+  value: { textAnswer: string; selectedOptionId?: string };
+  /** A save of this value was tried and failed. */
+  attempted: boolean;
+};
+
+/** The save state to show for a question, given what is queued for it. */
+function statusOnArrival(entry: PendingAnswer | undefined): { status: SaveStatus; error: string | null } {
+  if (!entry) return { status: "idle", error: null };
+  if (entry.attempted) {
+    return { status: "failed", error: "Your answer to this question has not been saved yet." };
+  }
+  return { status: "unsaved", error: null };
+}
+
 export default function ActiveSessionRoomPage({
   params,
 }: {
@@ -26,9 +44,7 @@ export default function ActiveSessionRoomPage({
   const [session, setSession] = useState<Session | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<StudentQuestionResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [saveStatus, setSaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved" | "failed">(
-    "idle"
-  );
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -153,87 +169,114 @@ export default function ActiveSessionRoomPage({
     }
   }, []);
 
-  // Typed answers. Text the server has not confirmed is kept here, tagged with
-  // the question it belongs to, until a save succeeds. Saves run one at a time
-  // so an older request can never overwrite newer text.
-  const pendingTextRef = useRef<{ questionId: string; text: string } | null>(null);
+  // Answers the server has not confirmed, one entry per question, kept until a
+  // save of that exact value succeeds. Typed text and option choices share one
+  // queue, and each run sends only the newest value for a question, so an
+  // older request can never overwrite newer work and a failed save is never
+  // forgotten when the student moves on.
+  const pendingRef = useRef<Map<string, PendingAnswer>>(new Map());
   const textTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveChainRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  // Questions whose newest answer failed to save.
+  const [failedQuestionIds, setFailedQuestionIds] = useState<string[]>([]);
+
+  const markFailed = useCallback((questionId: string, failed: boolean) => {
+    setFailedQuestionIds((prev) => {
+      if (failed) return prev.includes(questionId) ? prev : [...prev, questionId];
+      return prev.includes(questionId) ? prev.filter((id) => id !== questionId) : prev;
+    });
+  }, []);
 
   /**
-   * Saves any unconfirmed typed text. Resolves true when nothing is left
-   * unsaved, and false when a save failed (the text is kept for a retry).
+   * Saves every answer the server has not confirmed. Resolves true when
+   * nothing is left unsaved, and false when a save failed (the value is kept
+   * for a retry).
    */
-  const flushText = useCallback((): Promise<boolean> => {
+  const flushPending = useCallback((): Promise<boolean> => {
     if (textTimerRef.current !== null) {
       clearTimeout(textTimerRef.current);
       textTimerRef.current = null;
     }
     const run = async (): Promise<boolean> => {
-      const pending = pendingTextRef.current;
-      if (!pending) return true;
-      const isShown = () => pending.questionId === shownQuestionIdRef.current;
+      const pending = pendingRef.current;
+      const tried = new Set<PendingAnswer>();
+      for (;;) {
+        const next = Array.from(pending).find(([, entry]) => !tried.has(entry));
+        if (!next) break;
+        const [questionId, entry] = next;
+        tried.add(entry);
+        const isShown = () => questionId === shownQuestionIdRef.current;
 
-      if (pending.text.trim() === "") {
-        // The server rejects an empty answer, so a saved answer cannot be
-        // cleared. Say so rather than showing a state that is not true.
-        pendingTextRef.current = null;
-        if (isShown()) {
-          setSaveStatus("failed");
-          setSaveError(
-            "An answer that was already saved cannot be cleared. Type a new answer to replace it."
-          );
+        if (!entry.value.selectedOptionId && entry.value.textAnswer.trim() === "") {
+          // The server rejects an empty answer, so a saved answer cannot be
+          // cleared. Say so rather than showing a state that is not true.
+          pending.delete(questionId);
+          markFailed(questionId, false);
+          if (isShown()) {
+            setSaveStatus("failed");
+            setSaveError(
+              "An answer that was already saved cannot be cleared. Type a new answer to replace it."
+            );
+          }
+          continue;
         }
-        return true;
-      }
 
-      pendingTextRef.current = null;
-      if (isShown()) {
-        setSaveStatus("saving");
-        setSaveError(null);
-      }
-      try {
-        await sessionsApi.submitAnswer(sessionId, pending.questionId, {
-          textAnswer: pending.text,
-        });
-      } catch (err: unknown) {
-        // Keep the text for a retry unless the student has typed something newer.
-        if (!pendingTextRef.current) pendingTextRef.current = pending;
+        pending.delete(questionId);
         if (isShown()) {
-          setSaveStatus("failed");
-          setSaveError(err instanceof Error ? err.message : "Failed to save answer");
+          setSaveStatus("saving");
+          setSaveError(null);
         }
-        return false;
+        try {
+          await sessionsApi.submitAnswer(sessionId, questionId, entry.value);
+        } catch (err: unknown) {
+          // Keep the value for a retry unless the student has changed it since.
+          if (!pending.has(questionId)) {
+            entry.attempted = true;
+            pending.set(questionId, entry);
+            markFailed(questionId, true);
+          }
+          if (isShown()) {
+            setSaveStatus(pending.get(questionId) === entry ? "failed" : "unsaved");
+            setSaveError(err instanceof Error ? err.message : "Failed to save answer");
+          }
+          continue;
+        }
+        markFailed(questionId, false);
+        if (isShown()) setSaveStatus(pending.has(questionId) ? "unsaved" : "saved");
       }
-      if (isShown()) setSaveStatus(pendingTextRef.current ? "unsaved" : "saved");
-      return pendingTextRef.current === null;
+      return pending.size === 0;
     };
     const next = saveChainRef.current.then(run);
     saveChainRef.current = next;
     return next;
-  }, [sessionId]);
+  }, [sessionId, markFailed]);
 
   const handleTextAnswerChange = (text: string) => {
     if (!currentQuestion) return;
     const questionId = currentQuestion.id;
     setAnswers((prev) => ({ ...prev, [questionId]: text }));
-    pendingTextRef.current = { questionId, text };
+    pendingRef.current.set(questionId, { value: { textAnswer: text }, attempted: false });
     setSaveStatus("unsaved");
     setSaveError(null);
     if (textTimerRef.current !== null) clearTimeout(textTimerRef.current);
-    textTimerRef.current = setTimeout(() => void flushText(), TEXT_SAVE_DELAY_MS);
+    textTimerRef.current = setTimeout(() => void flushPending(), TEXT_SAVE_DELAY_MS);
   };
 
   // Leaving the page with an answer the server has not confirmed would lose it.
+  const hasUnsaved =
+    saveStatus === "unsaved" ||
+    saveStatus === "saving" ||
+    saveStatus === "failed" ||
+    failedQuestionIds.length > 0;
   useEffect(() => {
-    if (saveStatus !== "unsaved" && saveStatus !== "saving" && saveStatus !== "failed") return;
+    if (!hasUnsaved) return;
     const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [saveStatus]);
+  }, [hasUnsaved]);
 
   // Do not leave a timer behind when the page goes away.
   useEffect(
@@ -243,40 +286,34 @@ export default function ActiveSessionRoomPage({
     []
   );
 
-  // Save selected option
-  const handleSelectOption = async (optionId: string) => {
+  // Save selected option. Choosing quickly (for example with the arrow keys in
+  // the option list) queues behind the save in flight, and only the last
+  // choice is sent after it.
+  const handleSelectOption = (optionId: string) => {
     if (!currentQuestion) return;
     const qId = currentQuestion.id;
-
-    // Optimistic UI update
     setAnswers((prev) => ({ ...prev, [qId]: optionId }));
+    pendingRef.current.set(qId, {
+      value: { selectedOptionId: optionId, textAnswer: "" },
+      attempted: false,
+    });
     setSaveStatus("saving");
     setSaveError(null);
-
-    try {
-      await sessionsApi.submitAnswer(sessionId, qId, {
-        selectedOptionId: optionId,
-        textAnswer: "",
-      });
-      setSaveStatus("saved");
-    } catch (err: unknown) {
-      setSaveStatus("failed");
-      const msg = err instanceof Error ? err.message : "Failed to save answer";
-      setSaveError(msg);
-    }
+    void flushPending();
   };
 
-  // Retry saving current answer
+  // Retry every answer that has not been saved, on this question or another.
   const handleRetrySave = () => {
-    if (!currentQuestion) return;
-    if (pendingTextRef.current?.questionId === currentQuestion.id) {
-      void flushText();
-      return;
-    }
-    const val = answers[currentQuestion.id];
-    if (val && currentQuestion.type === "MCQ") {
-      handleSelectOption(val);
-    }
+    void flushPending();
+  };
+
+  // Shows a question the page has moved to, with the save state of whatever
+  // is still queued for it.
+  const arriveAt = (question: StudentQuestionResponse) => {
+    setCurrentQuestion(question);
+    const { status, error } = statusOnArrival(pendingRef.current.get(question.id));
+    setSaveStatus(status);
+    setSaveError(error);
   };
 
   // Navigate to Next Question
@@ -289,17 +326,15 @@ export default function ActiveSessionRoomPage({
     }
     setNavigationNotice(null);
     // Never move away from an answer the server has not confirmed.
-    if (!(await flushText())) return;
+    if (!(await flushPending())) return;
     setNavigating(true);
 
     try {
       await sessionsApi.nextQuestion(sessionId);
-      const nextQ = await sessionsApi.getCurrentQuestion(sessionId);
-      setCurrentQuestion(nextQ);
-      setSaveStatus("idle");
-      setSaveError(null);
+      arriveAt(await sessionsApi.getCurrentQuestion(sessionId));
     } catch (err: unknown) {
       console.error("Failed to advance question:", err);
+      setNavigationNotice("Could not move to the next question. Check your connection and try again.");
     } finally {
       setNavigating(false);
     }
@@ -314,17 +349,15 @@ export default function ActiveSessionRoomPage({
       return;
     }
     setNavigationNotice(null);
-    if (!(await flushText())) return;
+    if (!(await flushPending())) return;
     setNavigating(true);
 
     try {
       await sessionsApi.previousQuestion(sessionId);
-      const prevQ = await sessionsApi.getCurrentQuestion(sessionId);
-      setCurrentQuestion(prevQ);
-      setSaveStatus("idle");
-      setSaveError(null);
+      arriveAt(await sessionsApi.getCurrentQuestion(sessionId));
     } catch (err: unknown) {
       console.error("Failed to go to previous question:", err);
+      setNavigationNotice("Could not move to the previous question. Check your connection and try again.");
     } finally {
       setNavigating(false);
     }
@@ -334,7 +367,7 @@ export default function ActiveSessionRoomPage({
   const handleSubmit = async () => {
     if (submitting) return;
     // Submitting seals the exam, so every typed answer must be saved first.
-    if (!(await flushText())) return;
+    if (!(await flushPending())) return;
     setSubmitting(true);
 
     try {
@@ -388,33 +421,50 @@ export default function ActiveSessionRoomPage({
     const question = state.question;
     if (question) {
       if (shownQuestionIdRef.current !== question.id) {
-        // The page moved without going through handleNext, so make sure typed
-        // text for the question being left is saved.
-        void flushText();
-        setSaveStatus("idle");
-        setSaveError(null);
+        // The page moved without going through handleNext, so save what was
+        // typed on the question being left. If that fails, the answer stays
+        // queued for its own question and the student is told.
+        void flushPending();
+        const { status, error } = statusOnArrival(pendingRef.current.get(question.id));
+        setSaveStatus(status);
+        setSaveError(error);
       }
       setCurrentQuestion(question);
     }
-  }, [flushText]);
+  }, [flushPending]);
 
   // Voice assistant: the backend confirmed an answer was persisted. The
   // selection shown on screen is re-read from the HTTP API rather than assumed.
   const handleVoiceAnswerSaved = useCallback(
     async (questionId: string) => {
+      const entry = pendingRef.current.get(questionId);
+      if (entry && !entry.attempted) {
+        // The student has typed since: that newer text is saved next and is
+        // what stays on screen.
+        return;
+      }
+      if (entry) {
+        // A typed value that never reached the server is replaced by the
+        // answer just confirmed; retrying it later would undo that answer.
+        pendingRef.current.delete(questionId);
+        markFailed(questionId, false);
+      }
       try {
         const saved = await sessionsApi.getQuestionAnswer(sessionId, questionId);
+        if (pendingRef.current.has(questionId)) return; // typed while this was loading
         setAnswers((prev) => ({
           ...prev,
           [questionId]: saved.selectedOptionId || saved.textAnswer || "",
         }));
-        setSaveStatus("saved");
-        setSaveError(null);
+        if (questionId === shownQuestionIdRef.current) {
+          setSaveStatus("saved");
+          setSaveError(null);
+        }
       } catch {
         // The answer is saved on the server; only the on-screen copy is stale.
       }
     },
-    [sessionId]
+    [sessionId, markFailed]
   );
 
   // Loading State
@@ -545,6 +595,7 @@ export default function ActiveSessionRoomPage({
         subject={subject}
         onExpire={handleExpire}
         navigationNotice={navigationNotice}
+        unsavedElsewhere={failedQuestionIds.filter((id) => id !== currentQuestion?.id).length}
         voiceSlot={
           <VoiceAssistant
             sessionId={sessionId}

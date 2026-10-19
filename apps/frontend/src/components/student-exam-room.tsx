@@ -64,6 +64,8 @@ export interface StudentExamRoomProps {
   voiceSlot?: ReactNode;
   /** Why the last attempt to change question was refused, if it was. */
   navigationNotice?: string | null;
+  /** How many other questions have an answer whose save failed. */
+  unsavedElsewhere?: number;
 
   // Backward compatibility with previous offline mock usage if any
   questions?: Question[];
@@ -91,6 +93,7 @@ export function StudentExamRoom({
   onExpire,
   voiceSlot,
   navigationNotice = null,
+  unsavedElsewhere = 0,
   // backward compatibility props
   questions,
   onAnswerChange,
@@ -391,6 +394,32 @@ export function StudentExamRoom({
             >
               <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
               <span>{navigationNotice}</span>
+            </div>
+          )}
+          {unsavedElsewhere > 0 && (
+            <div
+              role="alert"
+              data-testid="unsaved-elsewhere-notice"
+              className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive flex items-center justify-between gap-3"
+            >
+              <span className="flex items-start gap-2">
+                <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+                {unsavedElsewhere === 1
+                  ? "Your answer to another question has not been saved yet. It is kept on this device."
+                  : `Your answers to ${unsavedElsewhere} other questions have not been saved yet. They are kept on this device.`}
+              </span>
+              {onRetrySave && (
+                <Button
+                  size="xs"
+                  variant="destructive"
+                  onClick={onRetrySave}
+                  className="gap-1 font-semibold shrink-0"
+                  data-testid="retry-elsewhere-button"
+                >
+                  <RotateCcw className="size-3" aria-hidden="true" />
+                  Retry saving
+                </Button>
+              )}
             </div>
           )}
           <div className="sr-only" role="status" aria-live="polite" data-testid="boundary-status">
