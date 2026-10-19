@@ -251,6 +251,38 @@ func TestAnswer_ConfirmationIDMustMatch(t *testing.T) {
 	assert.Zero(t, h.exam.count("SubmitAnswer"))
 }
 
+func TestAnswer_ANewProposalClosesTheOneItReplaces(t *testing.T) {
+	h := newHarness(t, withoutTTS())
+	c, _ := h.connect()
+	qid := h.exam.currentQuestionID()
+
+	command(t, c, CommandPayload{Intent: "select_option", OptionKey: "B"})
+	first, ok := lastOf[ConfirmRequestPayload](t, c, TypeConfirmRequest)
+	require.True(t, ok)
+	command(t, c, CommandPayload{Intent: "select_option", OptionKey: "A"})
+
+	var cancelled []ActionResultPayload
+	for _, f := range c.seen {
+		if f.env != nil && f.env.Type == TypeActionResult {
+			cancelled = append(cancelled, decode[ActionResultPayload](t, *f.env))
+		}
+	}
+	require.Len(t, cancelled, 1, "exactly one result for the replaced proposal")
+	assert.Equal(t, StatusCancelled, cancelled[0].Status)
+	assert.Equal(t, CodeSuperseded, cancelled[0].Code)
+	assert.Equal(t, first.ConfirmationID, cancelled[0].ConfirmationID)
+	assert.False(t, cancelled[0].Saved)
+
+	second, _ := lastOf[ConfirmRequestPayload](t, c, TypeConfirmRequest)
+	assert.NotEqual(t, first.ConfirmationID, second.ConfirmationID)
+
+	// The replaced confirmation can no longer be confirmed.
+	_, resp := command(t, c, CommandPayload{Intent: "confirm", ConfirmationID: first.ConfirmationID})
+	assert.Equal(t, CodeConfirmationUnknown, resp.Code)
+	_, saved := h.exam.saved(qid)
+	assert.False(t, saved)
+}
+
 func TestAnswer_PersistenceFailureIsNeverReportedAsSaved(t *testing.T) {
 	h := newHarness(t, withoutTTS())
 	c, _ := h.connect()

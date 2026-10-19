@@ -103,6 +103,9 @@ const (
 	CodeNothingToConfirm    = "nothing_to_confirm"
 	CodeConfirmationExpired = "confirmation_expired"
 	CodeConfirmationUnknown = "confirmation_mismatch"
+	// CodeSuperseded is on the cancelled action.result of a staged answer that
+	// a newer one replaced before it was confirmed.
+	CodeSuperseded = "superseded"
 	CodeNoNextQuestion      = "no_next_question"
 	CodeNoPreviousQuestion  = "no_previous_question"
 	CodeNoAnswer            = "no_answer"

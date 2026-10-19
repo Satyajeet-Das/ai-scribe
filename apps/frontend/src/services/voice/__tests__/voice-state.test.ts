@@ -234,6 +234,33 @@ describe("voiceReducer: answer confirmation and persistence", () => {
     expect(s.answer.phase).toBe("cancelled");
   });
 
+  it("says an answer was replaced, and keeps the new one staged", () => {
+    const replaced = run(
+      staged,
+      server(
+        "action.result",
+        {
+          action: "answer",
+          status: "cancelled",
+          saved: false,
+          code: "superseded",
+          confirmationId: "conf-1",
+        },
+        "r2"
+      )
+    );
+    expect(replaced.notice?.text).toBe(
+      "Your earlier answer was replaced by the new one and was not saved."
+    );
+
+    const next = run(
+      replaced,
+      server("confirm.request", { ...confirmRequest, confirmationId: "conf-2" }, "r2")
+    );
+    expect(next.pending?.confirmationId).toBe("conf-2");
+    expect(next.answer.phase).toBe("awaiting_confirmation");
+  });
+
   it("handles a duplicate saved result idempotently", () => {
     const result = server(
       "action.result",

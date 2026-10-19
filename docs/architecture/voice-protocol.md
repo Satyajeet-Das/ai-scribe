@@ -187,6 +187,10 @@ student: "yes"   (or command{intent: confirm, confirmationId})
 
 - Answer selection **always** requires confirmation. `no`/`deny` discards it; so does any
   other request (the response says the answer was not saved).
+- Only one answer waits for confirmation at a time. A new selection or dictation first closes
+  the one it replaces with `action.result{status: "cancelled", code: "superseded",
+  confirmationId}`, then sends its own `confirm.request`. The replaced `confirmationId` can no
+  longer be confirmed (`confirmation_mismatch`).
 - **Correcting a dictated answer.** Before saving, the student may fix what the recognizer got
   wrong: `command{intent: "confirm", confirmationId, text}`. `text` is the student's own wording
   (never model output). It is valid only with `confirm`, only with the `confirmationId` of the

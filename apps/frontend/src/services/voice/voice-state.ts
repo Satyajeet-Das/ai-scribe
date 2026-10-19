@@ -201,14 +201,24 @@ function applyActionResult(state: VoiceState, result: ActionResultPayload): Voic
         ...state,
         pending: null,
         answer: { ...base, phase: "saved" },
-        notice: notify(state, "info", result.corrected ? "Corrected answer saved." : "Answer saved."),
+        notice: notify(
+          state,
+          "info",
+          result.corrected ? "Corrected answer saved." : "Answer saved."
+        ),
       };
     case "cancelled":
       return {
         ...state,
         pending: null,
         answer: { ...base, phase: "cancelled" },
-        notice: notify(state, "info", "Answer not saved."),
+        notice: notify(
+          state,
+          "info",
+          result.code === "superseded"
+            ? "Your earlier answer was replaced by the new one and was not saved."
+            : "Answer not saved."
+        ),
       };
     case "failed":
     case "rejected":

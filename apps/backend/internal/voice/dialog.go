@@ -239,15 +239,25 @@ func (c *conversation) act(t *turn, it intent.Intent, transcript string, q *sess
 }
 
 func (c *conversation) discard(t *turn, p *pendingConfirmation) {
+	c.cancelPending(t, p, "")
+}
+
+func (c *conversation) cancelPending(t *turn, p *pendingConfirmation, code string) {
 	c.pending = nil
 	c.svc.Metrics.Inc(MetricActions, ActionAnswer, StatusCancelled)
 	c.send(TypeActionResult, t.requestID, ActionResultPayload{
-		Action: ActionAnswer, Status: StatusCancelled, Saved: false,
+		Action: ActionAnswer, Status: StatusCancelled, Saved: false, Code: code,
 		ConfirmationID: p.id, QuestionID: &p.questionID, OptionKey: p.optionKey,
 	})
 }
 
 func (c *conversation) propose(t *turn, p *pendingConfirmation, action, optionText string) {
+	if old := c.pending; old != nil {
+		// Only one answer can wait for confirmation. The one it replaces is
+		// closed explicitly, so a client never holds a confirmation the server
+		// has forgotten.
+		c.cancelPending(t, old, CodeSuperseded)
+	}
 	p.id = uuid.NewString()
 	p.expiresAt = c.svc.now().Add(c.svc.Config.ConfirmationTTL)
 	c.pending = p
