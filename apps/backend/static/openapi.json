@@ -59,6 +59,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "revisionNo": {
+            "type": "integer"
+          },
           "selectedOptionId": {
             "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             "format": "uuid",
@@ -1087,6 +1090,11 @@
       },
       "SubmitAnswerRequest": {
         "properties": {
+          "expectedRevisionNo": {
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "selectedOptionId": {
             "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             "format": "uuid",

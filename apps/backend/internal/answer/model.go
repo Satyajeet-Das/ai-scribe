@@ -18,6 +18,13 @@ type Answer struct {
 	// recorded as typed text or a selected option.
 	Revision *RevisionInput `json:"-" db:"-"`
 
+	// ExpectedRevisionNo, when set, is the revision the client last saw. The
+	// save is refused with ErrAnswerChanged if the answer has moved on.
+	ExpectedRevisionNo *int `json:"-" db:"-"`
+	// RevisionNo is the answer's latest revision number after a read or a
+	// save (0 when it has none). On ErrAnswerChanged it is the current one.
+	RevisionNo int `json:"-" db:"-"`
+
 	// Replayed is set by the repository when this save repeated a confirmation
 	// that had already been applied. Nothing was written, and the other fields
 	// then describe the answer as it currently is, not as the replay asked.

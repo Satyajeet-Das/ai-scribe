@@ -29,7 +29,8 @@ func NewRepository(pool *pgxpool.Pool) Repository {
 
 func (r *pgRepository) GetByID(ctx context.Context, id uuid.UUID) (*Answer, error) {
 	query := `
-		SELECT id, session_id, question_id, selected_option_id, text_answer, created_at, updated_at
+		SELECT id, session_id, question_id, selected_option_id, text_answer, created_at, updated_at,
+		       COALESCE((SELECT MAX(v.revision_no) FROM answer_revisions v WHERE v.answer_id = answers.id), 0)
 		FROM answers
 		WHERE id = $1
 	`
@@ -42,6 +43,7 @@ func (r *pgRepository) GetByID(ctx context.Context, id uuid.UUID) (*Answer, erro
 		&a.TextAnswer,
 		&a.CreatedAt,
 		&a.UpdatedAt,
+		&a.RevisionNo,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -54,7 +56,8 @@ func (r *pgRepository) GetByID(ctx context.Context, id uuid.UUID) (*Answer, erro
 
 func (r *pgRepository) GetBySessionAndQuestion(ctx context.Context, sessionID, questionID uuid.UUID) (*Answer, error) {
 	query := `
-		SELECT id, session_id, question_id, selected_option_id, text_answer, created_at, updated_at
+		SELECT id, session_id, question_id, selected_option_id, text_answer, created_at, updated_at,
+		       COALESCE((SELECT MAX(v.revision_no) FROM answer_revisions v WHERE v.answer_id = answers.id), 0)
 		FROM answers
 		WHERE session_id = $1 AND question_id = $2
 	`
@@ -67,6 +70,7 @@ func (r *pgRepository) GetBySessionAndQuestion(ctx context.Context, sessionID, q
 		&a.TextAnswer,
 		&a.CreatedAt,
 		&a.UpdatedAt,
+		&a.RevisionNo,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -79,7 +83,8 @@ func (r *pgRepository) GetBySessionAndQuestion(ctx context.Context, sessionID, q
 
 func (r *pgRepository) ListBySession(ctx context.Context, sessionID uuid.UUID) ([]Answer, error) {
 	query := `
-		SELECT id, session_id, question_id, selected_option_id, text_answer, created_at, updated_at
+		SELECT id, session_id, question_id, selected_option_id, text_answer, created_at, updated_at,
+		       COALESCE((SELECT MAX(v.revision_no) FROM answer_revisions v WHERE v.answer_id = answers.id), 0)
 		FROM answers
 		WHERE session_id = $1
 		ORDER BY created_at ASC
@@ -101,6 +106,7 @@ func (r *pgRepository) ListBySession(ctx context.Context, sessionID uuid.UUID) (
 			&a.TextAnswer,
 			&a.CreatedAt,
 			&a.UpdatedAt,
+			&a.RevisionNo,
 		); err != nil {
 			return nil, err
 		}
@@ -148,6 +154,19 @@ func (r *pgRepository) Upsert(ctx context.Context, a *Answer) error {
 		return nil // the deferred rollback leaves everything as it was
 	}
 
+	// A client that says which revision it last saw is refused if the answer
+	// has changed since, for example by a dictation confirmed in the meantime.
+	if a.ExpectedRevisionNo != nil {
+		current, err := currentRevisionNo(ctx, tx, a.SessionID, a.QuestionID)
+		if err != nil {
+			return err
+		}
+		if current != *a.ExpectedRevisionNo {
+			a.RevisionNo = current
+			return ErrAnswerChanged
+		}
+	}
+
 	err = tx.QueryRow(ctx, query,
 		a.ID,
 		a.SessionID,
@@ -173,7 +192,32 @@ func (r *pgRepository) Upsert(ctx context.Context, a *Answer) error {
 		}
 		return err
 	}
+	if err := tx.QueryRow(ctx,
+		`SELECT COALESCE(MAX(revision_no), 0) FROM answer_revisions WHERE answer_id = $1`, a.ID,
+	).Scan(&a.RevisionNo); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
+}
+
+// currentRevisionNo locks the answer row (if there is one) and returns its
+// latest revision number, or 0 for a question not answered yet.
+func currentRevisionNo(ctx context.Context, tx pgx.Tx, sessionID, questionID uuid.UUID) (int, error) {
+	var id uuid.UUID
+	err := tx.QueryRow(ctx,
+		`SELECT id FROM answers WHERE session_id = $1 AND question_id = $2 FOR UPDATE`, sessionID, questionID,
+	).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var n int
+	err = tx.QueryRow(ctx,
+		`SELECT COALESCE(MAX(revision_no), 0) FROM answer_revisions WHERE answer_id = $1`, id,
+	).Scan(&n)
+	return n, err
 }
 
 // errConfirmationRaced means a concurrent request applied the same confirmation.
@@ -188,7 +232,8 @@ func loadReplayedConfirmation(ctx context.Context, tx pgx.Tx, a *Answer) (bool, 
 		return false, nil
 	}
 	err := tx.QueryRow(ctx, `
-		SELECT a.id, a.created_at, a.updated_at, a.selected_option_id, a.text_answer
+		SELECT a.id, a.created_at, a.updated_at, a.selected_option_id, a.text_answer,
+		       (SELECT MAX(r.revision_no) FROM answer_revisions r WHERE r.answer_id = a.id)
 		FROM answers a
 		JOIN answer_revisions v ON v.answer_id = a.id
 		JOIN sessions s ON s.id = a.session_id
@@ -196,7 +241,7 @@ func loadReplayedConfirmation(ctx context.Context, tx pgx.Tx, a *Answer) (bool, 
 		  AND s.status = 'IN_PROGRESS'
 		FOR UPDATE OF a`,
 		a.SessionID, a.QuestionID, a.Revision.ConfirmationID,
-	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt, &a.SelectedOptionID, &a.TextAnswer)
+	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt, &a.SelectedOptionID, &a.TextAnswer, &a.RevisionNo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -210,9 +255,10 @@ func loadReplayedConfirmation(ctx context.Context, tx pgx.Tx, a *Answer) (bool, 
 // loadCurrent fills a with the stored answer, for a request that changed nothing.
 func (r *pgRepository) loadCurrent(ctx context.Context, a *Answer) error {
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, created_at, updated_at, selected_option_id, text_answer
+		SELECT id, created_at, updated_at, selected_option_id, text_answer,
+		       COALESCE((SELECT MAX(v.revision_no) FROM answer_revisions v WHERE v.answer_id = answers.id), 0)
 		FROM answers WHERE session_id = $1 AND question_id = $2`, a.SessionID, a.QuestionID,
-	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt, &a.SelectedOptionID, &a.TextAnswer)
+	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt, &a.SelectedOptionID, &a.TextAnswer, &a.RevisionNo)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package answer
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -89,9 +90,18 @@ func (s *answerService) SubmitAnswer(ctx context.Context, sessionID, questionID 
 		SelectedOptionID: req.SelectedOptionID,
 		TextAnswer:       req.TextAnswer,
 		Revision:         req.Revision,
+
+		ExpectedRevisionNo: req.ExpectedRevisionNo,
 	}
 
 	if err := s.repo.Upsert(ctx, ans); err != nil {
+		if errors.Is(err, ErrAnswerChanged) {
+			s.logger.Info().Str("event", "answer.stale_write").
+				Str("session_id", sessionID.String()).Str("question_id", questionID.String()).
+				Int("current_revision", ans.RevisionNo).
+				Msg("answer save refused: changed since the client last saw it")
+			return nil, err
+		}
 		s.logger.Error().Err(err).
 			Str("session_id", sessionID.String()).
 			Str("question_id", questionID.String()).

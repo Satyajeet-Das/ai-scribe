@@ -128,6 +128,15 @@ func (h *Handler) mapError(err error) error {
 		return httperrs.NewForbiddenError("Forbidden: only the assigned student can access answers for this session", false)
 	}
 
+	if errors.Is(err, ErrAnswerChanged) {
+		return &httperrs.HTTPError{
+			Code:     "ANSWER_CHANGED",
+			Message:  "This answer was changed since you last saw it, for example by a confirmed dictation. Reload it before saving again.",
+			Status:   http.StatusConflict,
+			Override: true,
+		}
+	}
+
 	if errors.Is(err, session.ErrSessionAlreadySubmitted) {
 		return httperrs.NewConflictError("session has already been submitted", true)
 	}

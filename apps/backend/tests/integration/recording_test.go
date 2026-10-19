@@ -313,6 +313,49 @@ func TestAnswerRevisions_Integration(t *testing.T) {
 		return &answer.RevisionInput{Source: answer.SourceSTTConfirmed, ConfirmationID: id}
 	}
 
+	t.Run("a save naming the revision it saw is refused once the answer has moved on", func(t *testing.T) {
+		q := seed.question(examID, 30, "ESSAY", "Explain transpiration", 10)
+		none := 0
+		first := &answer.Answer{SessionID: sessionID, QuestionID: q, TextAnswer: "typed draft", ExpectedRevisionNo: &none}
+		require.NoError(t, repo.Upsert(ctx, first))
+		assert.Equal(t, 1, first.RevisionNo)
+
+		// Autosaving while typing merges into the same revision, so a client's
+		// own saves never conflict with each other.
+		seen := first.RevisionNo
+		again := &answer.Answer{SessionID: sessionID, QuestionID: q, TextAnswer: "typed draft, longer", ExpectedRevisionNo: &seen}
+		require.NoError(t, repo.Upsert(ctx, again))
+		assert.Equal(t, 1, again.RevisionNo)
+
+		// A dictation is confirmed in the meantime; then the late autosave lands.
+		dictated := save(q, "dictated answer", confirmed("stale-write-1", "dictated answer"))
+		assert.Equal(t, 2, dictated.RevisionNo)
+		late := &answer.Answer{SessionID: sessionID, QuestionID: q, TextAnswer: "late autosave", ExpectedRevisionNo: &seen}
+		assert.ErrorIs(t, repo.Upsert(ctx, late), answer.ErrAnswerChanged)
+		assert.Equal(t, 2, late.RevisionNo, "the current revision is reported")
+
+		got, err := repo.GetBySessionAndQuestion(ctx, sessionID, q)
+		require.NoError(t, err)
+		assert.Equal(t, "dictated answer", got.TextAnswer, "the confirmed answer is not overwritten")
+		assert.Equal(t, 2, got.RevisionNo)
+		assert.Len(t, revisions(q), 2, "the refused save left no revision")
+
+		// Expecting "no answer yet" is refused once there is one.
+		fresh := &answer.Answer{SessionID: sessionID, QuestionID: q, TextAnswer: "from another tab", ExpectedRevisionNo: &none}
+		assert.ErrorIs(t, repo.Upsert(ctx, fresh), answer.ErrAnswerChanged)
+
+		// A client that does not say what it saw still overwrites, as before.
+		overwrite := save(q, "typed over it", nil)
+		assert.Equal(t, 3, overwrite.RevisionNo)
+		list, err := repo.ListBySession(ctx, sessionID)
+		require.NoError(t, err)
+		for _, a := range list {
+			if a.QuestionID == q {
+				assert.Equal(t, 3, a.RevisionNo)
+			}
+		}
+	})
+
 	t.Run("a replayed confirmation changes nothing, even after the student has typed something else", func(t *testing.T) {
 		save(otherEssay, "foo", confirmed("replay-1", "foo"))
 		save(otherEssay, "bar", nil) // the student then types a different answer
