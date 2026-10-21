@@ -199,16 +199,17 @@ func TestVoiceConfig_GroqDefaults(t *testing.T) {
 
 		assert.Equal(t, VoiceProviderGroq, v.Intent.Provider)
 		assert.Equal(t, "https://api.groq.com/openai/v1", v.Intent.BaseURL)
-		assert.Equal(t, "llama-3.3-70b-versatile", v.Intent.Model)
+		assert.Equal(t, DefaultGroqModel, v.Intent.Model)
+		assert.Equal(t, "openai/gpt-oss-20b", v.Intent.Model)
 		assert.NotContains(t, v.Intent.Model, "claude")
 	})
 	t.Run("what the operator sets is kept", func(t *testing.T) {
 		v := VoiceConfig{Enabled: true}
 		v.Intent.Provider = "groq"
-		v.Intent.Model = "openai/gpt-oss-20b"
+		v.Intent.Model = "openai/gpt-oss-120b"
 		v.Intent.BaseURL = "https://proxy.example/openai/v1"
 		v.ApplyDefaults()
-		assert.Equal(t, "openai/gpt-oss-20b", v.Intent.Model)
+		assert.Equal(t, "openai/gpt-oss-120b", v.Intent.Model)
 		assert.Equal(t, "https://proxy.example/openai/v1", v.Intent.BaseURL)
 	})
 	t.Run("other providers are unaffected", func(t *testing.T) {
@@ -245,14 +246,14 @@ func TestVoiceConfig_GroqDefaults(t *testing.T) {
 		err := stale(func(v *VoiceConfig) { v.Intent.Model = "claude-opus-5-5" })
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not a Groq model")
-		assert.Contains(t, err.Error(), "llama-3.3-70b-versatile", "it says what to use instead")
+		assert.Contains(t, err.Error(), DefaultGroqModel, "it says what to use instead")
 
 		err = stale(func(v *VoiceConfig) { v.Intent.BaseURL = "http://localhost:11434/" })
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Ollama")
 
 		assert.NoError(t, stale(func(v *VoiceConfig) {}), "the defaults are fine")
-		assert.NoError(t, stale(func(v *VoiceConfig) { v.Intent.Model = "openai/gpt-oss-20b" }))
+		assert.NoError(t, stale(func(v *VoiceConfig) { v.Intent.Model = "openai/gpt-oss-120b" }))
 		assert.NoError(t, stale(func(v *VoiceConfig) { v.Intent.BaseURL = "https://proxy.example/openai/v1" }))
 	})
 	t.Run("the list of valid providers mentions groq", func(t *testing.T) {

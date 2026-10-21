@@ -164,10 +164,17 @@ server**; only other speech is sent. The model returns only an intent from the c
 and the backend validates it (and the option key against the current question) before acting.
 
 **Groq.** Set `PROVIDER=groq` and `API_KEY=gsk_...` in your private environment. `MODEL` defaults to
-`llama-3.3-70b-versatile` (any Groq chat model works, for example `llama-3.1-8b-instant` for lower
-latency or `openai/gpt-oss-20b`) and `BASE_URL` to `https://api.groq.com/openai/v1`. Leave
-both unset unless overriding: the server refuses to start if `MODEL` is a Claude model or `BASE_URL`
-is the Ollama address, which are the values an earlier example file set for other providers.
+`openai/gpt-oss-20b` (`openai/gpt-oss-120b` also works) and `BASE_URL` to
+`https://api.groq.com/openai/v1`. Leave both unset unless overriding: the server refuses to start if
+`MODEL` is a Claude model or `BASE_URL` is the Ollama address, which are the values an earlier
+example file set for other providers.
+
+Groq retires models from time to time, and a retired one answers `404 model_not_found` on every
+request, so the assistant keeps saying "intent unavailable" while exact commands still work. The
+server log then says `intent provider returned status 404 (model_not_found): … may have been
+retired`; pick a model from `GET https://api.groq.com/openai/v1/models` (with your key) and set
+`MODEL`. Only a short error code is ever logged from the provider's reply, never its message,
+because that can echo the request.
 
 - **What is sent:** the transcript, the question type, the option keys and texts as the student
   sees them, and whether an answer is awaiting confirmation. Never answer keys, grading data or

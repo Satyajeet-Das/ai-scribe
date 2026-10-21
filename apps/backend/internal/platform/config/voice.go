@@ -15,11 +15,14 @@ const (
 	VoiceProviderGroq      = "groq"
 )
 
-// Defaults for the groq intent provider. The model is a Groq production model;
-// change it with SCRIBE_VOICE.INTENT.MODEL.
+// Defaults for the groq intent provider. Groq retires models from time to
+// time (a retired one answers 404 model_not_found), so this is the model it
+// serves at the time of writing; change it with SCRIBE_VOICE.INTENT.MODEL.
+// gpt-oss-20b is a reasoning model: its answer is short but the thinking
+// before it counts against the token limit (see intent.Groq).
 const (
 	DefaultGroqBaseURL = "https://api.groq.com/openai/v1"
-	DefaultGroqModel   = "llama-3.3-70b-versatile"
+	DefaultGroqModel   = "openai/gpt-oss-20b"
 )
 
 // VoiceConfig configures the real-time voice pipeline (WebSocket transport,

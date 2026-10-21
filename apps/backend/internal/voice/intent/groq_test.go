@@ -41,8 +41,15 @@ func groqServer(t *testing.T, got *captured, status int, content, finish string)
 
 		w.WriteHeader(status)
 		if status != http.StatusOK {
-			// A realistic error body that echoes the request, as providers do.
-			_, _ = w.Write([]byte(`{"error":{"message":"bad request: ` + got.raw + `"}}`))
+			// A realistic error body that echoes the request, as providers do,
+			// with the machine-readable code Groq adds.
+			errBody, err := json.Marshal(map[string]any{"error": map[string]string{
+				"message": "bad request: " + got.raw,
+				"type":    map[int]string{401: "invalid_request_error", 404: "invalid_request_error"}[status],
+				"code":    map[int]string{401: "invalid_api_key", 404: "model_not_found"}[status],
+			}})
+			require.NoError(t, err)
+			_, _ = w.Write(errBody)
 			return
 		}
 		resp := map[string]any{"choices": []map[string]any{{
@@ -54,7 +61,7 @@ func groqServer(t *testing.T, got *captured, status int, content, finish string)
 }
 
 func newTestGroq(url string, mutate ...func(*GroqConfig)) *Groq {
-	cfg := GroqConfig{APIKey: groqTestKey, Model: "llama-3.3-70b-versatile", BaseURL: url,
+	cfg := GroqConfig{APIKey: groqTestKey, Model: "openai/gpt-oss-20b", BaseURL: url,
 		Prompt: "You classify what a student said.", PromptVersion: "v1"}
 	for _, m := range mutate {
 		m(&cfg)
@@ -79,11 +86,11 @@ func TestGroq_SendsAnAuthenticatedJSONModeRequestWithTheSchemaAndTheTranscriptAs
 
 	assert.Equal(t, "/chat/completions", got.path, "a trailing slash on the base URL makes no difference")
 	assert.Equal(t, "Bearer "+groqTestKey, got.auth)
-	assert.Equal(t, "llama-3.3-70b-versatile", got.body.Model)
+	assert.Equal(t, "openai/gpt-oss-20b", got.body.Model)
 	assert.Zero(t, got.body.Temperature, "classification is deterministic")
 	assert.False(t, got.body.Stream)
 	assert.Equal(t, map[string]string{"type": "json_object"}, got.body.ResponseFormat)
-	assert.Positive(t, got.body.MaxCompletionTokens)
+	assert.GreaterOrEqual(t, got.body.MaxCompletionTokens, 1024, "room for a model that thinks before it answers")
 
 	require.Len(t, got.body.Messages, 2)
 	system, user := got.body.Messages[0], got.body.Messages[1]
@@ -169,9 +176,12 @@ func TestGroq_FailuresAreReportedWithoutLeakingTheKeyOrTheTranscript(t *testing.
 		check  func(t *testing.T, err error)
 	}{
 		"rate limited": {429, func(t *testing.T, err error) { assert.ErrorIs(t, err, ErrRateLimited) }},
-		"bad key":      {401, func(t *testing.T, err error) { assert.EqualError(t, err, "intent provider returned status 401") }},
+		"bad key": {401, func(t *testing.T, err error) {
+			assert.EqualError(t, err, "intent provider returned status 401 (invalid_api_key)")
+		}},
 		"unknown model": {404, func(t *testing.T, err error) {
-			assert.EqualError(t, err, "intent provider returned status 404")
+			assert.ErrorContains(t, err, "intent provider returned status 404 (model_not_found)")
+			assert.ErrorContains(t, err, "may have been retired", "the log says why, not just 404")
 		}},
 		"provider down": {503, func(t *testing.T, err error) { assert.EqualError(t, err, "intent provider returned status 503") }},
 	}
@@ -195,6 +205,31 @@ func TestGroq_FailuresAreReportedWithoutLeakingTheKeyOrTheTranscript(t *testing.
 		assert.EqualError(t, err, "intent provider unreachable")
 		assert.NotContains(t, err.Error(), groqTestKey)
 	})
+}
+
+func TestGroq_OnlyAShortCodeFromAnErrorBodyIsEverReported(t *testing.T) {
+	cases := map[string]struct{ body, want string }{
+		"a plain code":          {`{"error":{"code":"rate_limit_exceeded"}}`, "intent provider returned status 400 (rate_limit_exceeded)"},
+		"falls back to type":    {`{"error":{"type":"invalid_request_error"}}`, "intent provider returned status 400 (invalid_request_error)"},
+		"a sentence is dropped": {`{"error":{"code":"The model pick the second one does not exist"}}`, "intent provider returned status 400"},
+		"an echo is dropped":    {`{"error":{"code":"` + groqTestKey + ` pick the second one"}}`, "intent provider returned status 400"},
+		"too long is dropped":   {`{"error":{"code":"` + strings.Repeat("a", 65) + `"}}`, "intent provider returned status 400"},
+		"not json":              {`<html>bad gateway</html>`, "intent provider returned status 400"},
+		"empty":                 {``, "intent provider returned status 400"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			_, err := newTestGroq(srv.URL).Classify(context.Background(), mcqInput)
+			assert.EqualError(t, err, tc.want)
+			assert.NotContains(t, err.Error(), groqTestKey)
+			assert.NotContains(t, err.Error(), "pick the second one")
+		})
+	}
 }
 
 func TestGroq_StopsWaitingWhenToldTo(t *testing.T) {

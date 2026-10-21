@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -15,11 +16,53 @@ import (
 // DefaultGroqBaseURL is Groq's OpenAI-compatible API.
 const DefaultGroqBaseURL = "https://api.groq.com/openai/v1"
 
+// groqMaxCompletionTokens bounds one reply. The answer itself is about 60
+// tokens, but a reasoning model spends tokens thinking first and a reply cut
+// off by this limit is no interpretation at all, so it leaves ample room.
+const groqMaxCompletionTokens = 1024
+
+// errorCodePattern is what a provider's error code must look like to be put in
+// an error: a short lower-case token such as model_not_found. Anything else
+// (a sentence, an echo of the request) is dropped.
+var errorCodePattern = regexp.MustCompile(`^[a-z0-9_.-]{1,64}$`)
+
+// providerErrorCode reads the machine-readable code from an OpenAI-style error
+// body ({"error":{"code":"model_not_found","type":"..."}}). It returns "" when
+// there is none or it is not a plain token.
+func providerErrorCode(body io.Reader) string {
+	var out struct {
+		Error struct {
+			Code string `json:"code"`
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	if json.NewDecoder(body).Decode(&out) != nil {
+		return ""
+	}
+	for _, c := range []string{out.Error.Code, out.Error.Type} {
+		if errorCodePattern.MatchString(c) {
+			return c
+		}
+	}
+	return ""
+}
+
+// providerStatusError describes a non-OK reply without the provider's message.
+func providerStatusError(status int, code string) error {
+	switch {
+	case code == "model_not_found":
+		return fmt.Errorf("intent provider returned status %d (%s): the configured model is not available from this provider; it may have been retired", status, code)
+	case code != "":
+		return fmt.Errorf("intent provider returned status %d (%s)", status, code)
+	}
+	return fmt.Errorf("intent provider returned status %d", status)
+}
+
 // GroqConfig configures the classifier backed by Groq.
 type GroqConfig struct {
 	// APIKey is sent as a bearer token. It is never logged or put in an error.
 	APIKey string
-	// Model is a Groq chat model ID, e.g. llama-3.3-70b-versatile.
+	// Model is a Groq chat model ID, e.g. openai/gpt-oss-20b.
 	Model string
 	// BaseURL overrides the API endpoint; empty means DefaultGroqBaseURL.
 	BaseURL string
@@ -121,7 +164,7 @@ func (g *Groq) Classify(ctx context.Context, in Input) (Intent, error) {
 			{Role: "user", Content: string(body)},
 		},
 		Temperature:         0,
-		MaxCompletionTokens: 512,
+		MaxCompletionTokens: groqMaxCompletionTokens,
 		Stream:              false,
 		ResponseFormat:      map[string]string{"type": "json_object"},
 	})
@@ -154,12 +197,13 @@ func (g *Groq) Classify(ctx context.Context, in Input) (Intent, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// The body is discarded unread: an error body may echo the request.
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		// An error body may echo the request, so none of it is kept except one
+		// short machine-readable code, which says why (see providerErrorCode).
+		code := providerErrorCode(io.LimitReader(resp.Body, 4096))
 		if resp.StatusCode == http.StatusTooManyRequests {
 			return Intent{}, ErrRateLimited
 		}
-		return Intent{}, fmt.Errorf("intent provider returned status %d", resp.StatusCode)
+		return Intent{}, providerStatusError(resp.StatusCode, code)
 	}
 
 	var out groqChatResponse
