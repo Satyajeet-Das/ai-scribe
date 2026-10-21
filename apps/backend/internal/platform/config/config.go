@@ -64,6 +64,21 @@ type AuthConfig struct {
 	Issuer               string `koanf:"issuer"`
 }
 
+// splitList turns what the environment gave for a list setting into a list:
+// entries are split on commas, trimmed, and blank ones dropped. The loader
+// does none of this itself, so "a,b" arrives as one entry and an empty
+// variable as a list holding one empty string.
+func splitList(in []string) []string {
+	var out []string
+	for _, v := range in {
+		for _, part := range strings.Split(v, ",") {
+			if p := strings.TrimSpace(part); p != "" {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
 
 func LoadConfig() (*Config, error) {
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
@@ -96,6 +111,13 @@ func LoadConfig() (*Config, error) {
 		logger.Error().Err(err).Msg("config validation failed")
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
+
+	// An empty variable (SCRIBE_VOICE.ALLOWED_ORIGINS="", as .env.example ships
+	// it) loads as a list holding one empty string, not an empty list. Left as
+	// it is, "empty means use the CORS list" never applied and the WebSocket
+	// accepted no origin at all.
+	mainConfig.Voice.AllowedOrigins = splitList(mainConfig.Voice.AllowedOrigins)
+	mainConfig.Server.CORSAllowedOrigins = splitList(mainConfig.Server.CORSAllowedOrigins)
 
 	// The voice pipeline is on unless explicitly disabled.
 	if !k.Exists("voice.enabled") {

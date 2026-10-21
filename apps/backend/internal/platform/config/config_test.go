@@ -263,3 +263,42 @@ func TestVoiceConfig_GroqDefaults(t *testing.T) {
 		assert.Contains(t, err.Error(), "groq")
 	})
 }
+
+func TestLoadConfig_EmptyVoiceOriginsMeansUseTheCORSList(t *testing.T) {
+	for k, v := range map[string]string{
+		"SCRIBE_PRIMARY.ENV":                 "local",
+		"SCRIBE_SERVER.PORT":                 "8080",
+		"SCRIBE_SERVER.READ_TIMEOUT":         "30",
+		"SCRIBE_SERVER.WRITE_TIMEOUT":        "30",
+		"SCRIBE_SERVER.IDLE_TIMEOUT":         "60",
+		"SCRIBE_SERVER.CORS_ALLOWED_ORIGINS": "http://localhost:3000,http://localhost:5173",
+		"SCRIBE_DATABASE.HOST":               "localhost",
+		"SCRIBE_DATABASE.PORT":               "5432",
+		"SCRIBE_DATABASE.USER":               "postgres",
+		"SCRIBE_DATABASE.NAME":               "ai_scribe",
+		"SCRIBE_DATABASE.SSL_MODE":           "disable",
+		"SCRIBE_DATABASE.MAX_OPEN_CONNS":     "5",
+		"SCRIBE_DATABASE.MAX_IDLE_CONNS":     "5",
+		"SCRIBE_DATABASE.CONN_MAX_LIFETIME":  "300",
+		"SCRIBE_DATABASE.CONN_MAX_IDLE_TIME": "300",
+		"SCRIBE_REDIS.ADDRESS":               "localhost:6379",
+		"SCRIBE_AUTH.SECRET_KEY":             "secret",
+		"SCRIBE_VOICE.ALLOWED_ORIGINS":       "", // as .env.example ships it
+	} {
+		t.Setenv(k, v)
+	}
+
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Voice.AllowedOrigins, "an empty variable is an empty list, so the CORS list is used")
+	assert.Equal(t, []string{"http://localhost:3000", "http://localhost:5173"}, cfg.Server.CORSAllowedOrigins)
+}
+
+func TestSplitList(t *testing.T) {
+	assert.Empty(t, splitList([]string{""}))
+	assert.Empty(t, splitList([]string{" ", "	"}))
+	assert.Equal(t, []string{"http://localhost:3000", "https://exam.example.com"},
+		splitList([]string{" http://localhost:3000 ", "", "https://exam.example.com"}))
+	assert.Equal(t, []string{"http://a.test", "http://b.test"}, splitList([]string{"http://a.test, http://b.test,"}),
+		"a comma-separated value is several entries")
+}

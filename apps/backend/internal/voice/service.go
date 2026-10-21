@@ -201,7 +201,9 @@ func (s *Service) Connect(c echo.Context) error {
 
 	if !ws.CheckOrigin(r, s.AllowedOrigins) {
 		s.reject("origin")
-		log.Warn().Str("event", "voice.rejected").Str("reason", "origin").Msg("voice connection rejected")
+		log.Warn().Str("event", "voice.rejected").Str("reason", "origin").
+			Str("origin", r.Header.Get("Origin")).Str("host", r.Host).Int("allowed_origins", len(s.AllowedOrigins)).
+			Msg("voice connection rejected: add the page's origin to SCRIBE_SERVER.CORS_ALLOWED_ORIGINS or SCRIBE_VOICE.ALLOWED_ORIGINS")
 		return httperrs.NewForbiddenError("Forbidden: origin not allowed", false)
 	}
 
