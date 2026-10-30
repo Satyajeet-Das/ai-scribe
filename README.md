@@ -29,6 +29,7 @@ Detailed architectural documentation is available in [docs/architecture/overview
 - [voice-protocol.md](docs/architecture/voice-protocol.md): the voice WebSocket, audio modes, confirmation, command-phrase flag
 - [answer-audio.md](docs/architecture/answer-audio.md): what audio is kept, who can listen, auditing, retention
 - [teacher-marking.md](docs/architecture/teacher-marking.md): marking rules, finalise and reopen
+- [exam-document-ingestion.md](docs/architecture/exam-document-ingestion.md): uploading an exam PDF, the extraction pipeline, reviewing the draft, approving it into an exam
 - [disconnected-session-pause-resume.md](docs/architecture/disconnected-session-pause-resume.md): resuming a session
 
 ---
@@ -54,6 +55,7 @@ ai-scribe/
 │   │   │   ├── recording/# Dictated-answer audio, transcriptions, retention janitor
 │   │   │   ├── review/  # Read-only teacher response review and audited audio playback
 │   │   │   ├── grading/ # Teacher marking: marks, feedback, finalise and reopen
+│   │   │   ├── document/ # Exam paper PDFs: upload, extraction jobs, draft review, approval
 │   │   │   ├── audit/   # Append-only audit events
 │   │   │   ├── model/   # Shared base entity models
 │   │   │   └── platform/# Technical infrastructure (db, redis, http, ws, speech, audiostore, logger, job)
@@ -98,6 +100,7 @@ ai-scribe/
 | **Response review** | Completed | Teacher Review | Read-only review of each student's answers, audited audio playback, answer history |
 | **Marking** | Completed | Teacher Marking | Half-mark scores, feedback, automatic MCQ marks, finalise and reopen |
 | **Hardening** | Completed | Reliability & Accessibility | No lost answers, stale-save protection, immediate end of voice on submit, consistent keyboard rules, command-phrase safeguard |
+| **Sprint 12** | Backend completed | PDF & Multimodal Ingestion | Upload an exam PDF, background extraction into draft questions (text layer, scans, tables, diagrams), teacher review and correction, explicit approval into a draft exam. Provider-independent; Groq supported. No frontend review screens yet |
 
 ---
 
@@ -285,6 +288,20 @@ The flat `/api/v1/assignments…` routes (list, create, bulk, check, revoke) rem
 | `PUT` | `/api/v1/exams/:exam_id/responses/:student_id/marking/questions/:question_id` | Save a mark and feedback for one answer | Owner Teacher, Admin |
 | `POST` | `/api/v1/exams/:exam_id/responses/:student_id/marking/finalise` · `/reopen` | Finalise (lock) or reopen a paper | Owner Teacher, Admin |
 
+### Exam Documents (PDF ingestion)
+Off unless `SCRIBE_DOCUMENTS.ENABLED=true` and an extraction provider is configured. All routes sit under `/api/v1/exams/:exam_id/documents` and need the exam's owner (or an Admin).
+
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| `POST` | `/` (multipart, field `file`) | Upload a PDF; returns `202` with the document `QUEUED` | Owner Teacher, Admin |
+| `GET` | `/` · `/:document_id` | List documents; one document's status, progress and per-page findings | Owner Teacher, Admin |
+| `GET` | `/:document_id/file` | The original PDF (attachment, `no-store`) | Owner Teacher, Admin |
+| `POST` | `/:document_id/cancel` · `/retry` | Stop processing; run again as a new attempt | Owner Teacher, Admin |
+| `DELETE` | `/:document_id` | Delete the record and the file (approved questions stay) | Owner Teacher, Admin |
+| `GET` | `/:document_id/draft` | The extracted draft: questions, warnings, source pages, `draftVersion` | Owner Teacher, Admin |
+| `POST` · `PUT` · `DELETE` | `/:document_id/draft/questions[/:question_id]` · `PUT …/draft/reorder` | Add, replace, remove and reorder draft questions (each names the `expectedDraftVersion`) | Owner Teacher, Admin |
+| `POST` | `/:document_id/approve` | Copy the reviewed draft into the (draft) exam, all or nothing | Owner Teacher, Admin |
+
 ### System & Documentation
 | Method | Endpoint | Description | Access |
 |---|---|---|---|
@@ -335,6 +352,12 @@ you already have, or set `MINIO_IMAGE` to one from your own registry.
 Teachers mark papers by hand from the response review page (marks in half-steps, feedback, then
 finalise). [docs/architecture/teacher-marking.md](docs/architecture/teacher-marking.md) explains the rules,
 concurrency and audit records.
+
+Teachers can also upload an exam paper as a PDF instead of typing the questions. The server reads it in the
+background and proposes **draft** questions; the teacher corrects them and approves them into a draft exam.
+Nothing the reader produces reaches an exam without that approval, and it never picks a correct answer.
+It is off by default and sends nothing anywhere until you set a provider and key (the text of uploaded papers
+goes to Groq). See [docs/architecture/exam-document-ingestion.md](docs/architecture/exam-document-ingestion.md).
 
 ### 4. Run Locally from Source
 
