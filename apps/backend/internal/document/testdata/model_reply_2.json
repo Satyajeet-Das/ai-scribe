@@ -1,0 +1,49 @@
+{
+  "documentInstructions": null,
+  "questions": [
+    {
+      "numberLabel": "",
+      "type": "MCQ",
+      "instructions": null,
+      "text": "",
+      "marks": null,
+      "options": [
+        { "label": "A", "text": "Friction acts up the slope" },
+        { "label": "B", "text": "Friction acts down the slope" },
+        { "label": "C", "text": "There is no friction" }
+      ],
+      "tables": [],
+      "diagrams": [],
+      "pages": [2],
+      "continuesPrevious": true,
+      "uncertain": false
+    },
+    {
+      "numberLabel": "4",
+      "type": "ESSAY",
+      "instructions": null,
+      "text": "Explain Newton's first law of motion.",
+      "marks": 5,
+      "options": [],
+      "tables": [],
+      "diagrams": [],
+      "pages": [2],
+      "continuesPrevious": false,
+      "uncertain": false
+    },
+    {
+      "numberLabel": "5",
+      "type": "ESSAY",
+      "instructions": null,
+      "text": "State two examples of a vector quantity and two examples of a scalar quantity.",
+      "marks": null,
+      "options": [],
+      "tables": [],
+      "diagrams": [],
+      "pages": [3],
+      "continuesPrevious": false,
+      "uncertain": false
+    }
+  ],
+  "unassigned": []
+}

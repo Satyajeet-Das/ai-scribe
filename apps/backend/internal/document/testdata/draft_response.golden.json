@@ -1,0 +1,219 @@
+{
+  "document": {
+    "attempt": 1,
+    "createdAt": "<time>",
+    "draftVersion": 1,
+    "examId": "<uuid>",
+    "filename": "Physics Midterm - Paper 1.pdf",
+    "id": "<uuid>",
+    "pageCount": 3,
+    "pages": [
+      {
+        "chars": 409,
+        "columns": 1,
+        "images": 0,
+        "imagesSkipped": 0,
+        "kind": "TEXT",
+        "number": 1,
+        "removedLines": [
+          "Physics Midterm - Paper 1",
+          "Page 1 of 3"
+        ]
+      },
+      {
+        "chars": 169,
+        "columns": 1,
+        "images": 0,
+        "imagesSkipped": 0,
+        "kind": "TEXT",
+        "number": 2,
+        "removedLines": [
+          "Physics Midterm - Paper 1",
+          "Page 2 of 3"
+        ]
+      },
+      {
+        "chars": 117,
+        "columns": 1,
+        "images": 0,
+        "imagesSkipped": 0,
+        "kind": "TEXT",
+        "number": 3,
+        "removedLines": [
+          "Physics Midterm - Paper 1",
+          "Page 3 of 3"
+        ]
+      }
+    ],
+    "progress": {
+      "done": 0,
+      "total": 0
+    },
+    "provider": "fake",
+    "sizeBytes": 3022,
+    "status": "REVIEW_REQUIRED",
+    "updatedAt": "<time>",
+    "uploadedBy": "<uuid>"
+  },
+  "documentInstructions": "Answer ALL questions. Calculators may be used.",
+  "draftVersion": 1,
+  "questions": [
+    {
+      "confidence": "HIGH",
+      "createdAt": "<time>",
+      "diagrams": [],
+      "edited": false,
+      "id": "<uuid>",
+      "instructions": "",
+      "numberLabel": "1",
+      "options": [
+        {
+          "isCorrect": false,
+          "label": "A",
+          "text": "Newton"
+        },
+        {
+          "isCorrect": false,
+          "label": "B",
+          "text": "Joule"
+        },
+        {
+          "isCorrect": false,
+          "label": "C",
+          "text": "Watt"
+        },
+        {
+          "isCorrect": false,
+          "label": "D",
+          "text": "Pascal"
+        }
+      ],
+      "origin": "EXTRACTED",
+      "points": null,
+      "position": 1,
+      "sourcePages": [
+        1
+      ],
+      "tables": [],
+      "text": "What is the SI unit of force?",
+      "type": "MCQ",
+      "updatedAt": "<time>",
+      "warnings": []
+    },
+    {
+      "confidence": "HIGH",
+      "createdAt": "<time>",
+      "diagrams": [],
+      "edited": false,
+      "id": "<uuid>",
+      "instructions": "",
+      "numberLabel": "2",
+      "options": [],
+      "origin": "EXTRACTED",
+      "points": 4,
+      "position": 2,
+      "sourcePages": [
+        1
+      ],
+      "tables": [
+        {
+          "markdown": "| Time (s) | Speed (m/s) |\n|---|---|\n| 0 | 0 |\n| 5 | 20 |",
+          "page": 1
+        }
+      ],
+      "text": "A car accelerates uniformly from rest. Use the table to find its acceleration.",
+      "type": "ESSAY",
+      "updatedAt": "<time>",
+      "warnings": []
+    },
+    {
+      "confidence": "HIGH",
+      "createdAt": "<time>",
+      "diagrams": [
+        {
+          "confirmed": false,
+          "description": "A block of mass 2 kg on a rough slope inclined at 30 degrees.",
+          "descriptionSource": "MODEL",
+          "page": 1,
+          "region": "Figure 1, beside the question"
+        }
+      ],
+      "edited": false,
+      "id": "<uuid>",
+      "instructions": "",
+      "numberLabel": "3",
+      "options": [
+        {
+          "isCorrect": false,
+          "label": "A",
+          "text": "Friction acts up the slope"
+        },
+        {
+          "isCorrect": false,
+          "label": "B",
+          "text": "Friction acts down the slope"
+        },
+        {
+          "isCorrect": false,
+          "label": "C",
+          "text": "There is no friction"
+        }
+      ],
+      "origin": "EXTRACTED",
+      "points": null,
+      "position": 3,
+      "sourcePages": [
+        1,
+        2
+      ],
+      "tables": [],
+      "text": "Figure 1 shows a block of mass 2 kg on a rough slope inclined at 30 degrees. Which option correctly describes the friction on the block?",
+      "type": "MCQ",
+      "updatedAt": "<time>",
+      "warnings": []
+    },
+    {
+      "confidence": "HIGH",
+      "createdAt": "<time>",
+      "diagrams": [],
+      "edited": false,
+      "id": "<uuid>",
+      "instructions": "",
+      "numberLabel": "4",
+      "options": [],
+      "origin": "EXTRACTED",
+      "points": 5,
+      "position": 4,
+      "sourcePages": [
+        2
+      ],
+      "tables": [],
+      "text": "Explain Newton's first law of motion.",
+      "type": "ESSAY",
+      "updatedAt": "<time>",
+      "warnings": []
+    },
+    {
+      "confidence": "HIGH",
+      "createdAt": "<time>",
+      "diagrams": [],
+      "edited": false,
+      "id": "<uuid>",
+      "instructions": "",
+      "numberLabel": "5",
+      "options": [],
+      "origin": "EXTRACTED",
+      "points": null,
+      "position": 5,
+      "sourcePages": [
+        3
+      ],
+      "tables": [],
+      "text": "State two examples of a vector quantity and two examples of a scalar quantity.",
+      "type": "ESSAY",
+      "updatedAt": "<time>",
+      "warnings": []
+    }
+  ],
+  "unassigned": []
+}

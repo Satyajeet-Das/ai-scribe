@@ -1,0 +1,58 @@
+{
+  "documentInstructions": "Answer ALL questions. Calculators may be used.",
+  "questions": [
+    {
+      "numberLabel": "1",
+      "type": "MCQ",
+      "instructions": null,
+      "text": "What is the SI unit of force?",
+      "marks": null,
+      "options": [
+        { "label": "A", "text": "Newton" },
+        { "label": "B", "text": "Joule" },
+        { "label": "C", "text": "Watt" },
+        { "label": "D", "text": "Pascal" }
+      ],
+      "tables": [],
+      "diagrams": [],
+      "pages": [1],
+      "continuesPrevious": false,
+      "uncertain": false
+    },
+    {
+      "numberLabel": "2",
+      "type": "ESSAY",
+      "instructions": null,
+      "text": "A car accelerates uniformly from rest. Use the table to find its acceleration.",
+      "marks": 4,
+      "options": [],
+      "tables": [
+        { "page": 1, "markdown": "| Time (s) | Speed (m/s) |\n|---|---|\n| 0 | 0 |\n| 5 | 20 |" }
+      ],
+      "diagrams": [],
+      "pages": [1],
+      "continuesPrevious": false,
+      "uncertain": false
+    },
+    {
+      "numberLabel": "3",
+      "type": "MCQ",
+      "instructions": null,
+      "text": "Figure 1 shows a block of mass 2 kg on a rough slope inclined at 30 degrees. Which option correctly describes the friction on the block?",
+      "marks": null,
+      "options": [],
+      "tables": [],
+      "diagrams": [
+        {
+          "page": 1,
+          "region": "Figure 1, beside the question",
+          "description": "A block of mass 2 kg on a rough slope inclined at 30 degrees."
+        }
+      ],
+      "pages": [1],
+      "continuesPrevious": false,
+      "uncertain": false
+    }
+  ],
+  "unassigned": []
+}
