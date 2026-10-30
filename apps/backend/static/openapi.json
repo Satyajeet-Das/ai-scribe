@@ -43,6 +43,97 @@
       }
     },
     "schemas": {
+      "AddDraftQuestionRequest": {
+        "properties": {
+          "expectedDraftVersion": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "position": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "question": {
+            "properties": {
+              "acknowledgedWarnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "diagrams": {
+                "items": {
+                  "properties": {
+                    "confirmed": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "region": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "instructions": {
+                "type": "string"
+              },
+              "numberLabel": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "properties": {
+                    "isCorrect": {
+                      "type": "boolean"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "points": {
+                "nullable": true,
+                "type": "integer"
+              },
+              "tables": {
+                "items": {
+                  "properties": {
+                    "markdown": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
       "AnswerResponse": {
         "properties": {
           "createdAt": {
@@ -79,6 +170,216 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ApiError": {
+        "description": "The error body every endpoint returns. code is stable and meant for programs; message is meant for people.",
+        "properties": {
+          "code": {
+            "example": "STALE_VERSION",
+            "type": "string"
+          },
+          "errors": {
+            "description": "Field-level detail, for validation errors and for DRAFT_INCOMPLETE.",
+            "items": {
+              "properties": {
+                "error": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "override": {
+            "description": "True when message is safe to show to the user as it is.",
+            "type": "boolean"
+          },
+          "status": {
+            "example": 409,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ApproveDraftRequest": {
+        "properties": {
+          "expectedDraftVersion": {
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ApproveResponse": {
+        "properties": {
+          "document": {
+            "properties": {
+              "approvedAt": {
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "approvedBy": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "nullable": true,
+                "type": "string"
+              },
+              "attempt": {
+                "type": "integer"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "draftVersion": {
+                "type": "integer"
+              },
+              "examId": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              },
+              "failureCode": {
+                "type": "string"
+              },
+              "failureMessage": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "id": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              },
+              "pageCount": {
+                "type": "integer"
+              },
+              "pages": {
+                "items": {
+                  "properties": {
+                    "chars": {
+                      "type": "integer"
+                    },
+                    "columns": {
+                      "type": "integer"
+                    },
+                    "images": {
+                      "type": "integer"
+                    },
+                    "imagesSkipped": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "integer"
+                    },
+                    "removedLines": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "progress": {
+                "properties": {
+                  "done": {
+                    "type": "integer"
+                  },
+                  "total": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "stage": {
+                "enum": [
+                  "READING_PAGES",
+                  "EXTRACTING",
+                  "VALIDATING",
+                  "SAVING"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "QUEUED",
+                  "PROCESSING",
+                  "REVIEW_REQUIRED",
+                  "COMPLETED",
+                  "FAILED",
+                  "CANCELLED"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "uploadedBy": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "questions": {
+            "items": {
+              "properties": {
+                "id": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "points": {
+                  "type": "integer"
+                },
+                "questionNumber": {
+                  "type": "integer"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -575,6 +876,902 @@
         ],
         "type": "object"
       },
+      "DocumentListResponse": {
+        "properties": {
+          "documents": {
+            "items": {
+              "properties": {
+                "approvedAt": {
+                  "format": "date-time",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "approvedBy": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "attempt": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "draftVersion": {
+                  "type": "integer"
+                },
+                "examId": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "failureCode": {
+                  "type": "string"
+                },
+                "failureMessage": {
+                  "type": "string"
+                },
+                "filename": {
+                  "type": "string"
+                },
+                "id": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "pageCount": {
+                  "type": "integer"
+                },
+                "pages": {
+                  "items": {
+                    "properties": {
+                      "chars": {
+                        "type": "integer"
+                      },
+                      "columns": {
+                        "type": "integer"
+                      },
+                      "images": {
+                        "type": "integer"
+                      },
+                      "imagesSkipped": {
+                        "type": "integer"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "number": {
+                        "type": "integer"
+                      },
+                      "removedLines": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "progress": {
+                  "properties": {
+                    "done": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "sizeBytes": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "stage": {
+                  "enum": [
+                    "READING_PAGES",
+                    "EXTRACTING",
+                    "VALIDATING",
+                    "SAVING"
+                  ],
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "QUEUED",
+                    "PROCESSING",
+                    "REVIEW_REQUIRED",
+                    "COMPLETED",
+                    "FAILED",
+                    "CANCELLED"
+                  ],
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "uploadedBy": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "DocumentResponse": {
+        "properties": {
+          "approvedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "approvedBy": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "draftVersion": {
+            "type": "integer"
+          },
+          "examId": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "type": "string"
+          },
+          "failureCode": {
+            "type": "string"
+          },
+          "failureMessage": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "id": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "type": "string"
+          },
+          "pageCount": {
+            "type": "integer"
+          },
+          "pages": {
+            "items": {
+              "properties": {
+                "chars": {
+                  "type": "integer"
+                },
+                "columns": {
+                  "type": "integer"
+                },
+                "images": {
+                  "type": "integer"
+                },
+                "imagesSkipped": {
+                  "type": "integer"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "integer"
+                },
+                "removedLines": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "progress": {
+            "properties": {
+              "done": {
+                "type": "integer"
+              },
+              "total": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stage": {
+            "enum": [
+              "READING_PAGES",
+              "EXTRACTING",
+              "VALIDATING",
+              "SAVING"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "PROCESSING",
+              "REVIEW_REQUIRED",
+              "COMPLETED",
+              "FAILED",
+              "CANCELLED"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "uploadedBy": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DraftQuestionRequest": {
+        "properties": {
+          "acknowledgedWarnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "diagrams": {
+            "items": {
+              "properties": {
+                "confirmed": {
+                  "type": "boolean"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "page": {
+                  "type": "integer"
+                },
+                "region": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "numberLabel": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "properties": {
+                "isCorrect": {
+                  "type": "boolean"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "points": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "tables": {
+            "items": {
+              "properties": {
+                "markdown": {
+                  "type": "string"
+                },
+                "page": {
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DraftQuestionResponse": {
+        "properties": {
+          "confidence": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "diagrams": {
+            "items": {
+              "properties": {
+                "confirmed": {
+                  "type": "boolean"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "descriptionSource": {
+                  "type": "string"
+                },
+                "page": {
+                  "type": "integer"
+                },
+                "region": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "edited": {
+            "type": "boolean"
+          },
+          "id": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "numberLabel": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "properties": {
+                "isCorrect": {
+                  "type": "boolean"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "points": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "sourcePages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "tables": {
+            "items": {
+              "properties": {
+                "markdown": {
+                  "type": "string"
+                },
+                "page": {
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "properties": {
+                "acknowledged": {
+                  "type": "boolean"
+                },
+                "blocking": {
+                  "type": "boolean"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "DraftQuestionResultResponse": {
+        "properties": {
+          "draftVersion": {
+            "type": "integer"
+          },
+          "question": {
+            "properties": {
+              "confidence": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "diagrams": {
+                "items": {
+                  "properties": {
+                    "confirmed": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "descriptionSource": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "region": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "edited": {
+                "type": "boolean"
+              },
+              "id": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              },
+              "instructions": {
+                "type": "string"
+              },
+              "numberLabel": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "properties": {
+                    "isCorrect": {
+                      "type": "boolean"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "points": {
+                "nullable": true,
+                "type": "integer"
+              },
+              "position": {
+                "type": "integer"
+              },
+              "sourcePages": {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "tables": {
+                "items": {
+                  "properties": {
+                    "markdown": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "properties": {
+                    "acknowledged": {
+                      "type": "boolean"
+                    },
+                    "blocking": {
+                      "type": "boolean"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "DraftResponse": {
+        "properties": {
+          "document": {
+            "properties": {
+              "approvedAt": {
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "approvedBy": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "nullable": true,
+                "type": "string"
+              },
+              "attempt": {
+                "type": "integer"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "draftVersion": {
+                "type": "integer"
+              },
+              "examId": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              },
+              "failureCode": {
+                "type": "string"
+              },
+              "failureMessage": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "id": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              },
+              "pageCount": {
+                "type": "integer"
+              },
+              "pages": {
+                "items": {
+                  "properties": {
+                    "chars": {
+                      "type": "integer"
+                    },
+                    "columns": {
+                      "type": "integer"
+                    },
+                    "images": {
+                      "type": "integer"
+                    },
+                    "imagesSkipped": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "integer"
+                    },
+                    "removedLines": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "progress": {
+                "properties": {
+                  "done": {
+                    "type": "integer"
+                  },
+                  "total": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "stage": {
+                "enum": [
+                  "READING_PAGES",
+                  "EXTRACTING",
+                  "VALIDATING",
+                  "SAVING"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "QUEUED",
+                  "PROCESSING",
+                  "REVIEW_REQUIRED",
+                  "COMPLETED",
+                  "FAILED",
+                  "CANCELLED"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "uploadedBy": {
+                "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "documentInstructions": {
+            "type": "string"
+          },
+          "draftVersion": {
+            "type": "integer"
+          },
+          "questions": {
+            "items": {
+              "properties": {
+                "confidence": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "diagrams": {
+                  "items": {
+                    "properties": {
+                      "confirmed": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "descriptionSource": {
+                        "type": "string"
+                      },
+                      "page": {
+                        "type": "integer"
+                      },
+                      "region": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "edited": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "numberLabel": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "properties": {
+                      "isCorrect": {
+                        "type": "boolean"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "origin": {
+                  "type": "string"
+                },
+                "points": {
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "position": {
+                  "type": "integer"
+                },
+                "sourcePages": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "tables": {
+                  "items": {
+                    "properties": {
+                      "markdown": {
+                        "type": "string"
+                      },
+                      "page": {
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "properties": {
+                      "acknowledged": {
+                        "type": "boolean"
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      },
+                      "code": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "unassigned": {
+            "items": {
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ErrorResponse": {
         "properties": {
           "error": {
@@ -802,6 +1999,121 @@
           "user": {
             "$ref": "#/components/schemas/UserResponse",
             "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "ReorderDraftRequest": {
+        "properties": {
+          "expectedDraftVersion": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "questionIds": {
+            "items": {
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ReplaceDraftQuestionRequest": {
+        "properties": {
+          "expectedDraftVersion": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "question": {
+            "properties": {
+              "acknowledgedWarnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "diagrams": {
+                "items": {
+                  "properties": {
+                    "confirmed": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "region": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "instructions": {
+                "type": "string"
+              },
+              "numberLabel": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "properties": {
+                    "isCorrect": {
+                      "type": "boolean"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "points": {
+                "nullable": true,
+                "type": "integer"
+              },
+              "tables": {
+                "items": {
+                  "properties": {
+                    "markdown": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "RetryDocumentRequest": {
+        "properties": {
+          "discardDraft": {
+            "type": "boolean"
+          },
+          "expectedDraftVersion": {
+            "type": "integer"
           }
         },
         "type": "object"
@@ -1180,6 +2492,12 @@
           },
           "questionNumber": {
             "type": "integer"
+          },
+          "sourceDocumentId": {
+            "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
           },
           "text": {
             "type": "string"
@@ -2322,6 +3640,1239 @@
         "summary": "Revoke student assignment",
         "tags": [
           "Exams"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents": {
+      "get": {
+        "description": "Newest first. Page-level detail is left out; fetch one document for it.",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentListResponse"
+                }
+              }
+            },
+            "description": "The documents."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List an exam's documents",
+        "tags": [
+          "Exam Documents"
+        ]
+      },
+      "post": {
+        "description": "Uploads a PDF (multipart/form-data, field `file`) and queues it for reading. Returns 202 with the document in status QUEUED; poll `GET …/documents/{document_id}` for progress. The file is checked for size, PDF signature, structure, encryption and page count before anything is stored. It is kept privately under a server-generated name, and the client's filename is only a label. Extracted content is only ever a draft: it reaches the exam's questions through POST …/approve and nowhere else.\n\nErrors: `EXAM_NOT_DRAFT` (409), `DOCUMENT_ALREADY_UPLOADED` (409, `errors[0].error` is the existing document id), `TOO_MANY_DOCUMENTS` (409), `PAYLOAD_TOO_LARGE` (413), `UNSUPPORTED_MEDIA_TYPE` (415), `INVALID_PDF` (422; `errors[0].error` is NOT_A_PDF, MALFORMED, ENCRYPTED, TOO_MANY_PAGES or NO_PAGES), `EXTRACTION_UNAVAILABLE`, `QUEUE_UNAVAILABLE`, `STORAGE_UNAVAILABLE`, `BUSY` (503). Rate limited per user.",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "description": "The exam paper as a PDF.",
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "Accepted and queued."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "No `file` part, or the body is not readable multipart."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "EXAM_NOT_DRAFT, DOCUMENT_ALREADY_UPLOADED or TOO_MANY_DOCUMENTS."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "PAYLOAD_TOO_LARGE: over the size limit. The upload is cut off rather than read to the end."
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "UNSUPPORTED_MEDIA_TYPE: not multipart, or the file is not a PDF."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "INVALID_PDF: damaged, truncated, password protected, empty or too many pages."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Too many uploads."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "EXTRACTION_UNAVAILABLE, QUEUE_UNAVAILABLE, STORAGE_UNAVAILABLE or BUSY."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Upload an exam document",
+        "tags": [
+          "Exam Documents"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents/{document_id}": {
+      "delete": {
+        "description": "Removes the record and the stored file, whatever the status. Questions already approved into the exam are kept; only their link to the document is cleared. A running extraction stops.",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete a document",
+        "tags": [
+          "Exam Documents"
+        ]
+      },
+      "get": {
+        "description": "Status is one of QUEUED, PROCESSING, REVIEW_REQUIRED, COMPLETED, FAILED, CANCELLED. While PROCESSING, `stage` and `progress` say where it is. A FAILED document has a `failureCode` and a `failureMessage` written by this server (never the provider's words). `pages` says what was found on each page, including header and footer lines that were set aside and pages that could not be read.",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "The document."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get a document and its processing status",
+        "tags": [
+          "Exam Documents"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents/{document_id}/approve": {
+      "post": {
+        "description": "The one and only way extracted content reaches the exam. Copies the reviewed draft into the exam's questions, after the ones already there, in one transaction: all of it or none of it. The exam must still be a draft; it is locked for the duration, so it cannot be published half-way. Publishing and assigning are not done here: use the exam's own publish endpoint afterwards. Approval needs a complete draft: marks set on every question, at least two options on every multiple-choice question, every diagram described and confirmed, and every blocking warning acknowledged. All problems are returned together as 409 `DRAFT_INCOMPLETE` with `errors[].field` such as `questions[2].points`. Each question's text is composed from its instructions, the question, its tables (as rows of text) and its confirmed diagram descriptions, because that single text is what a candidate hears.\n\nErrors: `VALIDATION_ERROR` (400), `DRAFT_INCOMPLETE`, `STALE_VERSION`, `ALREADY_APPROVED`, `EXAM_NOT_DRAFT`, `INVALID_STATE`, `CONCURRENT_CHANGE` (409).",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "expectedDraftVersion": 5
+              },
+              "schema": {
+                "$ref": "#/components/schemas/ApproveDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApproveResponse"
+                }
+              }
+            },
+            "description": "The completed document and the questions created."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "DRAFT_INCOMPLETE, STALE_VERSION, ALREADY_APPROVED, EXAM_NOT_DRAFT, INVALID_STATE or CONCURRENT_CHANGE."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Approve the draft into the exam",
+        "tags": [
+          "Exam Documents"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents/{document_id}/cancel": {
+      "post": {
+        "description": "Cancels a QUEUED or PROCESSING document. A running job notices within seconds and stops. Cancelling an already cancelled document succeeds; any other status is 409 INVALID_STATE.",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "The cancelled document."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "INVALID_STATE."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel processing",
+        "tags": [
+          "Exam Documents"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents/{document_id}/draft": {
+      "get": {
+        "description": "Questions in order, each with its source pages, a confidence, warnings and (for multiple choice) the options with the labels the paper printed. Also the paper's general instructions and any page content that could not be attached to a question. Available once the document is REVIEW_REQUIRED, and read-only after COMPLETED; 409 INVALID_STATE before that. No correct answers are ever inferred: `isCorrect` is only what a teacher set. `draftVersion` must be sent back with every change.",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftResponse"
+                }
+              }
+            },
+            "description": "The draft."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "INVALID_STATE: no draft yet."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get the extracted draft",
+        "tags": [
+          "Exam Documents"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents/{document_id}/draft/questions": {
+      "post": {
+        "description": "Adds a question the extraction missed, at `position` or last. The new question is marked as written by a teacher.\n\nErrors: `VALIDATION_ERROR` (400, with `errors[].field`), `STALE_VERSION`, `INVALID_STATE`, `ALREADY_APPROVED`, `DRAFT_TOO_LARGE` (409).",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "expectedDraftVersion": 3,
+                "position": 2,
+                "question": {
+                  "numberLabel": "3",
+                  "options": [
+                    {
+                      "label": "A",
+                      "text": "Mass"
+                    },
+                    {
+                      "label": "B",
+                      "text": "Velocity"
+                    }
+                  ],
+                  "points": 2,
+                  "text": "Which of these is a vector quantity?",
+                  "type": "MCQ"
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/AddDraftQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftQuestionResultResponse"
+                }
+              }
+            },
+            "description": "The new question and the draft's new version."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "STALE_VERSION, INVALID_STATE, ALREADY_APPROVED or DRAFT_TOO_LARGE."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Add a question to the draft",
+        "tags": [
+          "Exam Documents"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents/{document_id}/draft/questions/{question_id}": {
+      "delete": {
+        "description": "Removes the question and closes the gap in the order. Returns the whole draft.\n\nErrors: `VALIDATION_ERROR` (400, with `errors[].field`), `STALE_VERSION`, `INVALID_STATE`, `ALREADY_APPROVED`, `DRAFT_TOO_LARGE` (409).",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The draft question.",
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The draft version the caller last read. A different current version is refused with 409 STALE_VERSION.",
+            "in": "query",
+            "name": "expectedDraftVersion",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftResponse"
+                }
+              }
+            },
+            "description": "The draft after the removal."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "STALE_VERSION, INVALID_STATE or ALREADY_APPROVED."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove a draft question",
+        "tags": [
+          "Exam Documents"
+        ]
+      },
+      "put": {
+        "description": "Replaces everything a teacher can edit in the question: the request is the complete state wanted, not a patch. The source pages, confidence and the warnings the system raised are kept. Blocking warnings stay unacknowledged unless their codes are listed in `acknowledgedWarnings` in this same request. A diagram description is marked as the teacher's as soon as the teacher changes it, and counts as confirmed only when `confirmed` is true.\n\nErrors: `VALIDATION_ERROR` (400, with `errors[].field`), `STALE_VERSION`, `INVALID_STATE`, `ALREADY_APPROVED`, `DRAFT_TOO_LARGE` (409).",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The draft question.",
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "expectedDraftVersion": 3,
+                "question": {
+                  "acknowledgedWarnings": [
+                    "UNVERIFIED_TEXT"
+                  ],
+                  "numberLabel": "1",
+                  "options": [
+                    {
+                      "isCorrect": true,
+                      "label": "A",
+                      "text": "Newton"
+                    },
+                    {
+                      "label": "B",
+                      "text": "Joule"
+                    }
+                  ],
+                  "points": 2,
+                  "text": "What is the SI unit of force?",
+                  "type": "MCQ"
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceDraftQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftQuestionResultResponse"
+                }
+              }
+            },
+            "description": "The question as saved and the draft's new version."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "STALE_VERSION, INVALID_STATE or ALREADY_APPROVED."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Replace a draft question",
+        "tags": [
+          "Exam Documents"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents/{document_id}/draft/reorder": {
+      "put": {
+        "description": "`questionIds` must list every draft question exactly once, in the new order.\n\nErrors: `VALIDATION_ERROR` (400, with `errors[].field`), `STALE_VERSION`, `INVALID_STATE`, `ALREADY_APPROVED`, `DRAFT_TOO_LARGE` (409).",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "expectedDraftVersion": 4,
+                "questionIds": [
+                  "…",
+                  "…"
+                ]
+              },
+              "schema": {
+                "$ref": "#/components/schemas/ReorderDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftResponse"
+                }
+              }
+            },
+            "description": "The draft in its new order."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "STALE_VERSION, INVALID_STATE or ALREADY_APPROVED."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Reorder the draft",
+        "tags": [
+          "Exam Documents"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents/{document_id}/file": {
+      "get": {
+        "description": "Streams the uploaded file to the exam's owner as an attachment. Never public, never cached.",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The PDF."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "STORAGE_UNAVAILABLE."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Download the original PDF",
+        "tags": [
+          "Exam Documents"
+        ]
+      }
+    },
+    "/api/v1/exams/{exam_id}/documents/{document_id}/retry": {
+      "post": {
+        "description": "Runs a FAILED or CANCELLED document again as a new attempt. A document with a draft waiting for review is only re-run with `discardDraft: true` and the `expectedDraftVersion` the caller last saw; its draft is then replaced, never added to. The body may be omitted.",
+        "parameters": [
+          {
+            "description": "The exam the document belongs to. It must be a draft exam owned by the caller (administrators may use any).",
+            "in": "path",
+            "name": "exam_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The document.",
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "discardDraft": true,
+                "expectedDraftVersion": 3
+              },
+              "schema": {
+                "$ref": "#/components/schemas/RetryDocumentRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "Queued again."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The caller is not a teacher or administrator."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "The exam or document does not exist, or belongs to another teacher. The two cases are not told apart."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "INVALID_STATE, STALE_VERSION or DOCUMENT_ALREADY_UPLOADED."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "EXTRACTION_UNAVAILABLE or QUEUE_UNAVAILABLE."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Retry processing",
+        "tags": [
+          "Exam Documents"
         ]
       }
     },
@@ -4588,6 +7139,10 @@
     {
       "description": "Student directory and roll number autocomplete search",
       "name": "Students"
+    },
+    {
+      "description": "Upload an exam PDF, watch it being read, correct the extracted questions and approve them into a draft exam",
+      "name": "Exam Documents"
     }
   ]
 }

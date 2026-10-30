@@ -16,6 +16,7 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/answer"
 	"github.com/Satyajeet-Das/ai-scribe/internal/assignment"
 	"github.com/Satyajeet-Das/ai-scribe/internal/auth"
+	"github.com/Satyajeet-Das/ai-scribe/internal/document"
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
 	"github.com/Satyajeet-Das/ai-scribe/internal/question"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
@@ -70,26 +71,26 @@ type Operation struct {
 // GetSchemaRegistry returns the mapping of schema names to sample Go instances.
 func GetSchemaRegistry() map[string]interface{} {
 	return map[string]interface{}{
-		"RegisterRequest":               auth.RegisterRequest{},
-		"RegisterResponse":              auth.RegisterResponse{},
-		"LoginRequest":                  auth.LoginRequest{},
-		"LoginResponse":                 auth.LoginResponse{},
-		"RefreshResponse":               auth.RefreshResponse{},
-		"LogoutResponse":                auth.LogoutResponse{},
-		"UserResponse":                  auth.UserResponse{},
-		"StudentSearchResult":          user.StudentSearchResult{},
-		"User":                          user.User{},
-		"CreateExamRequest":             exam.CreateExamRequest{},
-		"UpdateExamRequest":             exam.UpdateExamRequest{},
-		"ExamResponse":                  exam.ExamResponse{},
-		"ExamListResponse":              exam.ExamListResponse{},
-		"CreateQuestionRequest":         question.CreateQuestionRequest{},
-		"UpdateQuestionRequest":         question.UpdateQuestionRequest{},
-		"CreateOptionRequest":           question.CreateOptionRequest{},
-		"TeacherQuestionOptionResponse": question.TeacherQuestionOptionResponse{},
-		"StudentQuestionOptionResponse": question.StudentQuestionOptionResponse{},
-		"TeacherQuestionResponse":       question.TeacherQuestionResponse{},
-		"StudentQuestionResponse":       question.StudentQuestionResponse{},
+		"RegisterRequest":                  auth.RegisterRequest{},
+		"RegisterResponse":                 auth.RegisterResponse{},
+		"LoginRequest":                     auth.LoginRequest{},
+		"LoginResponse":                    auth.LoginResponse{},
+		"RefreshResponse":                  auth.RefreshResponse{},
+		"LogoutResponse":                   auth.LogoutResponse{},
+		"UserResponse":                     auth.UserResponse{},
+		"StudentSearchResult":              user.StudentSearchResult{},
+		"User":                             user.User{},
+		"CreateExamRequest":                exam.CreateExamRequest{},
+		"UpdateExamRequest":                exam.UpdateExamRequest{},
+		"ExamResponse":                     exam.ExamResponse{},
+		"ExamListResponse":                 exam.ExamListResponse{},
+		"CreateQuestionRequest":            question.CreateQuestionRequest{},
+		"UpdateQuestionRequest":            question.UpdateQuestionRequest{},
+		"CreateOptionRequest":              question.CreateOptionRequest{},
+		"TeacherQuestionOptionResponse":    question.TeacherQuestionOptionResponse{},
+		"StudentQuestionOptionResponse":    question.StudentQuestionOptionResponse{},
+		"TeacherQuestionResponse":          question.TeacherQuestionResponse{},
+		"StudentQuestionResponse":          question.StudentQuestionResponse{},
 		"CreateAssignmentRequest":          assignment.CreateAssignmentRequest{},
 		"BulkAssignRequest":                assignment.BulkAssignRequest{},
 		"BulkAssignResponse":               assignment.BulkAssignResponse{},
@@ -100,9 +101,21 @@ func GetSchemaRegistry() map[string]interface{} {
 		"AssignmentResponse":               assignment.AssignmentResponse{},
 		"AssignmentListResponse":           assignment.AssignmentListResponse{},
 		"StartSessionRequest":              session.StartSessionRequest{},
-		"SessionResponse":               session.SessionResponse{},
-		"SubmitAnswerRequest":           answer.SubmitAnswerRequest{},
-		"AnswerResponse":                answer.AnswerResponse{},
+		"SessionResponse":                  session.SessionResponse{},
+		"SubmitAnswerRequest":              answer.SubmitAnswerRequest{},
+		"AnswerResponse":                   answer.AnswerResponse{},
+		"DocumentResponse":                 document.DocumentResponse{},
+		"DocumentListResponse":             document.DocumentListResponse{},
+		"DraftResponse":                    document.DraftResponse{},
+		"DraftQuestionResponse":            document.DraftQuestionResponse{},
+		"DraftQuestionResultResponse":      document.DraftQuestionResultResponse{},
+		"ApproveResponse":                  document.ApproveResponse{},
+		"DraftQuestionRequest":             document.DraftQuestionRequest{},
+		"AddDraftQuestionRequest":          document.AddDraftQuestionRequest{},
+		"ReplaceDraftQuestionRequest":      document.ReplaceDraftQuestionRequest{},
+		"ReorderDraftRequest":              document.ReorderDraftRequest{},
+		"RetryDocumentRequest":             document.RetryDocumentRequest{},
+		"ApproveDraftRequest":              document.ApproveDraftRequest{},
 	}
 }
 
@@ -217,6 +230,14 @@ func introspectField(t reflect.Type, tag reflect.StructTag, fieldName string) Sc
 	case "session.Status":
 		prop.Type = "string"
 		prop.Enum = []string{string(session.StatusPending), string(session.StatusInProgress), string(session.StatusSubmitted), string(session.StatusExpired)}
+		return prop
+	case "document.Status":
+		prop.Type = "string"
+		prop.Enum = []string{string(document.StatusQueued), string(document.StatusProcessing), string(document.StatusReviewRequired), string(document.StatusCompleted), string(document.StatusFailed), string(document.StatusCancelled)}
+		return prop
+	case "document.Stage":
+		prop.Type = "string"
+		prop.Enum = []string{string(document.StageReadingPages), string(document.StageExtracting), string(document.StageValidating), string(document.StageSaving)}
 		return prop
 	case "question.Type":
 		prop.Type = "string"
@@ -551,6 +572,8 @@ func SyncOpenAPISpec(routes []*echo.Route, openapiPath string) error {
 			}
 		}
 	}
+
+	enrichDocumentOperations(doc, paths)
 
 	// Clean up any stray non-standard paths/methods
 	for pKey, pVal := range paths {

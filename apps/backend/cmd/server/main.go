@@ -16,7 +16,9 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/assignment"
 	"github.com/Satyajeet-Das/ai-scribe/internal/audit"
 	"github.com/Satyajeet-Das/ai-scribe/internal/auth"
+	"github.com/Satyajeet-Das/ai-scribe/internal/document"
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
+	"github.com/Satyajeet-Das/ai-scribe/internal/grading"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/audiostore"
 	platformauth "github.com/Satyajeet-Das/ai-scribe/internal/platform/auth"
 	jwtadapter "github.com/Satyajeet-Das/ai-scribe/internal/platform/auth/adapters/jwt"
@@ -31,7 +33,6 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/redis"
 	"github.com/Satyajeet-Das/ai-scribe/internal/question"
 	"github.com/Satyajeet-Das/ai-scribe/internal/recording"
-	"github.com/Satyajeet-Das/ai-scribe/internal/grading"
 	"github.com/Satyajeet-Das/ai-scribe/internal/review"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
 	"github.com/Satyajeet-Das/ai-scribe/internal/user"
@@ -121,6 +122,42 @@ func main() {
 	sessionCache := session.NewRedisCache(redisClient)
 	sessionService := session.NewService(sessionRepo, assignmentService, examService, questionService, sessionCache, db, jobService, &log)
 	sessionHandler := session.NewHandler(sessionService)
+
+	// Exam document ingestion: upload a PDF, extract draft questions, review,
+	// approve. Off unless enabled. It is wired before the job workers start, so
+	// no extraction job can arrive before something is ready to run it.
+	var documentHandler *document.Handler
+	if cfg.Documents.Enabled {
+		docStore, err := openDocumentStore(context.Background(), cfg.Documents.Storage, &log)
+		if err != nil {
+			log.Fatal().Err(err).Msg("exam documents are enabled but their store could not be opened")
+		}
+		docExtractor, err := buildDocumentExtractor(cfg.Documents.Extraction)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to initialize the document extractor")
+		}
+		documentService := document.NewService(document.Deps{
+			Repo:      document.NewRepository(db.Pool),
+			Exams:     examService,
+			Questions: questionService,
+			Tx:        db,
+			Store:     docStore,
+			Extractor: docExtractor,
+			Queue:     jobService,
+			Options:   documentOptions(cfg.Documents),
+			Logger:    &log,
+		})
+		jobService.SetDocumentProcessor(documentService)
+		documentHandler = document.NewHandler(documentService, cfg.Documents.MaxBytes)
+		log.Info().
+			Str("store", docStore.Name()).
+			Str("extraction", docExtractor.Name()).
+			Bool("uploads_accepted", cfg.Documents.Active()).
+			Msg("exam document ingestion is ENABLED")
+		if !cfg.Documents.Active() {
+			log.Warn().Msg("exam documents are enabled but no extraction provider is configured: uploads are refused. Set SCRIBE_DOCUMENTS.EXTRACTION.PROVIDER and its API key.")
+		}
+	}
 
 	jobService.InitHandlers(cfg, &log, sessionService)
 	go func() {
@@ -264,6 +301,11 @@ func main() {
 	reviewHandler.WithPlaybackLimit(middlewares.RateLimit.WithRedis(redisClient, &log).LimitPerUser(60, time.Minute))
 	reviewHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
 	gradingHandler.RegisterRoutes(v1, authMiddleware.RequireAuth, authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin))
+	if documentHandler != nil {
+		documentHandler.RegisterRoutes(v1, authMiddleware.RequireAuth,
+			authMiddleware.RequireRole(platformauth.RoleTeacher, platformauth.RoleAdmin),
+			middlewares.RateLimit.WithRedis(redisClient, &log).LimitPerUser(int64(cfg.Documents.UploadsPerMinute), time.Minute))
+	}
 	voiceService.RegisterRoutes(v1)
 
 	// In development, auto-sync OpenAPI spec and watch for Go source changes

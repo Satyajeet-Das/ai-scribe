@@ -9,11 +9,12 @@ import (
 	"github.com/Satyajeet-Das/ai-scribe/internal/answer"
 	"github.com/Satyajeet-Das/ai-scribe/internal/assignment"
 	"github.com/Satyajeet-Das/ai-scribe/internal/auth"
+	"github.com/Satyajeet-Das/ai-scribe/internal/document"
 	"github.com/Satyajeet-Das/ai-scribe/internal/exam"
+	"github.com/Satyajeet-Das/ai-scribe/internal/grading"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/http/handler"
 	"github.com/Satyajeet-Das/ai-scribe/internal/platform/openapi"
 	"github.com/Satyajeet-Das/ai-scribe/internal/question"
-	"github.com/Satyajeet-Das/ai-scribe/internal/grading"
 	"github.com/Satyajeet-Das/ai-scribe/internal/review"
 	"github.com/Satyajeet-Das/ai-scribe/internal/session"
 	"github.com/Satyajeet-Das/ai-scribe/internal/user"
@@ -62,6 +63,10 @@ func main() {
 
 	gradingH := grading.NewHandler(nil)
 	gradingH.RegisterRoutes(v1, noopMiddleware, noopMiddleware)
+
+	// Exam document ingestion (a nil service only registers the routes).
+	documentH := document.NewHandler(nil, 0)
+	documentH.RegisterRoutes(v1, noopMiddleware, noopMiddleware, nil)
 
 	targetFile := "static/openapi.json"
 	if _, err := os.Stat("static"); os.IsNotExist(err) {
