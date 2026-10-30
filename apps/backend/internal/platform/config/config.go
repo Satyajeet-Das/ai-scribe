@@ -21,6 +21,7 @@ type Config struct {
 	Integration   IntegrationConfig    `koanf:"integration"`
 	Voice         VoiceConfig          `koanf:"voice"`
 	Recording     RecordingConfig      `koanf:"recording"`
+	Documents     DocumentsConfig      `koanf:"documents"`
 	Observability *ObservabilityConfig `koanf:"observability"`
 }
 
@@ -137,6 +138,16 @@ func LoadConfig() (*Config, error) {
 	if err := mainConfig.Recording.ValidateForEnvironment(mainConfig.Primary.Env); err != nil {
 		logger.Error().Err(err).Msg("invalid recording config for this environment")
 		return nil, fmt.Errorf("validating recording config: %w", err)
+	}
+
+	mainConfig.Documents.ApplyDefaults()
+	if err := mainConfig.Documents.Validate(); err != nil {
+		logger.Error().Err(err).Msg("invalid documents config")
+		return nil, fmt.Errorf("validating documents config: %w", err)
+	}
+	if err := mainConfig.Documents.ValidateForEnvironment(mainConfig.Primary.Env); err != nil {
+		logger.Error().Err(err).Msg("invalid documents config for this environment")
+		return nil, fmt.Errorf("validating documents config: %w", err)
 	}
 
 	if mainConfig.Observability == nil {
