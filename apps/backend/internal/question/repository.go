@@ -52,7 +52,7 @@ func (r *pgRepository) getDB(tx ...database.DBTX) database.DBTX {
 func (r *pgRepository) GetByID(ctx context.Context, id uuid.UUID, tx ...database.DBTX) (*Question, error) {
 	db := r.getDB(tx...)
 	query := `
-		SELECT id, exam_id, question_number, text, type, points, created_at, updated_at
+		SELECT id, exam_id, question_number, text, type, points, source_document_id, source_draft_question_id, created_at, updated_at
 		FROM questions
 		WHERE id = $1
 	`
@@ -64,6 +64,8 @@ func (r *pgRepository) GetByID(ctx context.Context, id uuid.UUID, tx ...database
 		&q.Text,
 		&q.Type,
 		&q.Points,
+		&q.SourceDocumentID,
+		&q.SourceDraftQuestionID,
 		&q.CreatedAt,
 		&q.UpdatedAt,
 	)
@@ -93,7 +95,7 @@ func (r *pgRepository) GetByIDWithOptions(ctx context.Context, id uuid.UUID, tx 
 func (r *pgRepository) ListByExamID(ctx context.Context, examID uuid.UUID, tx ...database.DBTX) ([]Question, error) {
 	db := r.getDB(tx...)
 	query := `
-		SELECT id, exam_id, question_number, text, type, points, created_at, updated_at
+		SELECT id, exam_id, question_number, text, type, points, source_document_id, source_draft_question_id, created_at, updated_at
 		FROM questions
 		WHERE exam_id = $1
 		ORDER BY question_number ASC
@@ -114,6 +116,8 @@ func (r *pgRepository) ListByExamID(ctx context.Context, examID uuid.UUID, tx ..
 			&q.Text,
 			&q.Type,
 			&q.Points,
+			&q.SourceDocumentID,
+			&q.SourceDraftQuestionID,
 			&q.CreatedAt,
 			&q.UpdatedAt,
 		); err != nil {
@@ -139,8 +143,8 @@ func (r *pgRepository) ListByExamID(ctx context.Context, examID uuid.UUID, tx ..
 func (r *pgRepository) Create(ctx context.Context, q *Question, tx ...database.DBTX) error {
 	db := r.getDB(tx...)
 	query := `
-		INSERT INTO questions (id, exam_id, question_number, text, type, points, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO questions (id, exam_id, question_number, text, type, points, created_at, updated_at, source_document_id, source_draft_question_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 	now := time.Now().UTC()
 	if q.ID == uuid.Nil {
@@ -158,6 +162,8 @@ func (r *pgRepository) Create(ctx context.Context, q *Question, tx ...database.D
 		q.Points,
 		q.CreatedAt,
 		q.UpdatedAt,
+		q.SourceDocumentID,
+		q.SourceDraftQuestionID,
 	)
 	return err
 }

@@ -17,4 +17,5 @@ var (
 	ErrDuplicateQuestionNumbers      = errors.New("duplicate question numbers provided")
 	ErrAtLeastOneCorrectOption       = errors.New("MCQ must have at least one correct option")
 	ErrMultipleCorrectOptions        = errors.New("MCQ cannot have multiple correct options")
+	ErrImportInvalid                 = errors.New("imported question is incomplete or invalid")
 )

@@ -310,7 +310,8 @@ func (h *Handler) mapError(err error) error {
 		errors.Is(err, ErrInvalidQuestionOrder) ||
 		errors.Is(err, ErrDuplicateQuestionNumbers) ||
 		errors.Is(err, ErrAtLeastOneCorrectOption) ||
-		errors.Is(err, ErrMultipleCorrectOptions) {
+		errors.Is(err, ErrMultipleCorrectOptions) ||
+		errors.Is(err, ErrImportInvalid) {
 		return httperrs.NewBadRequestError(err.Error(), false, nil, nil, nil)
 	}
 	return httperrs.NewInternalServerError()

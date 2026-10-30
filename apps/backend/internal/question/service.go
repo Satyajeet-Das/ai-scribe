@@ -26,6 +26,10 @@ type Service interface {
 	UpdateQuestion(ctx context.Context, id uuid.UUID, req UpdateQuestionRequest, caller Caller) (*Question, error)
 	DeleteQuestion(ctx context.Context, id uuid.UUID, caller Caller) error
 	ReorderQuestions(ctx context.Context, examID uuid.UUID, req ReorderQuestionsRequest, caller Caller) ([]Question, error)
+	// ImportQuestions adds reviewed questions to the end of an exam in the caller's
+	// transaction. The caller must already have authorised the change and locked
+	// the exam; see import.go.
+	ImportQuestions(ctx context.Context, tx database.DBTX, examID uuid.UUID, items []ImportItem) ([]Question, error)
 
 	GetOption(ctx context.Context, id uuid.UUID) (*QuestionOption, error)
 	GetOptionForCaller(ctx context.Context, questionID, optionID uuid.UUID, caller Caller) (*QuestionOption, error)

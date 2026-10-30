@@ -124,15 +124,16 @@ type StudentQuestionOptionResponse struct {
 
 // Question DTOs
 type TeacherQuestionResponse struct {
-	ID             uuid.UUID                       `json:"id"`
-	ExamID         uuid.UUID                       `json:"examId"`
-	QuestionNumber int                             `json:"questionNumber"`
-	Text           string                          `json:"text"`
-	Type           Type                            `json:"type"`
-	Points         int                             `json:"points"`
-	Options        []TeacherQuestionOptionResponse `json:"options"`
-	CreatedAt      time.Time                       `json:"createdAt"`
-	UpdatedAt      time.Time                       `json:"updatedAt"`
+	ID               uuid.UUID                       `json:"id"`
+	ExamID           uuid.UUID                       `json:"examId"`
+	QuestionNumber   int                             `json:"questionNumber"`
+	Text             string                          `json:"text"`
+	Type             Type                            `json:"type"`
+	Points           int                             `json:"points"`
+	Options          []TeacherQuestionOptionResponse `json:"options"`
+	SourceDocumentID *uuid.UUID                      `json:"sourceDocumentId,omitempty"`
+	CreatedAt        time.Time                       `json:"createdAt"`
+	UpdatedAt        time.Time                       `json:"updatedAt"`
 }
 
 type StudentQuestionResponse struct {
@@ -185,15 +186,16 @@ func ToTeacherQuestionResponse(q *Question) TeacherQuestionResponse {
 		opts = append(opts, ToTeacherOptionResponse(&o))
 	}
 	return TeacherQuestionResponse{
-		ID:             q.ID,
-		ExamID:         q.ExamID,
-		QuestionNumber: q.QuestionNumber,
-		Text:           q.Text,
-		Type:           q.Type,
-		Points:         q.Points,
-		Options:        opts,
-		CreatedAt:      q.CreatedAt,
-		UpdatedAt:      q.UpdatedAt,
+		ID:               q.ID,
+		ExamID:           q.ExamID,
+		QuestionNumber:   q.QuestionNumber,
+		Text:             q.Text,
+		Type:             q.Type,
+		Points:           q.Points,
+		Options:          opts,
+		SourceDocumentID: q.SourceDocumentID,
+		CreatedAt:        q.CreatedAt,
+		UpdatedAt:        q.UpdatedAt,
 	}
 }
 
