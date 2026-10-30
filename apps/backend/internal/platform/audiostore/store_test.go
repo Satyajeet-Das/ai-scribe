@@ -34,3 +34,13 @@ func TestLocalFS_ShortWriteLeavesNoFileBehind(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	assert.Empty(t, entries, "no partial object and no temp file may remain")
 }
+
+func TestLocalFS_PDFKind_Contract(t *testing.T) {
+	s, err := audiostore.NewLocalFS(filepath.Join(t.TempDir(), "docs"), audiostore.WithKind(audiostore.KindPDF))
+	require.NoError(t, err)
+	storetest.RunKind(t, s, audiostore.KindPDF)
+}
+
+func TestMemory_PDFKind_Contract(t *testing.T) {
+	storetest.RunKind(t, audiostore.NewMemory(audiostore.WithKind(audiostore.KindPDF)), audiostore.KindPDF)
+}

@@ -13,11 +13,12 @@ import (
 // development and single-node deployments; the directory must not be served by
 // any web server.
 type LocalFS struct {
-	dir string
+	dir  string
+	kind Kind
 }
 
 // NewLocalFS creates the directory if needed.
-func NewLocalFS(dir string) (*LocalFS, error) {
+func NewLocalFS(dir string, opts ...Option) (*LocalFS, error) {
 	if dir == "" {
 		return nil, errors.New("audiostore: directory is required")
 	}
@@ -28,13 +29,13 @@ func NewLocalFS(dir string) (*LocalFS, error) {
 	if err := os.MkdirAll(abs, 0o750); err != nil {
 		return nil, fmt.Errorf("audiostore: creating %s: %w", abs, err)
 	}
-	return &LocalFS{dir: abs}, nil
+	return &LocalFS{dir: abs, kind: kindFrom(opts)}, nil
 }
 
 func (s *LocalFS) Name() string { return "localfs" }
 
 func (s *LocalFS) path(key string) (string, error) {
-	if !validKey(key) {
+	if !validKeyFor(s.kind, key) {
 		return "", ErrInvalidKey
 	}
 	return filepath.Join(s.dir, key), nil
@@ -124,7 +125,7 @@ func (s *LocalFS) List(ctx context.Context) ([]ObjectInfo, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if e.IsDir() || !validKey(e.Name()) {
+		if e.IsDir() || !validKeyFor(s.kind, e.Name()) {
 			continue
 		}
 		info, err := e.Info()

@@ -25,6 +25,8 @@ type S3Config struct {
 	// development: a production bucket should be provisioned deliberately, with
 	// its access policy and encryption, and a missing one is then an error.
 	CreateBucket bool
+	// Kind is what the bucket holds; the zero value means answer audio.
+	Kind Kind
 }
 
 // S3 stores objects in an S3-compatible bucket. Objects are private; nothing
@@ -32,6 +34,7 @@ type S3Config struct {
 type S3 struct {
 	client *minio.Client
 	bucket string
+	kind   Kind
 }
 
 // NewS3 connects and checks that the bucket is usable, so a misconfiguration
@@ -64,7 +67,11 @@ func NewS3(ctx context.Context, cfg S3Config) (*S3, error) {
 			}
 		}
 	}
-	return &S3{client: client, bucket: cfg.Bucket}, nil
+	kind := cfg.Kind
+	if kind.Suffix == "" {
+		kind = KindWAV
+	}
+	return &S3{client: client, bucket: cfg.Bucket, kind: kind}, nil
 }
 
 func (s *S3) Name() string { return "s3" }
@@ -72,10 +79,10 @@ func (s *S3) Name() string { return "s3" }
 // Put writes the object only if the key is unused, so audio is never silently
 // replaced. The server enforces this (If-None-Match), not a racy check here.
 func (s *S3) Put(ctx context.Context, key string, r io.Reader, size int64) error {
-	if !validKey(key) {
+	if !validKeyFor(s.kind, key) {
 		return ErrInvalidKey
 	}
-	opts := minio.PutObjectOptions{ContentType: "audio/wav"}
+	opts := minio.PutObjectOptions{ContentType: s.kind.ContentType}
 	opts.SetMatchETagExcept("*")
 	info, err := s.client.PutObject(ctx, s.bucket, key, r, size, opts)
 	if err != nil {
@@ -92,7 +99,7 @@ func (s *S3) Put(ctx context.Context, key string, r io.Reader, size int64) error
 // Open returns the object. Its size is read first, so a missing object is
 // reported here and not on the first read.
 func (s *S3) Open(ctx context.Context, key string) (io.ReadCloser, int64, error) {
-	if !validKey(key) {
+	if !validKeyFor(s.kind, key) {
 		return nil, 0, ErrInvalidKey
 	}
 	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
@@ -108,7 +115,7 @@ func (s *S3) Open(ctx context.Context, key string) (io.ReadCloser, int64, error)
 
 // Delete removes the object. Removing one that is already gone succeeds.
 func (s *S3) Delete(ctx context.Context, key string) error {
-	if !validKey(key) {
+	if !validKeyFor(s.kind, key) {
 		return ErrInvalidKey
 	}
 	if err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{}); err != nil {
@@ -127,7 +134,7 @@ func (s *S3) List(ctx context.Context) ([]ObjectInfo, error) {
 		if obj.Err != nil {
 			return nil, s.mapError(obj.Err)
 		}
-		if !validKey(obj.Key) {
+		if !validKeyFor(s.kind, obj.Key) {
 			continue
 		}
 		out = append(out, ObjectInfo{Key: obj.Key, Size: obj.Size, ModifiedAt: obj.LastModified})

@@ -48,17 +48,50 @@ type ObjectInfo struct {
 	ModifiedAt time.Time
 }
 
-const keySuffix = ".wav"
+// Kind says what a store holds: the suffix every key ends in and the content
+// type objects are stored with. A store holds one kind, so a directory or bucket
+// made for exam PDFs is never mistaken for one made for answer audio.
+type Kind struct {
+	Suffix      string
+	ContentType string
+}
 
-// NewKey returns a fresh storage key: a random UUID and a fixed suffix. It
-// deliberately carries nothing about the student, exam or question, so a key
-// that leaks (in a log, a URL, a bucket listing) reveals nothing.
-func NewKey() string { return uuid.NewString() + keySuffix }
+var (
+	// KindWAV is dictated-answer audio, the default.
+	KindWAV = Kind{Suffix: ".wav", ContentType: "audio/wav"}
+	// KindPDF is an uploaded exam document.
+	KindPDF = Kind{Suffix: ".pdf", ContentType: "application/pdf"}
+)
 
-// validKey accepts only the shape NewKey produces, which keeps every adapter
-// safe from path traversal and keeps keys free of personal data.
-func validKey(key string) bool {
-	if len(key) != 36+len(keySuffix) || key[36:] != keySuffix {
+// Option configures a store.
+type Option func(*Kind)
+
+// WithKind makes a store hold the given kind of object.
+func WithKind(k Kind) Option { return func(dst *Kind) { *dst = k } }
+
+func kindFrom(opts []Option) Kind {
+	k := KindWAV
+	for _, o := range opts {
+		o(&k)
+	}
+	return k
+}
+
+// NewKey returns a fresh storage key for answer audio.
+func NewKey() string { return NewKeyFor(KindWAV) }
+
+// NewKeyFor returns a fresh storage key: a random UUID and the kind's fixed
+// suffix. It deliberately carries nothing about the student, exam or question,
+// so a key that leaks (in a log, a URL, a bucket listing) reveals nothing.
+func NewKeyFor(k Kind) string { return uuid.NewString() + k.Suffix }
+
+// validKey accepts only the shape NewKey produces for the audio kind.
+func validKey(key string) bool { return validKeyFor(KindWAV, key) }
+
+// validKeyFor accepts only the shape NewKeyFor produces, which keeps every
+// adapter safe from path traversal and keeps keys free of personal data.
+func validKeyFor(k Kind, key string) bool {
+	if len(key) != 36+len(k.Suffix) || key[36:] != k.Suffix {
 		return false
 	}
 	for i := 0; i < 36; i++ {

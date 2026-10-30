@@ -11,6 +11,7 @@ import (
 
 // Memory is an in-process Store for tests.
 type Memory struct {
+	kind     Kind
 	mu       sync.Mutex
 	objects  map[string][]byte
 	modified map[string]time.Time
@@ -18,14 +19,14 @@ type Memory struct {
 	PutErr error
 }
 
-func NewMemory() *Memory {
-	return &Memory{objects: map[string][]byte{}, modified: map[string]time.Time{}}
+func NewMemory(opts ...Option) *Memory {
+	return &Memory{kind: kindFrom(opts), objects: map[string][]byte{}, modified: map[string]time.Time{}}
 }
 
 func (m *Memory) Name() string { return "memory" }
 
 func (m *Memory) Put(ctx context.Context, key string, r io.Reader, size int64) error {
-	if !validKey(key) {
+	if !validKeyFor(m.kind, key) {
 		return ErrInvalidKey
 	}
 	if err := ctx.Err(); err != nil {
@@ -52,7 +53,7 @@ func (m *Memory) Put(ctx context.Context, key string, r io.Reader, size int64) e
 }
 
 func (m *Memory) Open(_ context.Context, key string) (io.ReadCloser, int64, error) {
-	if !validKey(key) {
+	if !validKeyFor(m.kind, key) {
 		return nil, 0, ErrInvalidKey
 	}
 	m.mu.Lock()
@@ -65,7 +66,7 @@ func (m *Memory) Open(_ context.Context, key string) (io.ReadCloser, int64, erro
 }
 
 func (m *Memory) Delete(_ context.Context, key string) error {
-	if !validKey(key) {
+	if !validKeyFor(m.kind, key) {
 		return ErrInvalidKey
 	}
 	m.mu.Lock()
