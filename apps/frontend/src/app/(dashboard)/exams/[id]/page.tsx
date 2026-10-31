@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { QuestionManager } from "@/components/question-manager";
+import { ExamDocumentsPanel } from "@/components/exam-documents/exam-documents-panel";
 import { AssignmentManager } from "@/components/assignment-manager";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { EditExamDialog } from "@/components/edit-exam-dialog";
@@ -386,6 +387,9 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
               )}
             </div>
+
+            {/* Import questions from an exam PDF; approval happens on its own review page */}
+            <ExamDocumentsPanel examId={examId} examStatus={exam?.status} />
 
             {/* Question Studio */}
             <QuestionManager
